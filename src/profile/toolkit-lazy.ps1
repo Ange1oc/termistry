@@ -614,36 +614,132 @@ function global:lang {
 
 function global:ep { code $global:ProfileDir }
 
-# ── nav: folder navigator on fzf (→ enter, ← up, Enter go, Ctrl+F deep search) ──
+# ── fzf helpers ──────────────────────────────────────────────────────────────
+# PowerShell piping into fzf throws "pipe is being closed" when fzf exits before the producer is done;
+# short lists go through Invoke-Fzf, long ones (fd, rg) are started by fzf itself via FZF_DEFAULT_COMMAND.
+function global:Invoke-Fzf([string[]]$Lines, [string[]]$Arguments) {
+    try { @($Lines | fzf @Arguments) } catch { if ("$_" -notmatch 'pipe|канал') { throw } }
+}
+
+function global:Invoke-FzfCommand([string]$Command, [string[]]$Arguments) {
+    $saved = $env:FZF_DEFAULT_COMMAND
+    $env:FZF_DEFAULT_COMMAND = $Command
+    try { @(fzf @Arguments) } finally { $env:FZF_DEFAULT_COMMAND = $saved }
+}
+
+# Preview script for fzf: folders through eza, files through bat. cmd runs it with UTF-8 so Cyrillic paths work.
+function global:Get-TsPreview {
+    $p = "$HOME\.cache\terminal-setup\preview.cmd"
+    if (-not (Test-Path $p)) {
+        New-Item -ItemType Directory -Force (Split-Path $p) | Out-Null
+        $lines = '@echo off', 'chcp 65001 >nul', 'if exist "%~1\" (', '  eza --icons=always --color=always --group-directories-first -1 "%~1"', ') else (', '  bat --color=always --style=numbers,header-filename --line-range :300 "%~1"', ')'
+        [IO.File]::WriteAllLines($p, $lines, [Text.ASCIIEncoding]::new())
+    }
+    $p
+}
+
+function global:Open-TsFile([string]$Path) {
+    if (Get-Command code -ErrorAction SilentlyContinue) { code $Path } else { Invoke-Item $Path }
+}
+
+# ── nav: folders (and files with Ctrl+E) as a tree on fzf ────────────────────
 function global:nav {
     param([string]$Start = (Get-Location).Path)
     if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) { return }
     $dir = (Resolve-Path -LiteralPath $Start).Path
-    $preview = if (Get-Command eza -ErrorAction SilentlyContinue) { 'eza --icons=always --color=always --group-directories-first -1 {2}' } else { 'dir /b {2}' }
+    $preview = "$(Get-TsPreview) {2}"
+    $files = $false; $hidden = $false
     while ($true) {
         $parent = Split-Path $dir -Parent
         $entries = @()
-        if ($parent) { $entries += "..`t$parent" }
-        $entries += Get-ChildItem -LiteralPath $dir -Directory -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name)`t$($_.FullName)" }
-        $out = @($entries | fzf --expect=right,left,ctrl-f,ctrl-o --delimiter="`t" --with-nth=1 --cycle --height=60% `
-            --header=$TkStr.nav_header --prompt="$($dir.Replace($HOME, '~')) ❯ " --preview=$preview --preview-window='right:45%')
+        if ($parent) { $entries += "..`t$parent`td" }
+        $items = @(Get-ChildItem -LiteralPath $dir -Force:$hidden -ErrorAction SilentlyContinue | Where-Object { $files -or $_.PSIsContainer })
+        $entries += $items | Sort-Object { -not $_.PSIsContainer }, Name | ForEach-Object {
+            if ($_.PSIsContainer) { "$($_.Name)`t$($_.FullName)`td" } else { "  $($_.Name)`t$($_.FullName)`tf" }
+        }
+        $mode = @($(if ($files) { 'files' }), $(if ($hidden) { 'hidden' })) -ne $null -join ' '
+        $out = Invoke-Fzf $entries @('--expect=right,left,ctrl-f,ctrl-o,ctrl-e,ctrl-h', "--delimiter=`t", '--with-nth=1', '--cycle', '--height=70%',
+            "--header=$($TkStr.nav_header)", "--prompt=$($dir.Replace($HOME, '~')) $(if ($mode) { "[$mode] " })❯ ", "--preview=$preview", '--preview-window=right:50%')
         if (-not $out) { return }
         $key = $out[0]
-        $sel = if ($out.Count -gt 1) { ($out[1] -split "`t")[1] } else { $null }
+        $fields = if ($out.Count -gt 1) { $out[1] -split "`t" } else { $null }
+        $sel = if ($fields) { $fields[1] } else { $null }
+        $isDir = $fields -and $fields[2] -eq 'd'
         switch ($key) {
             'left'   { if ($parent) { $dir = $parent } }
-            'right'  { if ($sel -and (Test-Path -LiteralPath $sel)) { $dir = $sel } }
+            'right'  { if ($sel -and $isDir) { $dir = $sel } }
+            'ctrl-e' { $files = -not $files }
+            'ctrl-h' { $hidden = -not $hidden }
             'ctrl-o' { Invoke-Item $dir }
             'ctrl-f' {
-                $pick = fd --type d --hidden --exclude .git --exclude node_modules . $dir |
-                    fzf --height=60% --prompt="$($TkStr.nav_deep -f $dir.Replace($HOME, '~')) ❯ " --preview=$preview.Replace('{2}', '{}')
-                if ($pick) { Set-Location -LiteralPath $pick }
+                $cmd = "fd --hidden --exclude .git --exclude node_modules --type d$(if ($files) { ' --type f' }) . `"$dir`""
+                $pick = Invoke-FzfCommand $cmd @('--height=70%', "--prompt=$($TkStr.nav_deep -f $dir.Replace($HOME, '~')) ❯ ", "--preview=$(Get-TsPreview) {}", '--preview-window=right:50%')
+                if ($pick) {
+                    if (Test-Path -LiteralPath $pick -PathType Container) { Set-Location -LiteralPath $pick } else { Open-TsFile $pick }
+                }
                 return
             }
-            default  { Set-Location -LiteralPath $(if ($sel) { $sel } else { $dir }); return }
+            default {
+                if (-not $sel) { Set-Location -LiteralPath $dir; return }
+                if ($isDir) { Set-Location -LiteralPath $sel } else { Open-TsFile $sel }
+                return
+            }
         }
     }
 }
+
+# ── pv: files with a preview pane; rgi: live grep; pk: kill picker; gbr: branch picker ──
+function global:pv {
+    param([string]$Dir = '.', [string]$Query = '')
+    $dir = (Resolve-Path -LiteralPath $Dir).Path
+    $out = Invoke-FzfCommand "fd --type f --hidden --exclude .git --exclude node_modules . `"$dir`"" @('--expect=ctrl-p,ctrl-y', "--query=$Query", '--height=80%',
+        "--header=$($TkStr.pv_header)", "--prompt=$($TkStr.pv_prompt) ❯ ", "--preview=$(Get-TsPreview) {}", '--preview-window=right:60%')
+    if ($out.Count -lt 2) { return }
+    $file = $out[1]
+    switch ($out[0]) {
+        'ctrl-p' { bat --color=always --style=numbers,header-filename --paging=never $file }
+        'ctrl-y' { Set-Clipboard $file; Write-Host "  $($TK.dim)$file$($TK.R)" }
+        default  { Open-TsFile $file }
+    }
+}
+
+function global:rgi {
+    param([string]$Text = '', [string]$Dir = '.')
+    Push-Location -LiteralPath $Dir
+    try {
+        $rg = 'rg --line-number --no-heading --color=always --smart-case --hidden --glob !.git --glob !node_modules -- {q} .'
+        $initial = if ($Text) { $rg.Replace('{q}', "`"$Text`"") } else { 'cd.' }
+        $out = Invoke-FzfCommand $initial @('--disabled', '--ansi', "--query=$Text", '--expect=ctrl-y', '--delimiter=:', '--height=80%',
+            "--header=$($TkStr.rgi_header)", '--prompt=rg ❯ ', "--bind=change:reload:$rg",
+            '--preview=bat --color=always --style=numbers --highlight-line {2} {1}', '--preview-window=right:55%,+{2}-10')
+        if ($out.Count -lt 2) { return }
+        $file, $line = ($out[1] -split ':', 3)[0, 1]
+        $full = (Resolve-Path -LiteralPath $file).Path
+        if ($out[0] -eq 'ctrl-y') { Set-Clipboard "${full}:$line"; Write-Host "  $($TK.dim)${full}:$line$($TK.R)"; return }
+        if (Get-Command code -ErrorAction SilentlyContinue) { code -g "${full}:$line" }
+        else { bat --color=always --style=numbers --highlight-line $line --paging=never $full }
+    } finally { Pop-Location }
+}
+
+function global:pk([string]$Name) {
+    $procs = Get-Process | Where-Object { -not $Name -or $_.ProcessName -like "*$Name*" } | Sort-Object WorkingSet64 -Descending
+    $lines = $procs | ForEach-Object { "{0,-28} {1,10} {2,7}  {3}`t{2}`t{0}" -f $_.ProcessName, (Format-TkSize $_.WorkingSet64), $_.Id, $_.MainWindowTitle }
+    $out = Invoke-Fzf $lines @('--multi', '--height=60%', "--header=$($TkStr.pk_header)", '--prompt=kill ❯ ', "--delimiter=`t", '--with-nth=1')
+    foreach ($line in $out) {
+        $fields = $line -split "`t"
+        try { Stop-Process -Id ([int]$fields[1]) -Force -ErrorAction Stop; Write-Host "  $($TK.ok)✓$($TK.R) $($TkStr.pk_done -f $fields[2])" }
+        catch { Write-Host "  $($TK.err)$($fields[2]): $($_.Exception.Message)$($TK.R)" }
+    }
+}
+
+function global:gbr {
+    if (-not (git rev-parse --is-inside-work-tree 2>$null)) { Write-Host "  $($TK.dim)$($TkStr.gbr_none)$($TK.R)"; return }
+    $branches = @(git branch --all --format='%(refname:short)' | Where-Object { $_ -and $_ -notmatch '/HEAD$' })
+    $pick = Invoke-Fzf $branches @('--height=60%', "--header=$($TkStr.gbr_header)", '--prompt=branch ❯ ', '--preview=git log --oneline --color=always -25 {}', '--preview-window=right:55%')
+    if ($pick) { git checkout ($pick -replace '^origin/', '') }
+}
+
+function global:o { param([string]$Path = '.') Invoke-Item -LiteralPath $Path }
 
 # ── small helpers, same names as on the server ───────────────────────────────
 function global:ex([string]$Archive) {
@@ -674,6 +770,7 @@ function global:psg([string]$Name) {
 
 function global:cb {
     $lines = @($input | ForEach-Object { "$_" -replace "`e\[[0-9;]*m", '' })
+    if (-not $lines) { Get-Clipboard; return }
     $lines | Set-Clipboard
     Write-Host ("  {0}{1}{2}" -f $TK.dim, ($TkStr.cb_done -f $lines.Count), $TK.R)
 }

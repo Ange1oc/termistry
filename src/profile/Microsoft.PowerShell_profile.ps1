@@ -47,9 +47,10 @@ function global:Complete-TerminalSetup {
     foreach ($file in $files) {
         try { . $file.FullName } catch { Write-Warning "$($file.Name): $_" }
     }
+    $null = Get-TsPreview
 }
 # Until then these names forward to the real functions on first use
-foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions') {
+foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions', 'Get-TsPreview') {
     Set-Item "Function:global:$n" -Value ([scriptblock]::Create("Complete-TerminalSetup; & '$n' @args"))
 }
 
@@ -176,6 +177,7 @@ if ($isInteractive -and ($TerminalSetup.LayoutFix -or $TerminalSetup.Abbreviatio
 
 $env:FZF_DEFAULT_COMMAND = 'fd --type f --hidden --exclude .git'
 $env:FZF_CTRL_R_OPTS = '--height=14'
+$env:FZF_CTRL_T_OPTS = "--height=70% --preview=`"$cacheDir\preview.cmd {}`" --preview-window=right:55%"
 if ($isInteractive -and (Get-Command fzf -ErrorAction SilentlyContinue)) {
     # PSFzf auto-loads on first use; importing it eagerly costs ~0.3 s at startup
     Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock { Invoke-FzfPsReadlineHandlerHistory }

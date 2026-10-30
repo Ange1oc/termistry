@@ -79,7 +79,9 @@ The profile starts in about half a second: only the core loads up front, while t
 | `вщслук зы` ⏎ | a command typed in the Russian layout is fixed and executed as `docker ps` |
 | start typing | up to 50 suggestions from history (PSReadLine's built-in limit is 10), `↑`/`↓` scroll, `→` accepts |
 | `Ctrl+R` · `Ctrl+T` | fzf: history search, insert a file path |
-| `Alt+C` · `nav` | folders as a tree: `→` enter, `←` up, Enter go, `Ctrl+F` fuzzy search through every folder below, `Ctrl+O` open in Explorer |
+| `Alt+C` · `nav` | folders as a tree with a preview pane: `→` enter, `←` up, Enter go, `Ctrl+E` show files too, `Ctrl+H` hidden, `Ctrl+F` fuzzy search through every folder below, `Ctrl+O` open in Explorer |
+| `pv` · `rgi TODO` | files with a preview pane (Enter opens, `Ctrl+P` prints here) · live grep: type and the list updates, Enter opens the file at that line |
+| `pk node` · `gbr` · `o file` | pick a process and kill it · git branches with their log, Enter switches · open with the default app |
 | `h` · `h docker` | last 50 commands, 10 per page, optionally filtered |
 | `Ctrl+Backspace` · `Ctrl+Z` · `Shift+Enter` | delete word, undo, new line without running |
 

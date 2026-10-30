@@ -241,9 +241,10 @@ function global:Complete-TerminalSetup {
     foreach ($file in $files) {
         try { . $file.FullName } catch { Write-Warning "$($file.Name): $_" }
     }
+    $null = Get-TsPreview
 }
 # Until then these names forward to the real functions on first use
-foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions') {
+foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions', 'Get-TsPreview') {
     Set-Item "Function:global:$n" -Value ([scriptblock]::Create("Complete-TerminalSetup; & '$n' @args"))
 }
 
@@ -370,6 +371,7 @@ if ($isInteractive -and ($TerminalSetup.LayoutFix -or $TerminalSetup.Abbreviatio
 
 $env:FZF_DEFAULT_COMMAND = 'fd --type f --hidden --exclude .git'
 $env:FZF_CTRL_R_OPTS = '--height=14'
+$env:FZF_CTRL_T_OPTS = "--height=70% --preview=`"$cacheDir\preview.cmd {}`" --preview-window=right:55%"
 if ($isInteractive -and (Get-Command fzf -ErrorAction SilentlyContinue)) {
     # PSFzf auto-loads on first use; importing it eagerly costs ~0.3 s at startup
     Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock { Invoke-FzfPsReadlineHandlerHistory }
@@ -562,7 +564,7 @@ $global:Strings = @{
             @{ Key = 'nav'; Title = 'Навигация'; Rows = @(
                 , ('z <часть имени>', 'перейти в папку, где часто бываешь', 'z coding')
                 , ('zi', 'то же, но выбрать из списка')
-                , ('Alt+C / nav', 'папки деревом: → войти, ← вверх, Enter - перейти, Ctrl+F - искать вглубь')
+                , ('Alt+C / nav', 'папки и файлы деревом с просмотром: → войти, ← вверх, Ctrl+E файлы, Ctrl+F искать вглубь')
                 , ('.. / ... / ....', 'на уровень / два / три вверх')
                 , ('mkcd <папка>', 'создать папку и сразу зайти в неё', 'mkcd new-app')
                 , ('ii .', 'открыть текущую папку в Проводнике')
@@ -574,6 +576,8 @@ $global:Strings = @{
                 , ('touch <файл>', 'создать пустой файл / обновить дату')
                 , ('which <команда>', 'где лежит программа', 'which python')
                 , ('tldr <команда>', 'короткая шпаргалка с примерами', 'tldr tar')
+                , ('pv [папка]', 'файлы с просмотром сбоку: Enter открыть, Ctrl+P показать здесь, Ctrl+Y путь', 'pv src')
+                , ('o [путь]', 'открыть файл или папку в программе по умолчанию', 'o report.pdf')
                 , ('ex <архив>', 'распаковать zip · tar.gz · 7z · xz в папку рядом', 'ex build.zip')
                 , ('bak <файл>', 'копия рядом: файл.bak-дата - перед правкой', 'bak .env')
                 , ('… | cb', 'вывод команды - в буфер обмена', 'll | cb')
@@ -581,7 +585,8 @@ $global:Strings = @{
             @{ Key = 'search'; Title = 'Поиск'; Rows = @(
                 , ('rg <текст>', 'найти текст во всех файлах папки', 'rg TODO -t py')
                 , ('fd <имя>', 'найти файл по имени', 'fd docker-compose')
-                , ('Ctrl+T', 'выбрать файл через fzf и вставить путь в строку')
+                , ('rgi <текст>', 'живой поиск по содержимому с просмотром, Enter открывает файл:строку', 'rgi TODO')
+                , ('Ctrl+T', 'выбрать файл с просмотром и вставить путь в строку')
             ) }
             @{ Key = 'keys'; Title = 'Клавиши'; Rows = @(
                 , ('F1', 'эта шпаргалка с поиском - Enter вставляет команду')
@@ -609,6 +614,7 @@ $global:Strings = @{
                 , ('gst', 'короткий статус')
                 , ('lg', 'красивый лог, 30 коммитов', 'lg -n 100')
                 , ('lazygit', 'git в полноэкранном интерфейсе: стейдж, коммиты, ветки')
+                , ('gbr', 'ветки с логом справа, Enter переключает')
                 , ('git diff', 'дифф с подсветкой (delta), n/N - к след./пред. файлу')
                 , ('gh pr create', 'пулл-реквест из терминала (gh - GitHub CLI)')
                 , ('my git', 'имя, почта, remotes текущего репо')
@@ -628,6 +634,7 @@ $global:Strings = @{
                 , ('my sys', 'процессор, память, диски, топ процессов')
                 , ('my ports [порт]', 'кто слушает порты', 'my ports 5432')
                 , ('psg <имя>', 'процессы по имени: PID, память, запуск', 'psg node')
+                , ('pk [имя]', 'выбрать процесс (Tab - несколько) и завершить', 'pk node')
                 , ('my ip', 'IP-адреса и шлюз · my ip public - внешний IP')
                 , ('my tools', 'версии всех установленных инструментов')
             ) }
@@ -644,7 +651,11 @@ $global:Strings = @{
                 , ('Update-Completions', 'обновить Tab-дополнения после обновления CLI')
             ) }
         )
-        nav_header = '→ войти  ← вверх  Enter - перейти  Ctrl+F - искать вглубь  Ctrl+O - Проводник  Esc'
+        nav_header = '→ войти  ← вверх  Enter - перейти/открыть  Ctrl+E - файлы  Ctrl+H - скрытые  Ctrl+F - искать вглубь  Ctrl+O - Проводник'
+        pv_header = 'Enter - открыть  Ctrl+P - показать здесь  Ctrl+Y - скопировать путь'; pv_prompt = 'файлы'
+        rgi_header = 'печатай - ищет по содержимому  Enter - открыть файл:строку  Ctrl+Y - скопировать'
+        pk_header = 'Tab - отметить несколько  Enter - завершить'; pk_done = 'завершён {0}'
+        gbr_header = 'Enter - переключиться на ветку'; gbr_none = 'не git-репозиторий'
         nav_deep = 'все папки внутри {0}'
         ex_nofile = 'нет файла: {0}'; ex_unknown = 'не знаю, чем распаковать: {0}'; ex_done = 'распаковано в {0}'
         cb_done = 'в буфере обмена: {0} строк'
@@ -761,7 +772,7 @@ $global:Strings = @{
             @{ Key = 'nav'; Title = 'Navigation'; Rows = @(
                 , ('z <part of name>', 'jump to a folder you use often', 'z coding')
                 , ('zi', 'same, but pick from a list')
-                , ('Alt+C / nav', 'folders as a tree: → enter, ← up, Enter - go, Ctrl+F - search deep')
+                , ('Alt+C / nav', 'folders and files as a tree with preview: → enter, ← up, Ctrl+E files, Ctrl+F search deep')
                 , ('.. / ... / ....', 'one / two / three levels up')
                 , ('mkcd <folder>', 'create a folder and enter it', 'mkcd new-app')
                 , ('ii .', 'open the current folder in Explorer')
@@ -773,6 +784,8 @@ $global:Strings = @{
                 , ('touch <file>', 'create an empty file / update its date')
                 , ('which <command>', 'where a program lives', 'which python')
                 , ('tldr <command>', 'short cheat sheet with examples', 'tldr tar')
+                , ('pv [folder]', 'files with a preview pane: Enter open, Ctrl+P print here, Ctrl+Y path', 'pv src')
+                , ('o [path]', 'open a file or folder with the default app', 'o report.pdf')
                 , ('ex <archive>', 'extract zip · tar.gz · 7z · xz into a folder next to it', 'ex build.zip')
                 , ('bak <file>', 'copy next to it: file.bak-date - before editing', 'bak .env')
                 , ('… | cb', 'command output → clipboard', 'll | cb')
@@ -780,7 +793,8 @@ $global:Strings = @{
             @{ Key = 'search'; Title = 'Search'; Rows = @(
                 , ('rg <text>', 'find text in all files of the folder', 'rg TODO -t py')
                 , ('fd <name>', 'find a file by name', 'fd docker-compose')
-                , ('Ctrl+T', 'pick a file with fzf and insert its path')
+                , ('rgi <text>', 'live grep with preview, Enter opens file:line', 'rgi TODO')
+                , ('Ctrl+T', 'pick a file with preview and insert its path')
             ) }
             @{ Key = 'keys'; Title = 'Keys'; Rows = @(
                 , ('F1', 'this cheat sheet with search - Enter inserts the command')
@@ -807,6 +821,7 @@ $global:Strings = @{
                 , ('gst', 'short status')
                 , ('lg', 'pretty log, 30 commits', 'lg -n 100')
                 , ('lazygit', 'full-screen git: stage, commit, branches')
+                , ('gbr', 'branches with their log on the right, Enter switches')
                 , ('git diff', 'diff with highlighting (delta), n/N - next/previous file')
                 , ('gh pr create', 'pull request from the terminal (gh - GitHub CLI)')
                 , ('my git', 'name, email, remotes of the current repo')
@@ -826,6 +841,7 @@ $global:Strings = @{
                 , ('my sys', 'cpu, memory, disks, top processes')
                 , ('my ports [port]', 'who listens on which port', 'my ports 5432')
                 , ('psg <name>', 'processes by name: PID, memory, command line', 'psg node')
+                , ('pk [name]', 'pick a process (Tab for several) and kill it', 'pk node')
                 , ('my ip', 'IP addresses and gateway · my ip public - external IP')
                 , ('my tools', 'versions of all installed tools')
             ) }
@@ -842,7 +858,11 @@ $global:Strings = @{
                 , ('Update-Completions', 'refresh Tab completions after updating a CLI')
             ) }
         )
-        nav_header = '→ enter  ← up  Enter - go  Ctrl+F - search deep  Ctrl+O - Explorer  Esc'
+        nav_header = '→ enter  ← up  Enter - go/open  Ctrl+E - files  Ctrl+H - hidden  Ctrl+F - search deep  Ctrl+O - Explorer'
+        pv_header = 'Enter - open  Ctrl+P - print here  Ctrl+Y - copy path'; pv_prompt = 'files'
+        rgi_header = 'type to search contents  Enter - open file:line  Ctrl+Y - copy'
+        pk_header = 'Tab - select several  Enter - kill'; pk_done = 'killed {0}'
+        gbr_header = 'Enter - switch to the branch'; gbr_none = 'not a git repository'
         nav_deep = 'all folders under {0}'
         ex_nofile = 'no such file: {0}'; ex_unknown = 'do not know how to extract: {0}'; ex_done = 'extracted to {0}'
         cb_done = 'in the clipboard: {0} lines'
@@ -1786,36 +1806,132 @@ function global:lang {
 
 function global:ep { code $global:ProfileDir }
 
-# ── nav: folder navigator on fzf (→ enter, ← up, Enter go, Ctrl+F deep search) ──
+# ── fzf helpers ──────────────────────────────────────────────────────────────
+# PowerShell piping into fzf throws "pipe is being closed" when fzf exits before the producer is done;
+# short lists go through Invoke-Fzf, long ones (fd, rg) are started by fzf itself via FZF_DEFAULT_COMMAND.
+function global:Invoke-Fzf([string[]]$Lines, [string[]]$Arguments) {
+    try { @($Lines | fzf @Arguments) } catch { if ("$_" -notmatch 'pipe|канал') { throw } }
+}
+
+function global:Invoke-FzfCommand([string]$Command, [string[]]$Arguments) {
+    $saved = $env:FZF_DEFAULT_COMMAND
+    $env:FZF_DEFAULT_COMMAND = $Command
+    try { @(fzf @Arguments) } finally { $env:FZF_DEFAULT_COMMAND = $saved }
+}
+
+# Preview script for fzf: folders through eza, files through bat. cmd runs it with UTF-8 so Cyrillic paths work.
+function global:Get-TsPreview {
+    $p = "$HOME\.cache\terminal-setup\preview.cmd"
+    if (-not (Test-Path $p)) {
+        New-Item -ItemType Directory -Force (Split-Path $p) | Out-Null
+        $lines = '@echo off', 'chcp 65001 >nul', 'if exist "%~1\" (', '  eza --icons=always --color=always --group-directories-first -1 "%~1"', ') else (', '  bat --color=always --style=numbers,header-filename --line-range :300 "%~1"', ')'
+        [IO.File]::WriteAllLines($p, $lines, [Text.ASCIIEncoding]::new())
+    }
+    $p
+}
+
+function global:Open-TsFile([string]$Path) {
+    if (Get-Command code -ErrorAction SilentlyContinue) { code $Path } else { Invoke-Item $Path }
+}
+
+# ── nav: folders (and files with Ctrl+E) as a tree on fzf ────────────────────
 function global:nav {
     param([string]$Start = (Get-Location).Path)
     if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) { return }
     $dir = (Resolve-Path -LiteralPath $Start).Path
-    $preview = if (Get-Command eza -ErrorAction SilentlyContinue) { 'eza --icons=always --color=always --group-directories-first -1 {2}' } else { 'dir /b {2}' }
+    $preview = "$(Get-TsPreview) {2}"
+    $files = $false; $hidden = $false
     while ($true) {
         $parent = Split-Path $dir -Parent
         $entries = @()
-        if ($parent) { $entries += "..`t$parent" }
-        $entries += Get-ChildItem -LiteralPath $dir -Directory -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name)`t$($_.FullName)" }
-        $out = @($entries | fzf --expect=right,left,ctrl-f,ctrl-o --delimiter="`t" --with-nth=1 --cycle --height=60% `
-            --header=$TkStr.nav_header --prompt="$($dir.Replace($HOME, '~')) ❯ " --preview=$preview --preview-window='right:45%')
+        if ($parent) { $entries += "..`t$parent`td" }
+        $items = @(Get-ChildItem -LiteralPath $dir -Force:$hidden -ErrorAction SilentlyContinue | Where-Object { $files -or $_.PSIsContainer })
+        $entries += $items | Sort-Object { -not $_.PSIsContainer }, Name | ForEach-Object {
+            if ($_.PSIsContainer) { "$($_.Name)`t$($_.FullName)`td" } else { "  $($_.Name)`t$($_.FullName)`tf" }
+        }
+        $mode = @($(if ($files) { 'files' }), $(if ($hidden) { 'hidden' })) -ne $null -join ' '
+        $out = Invoke-Fzf $entries @('--expect=right,left,ctrl-f,ctrl-o,ctrl-e,ctrl-h', "--delimiter=`t", '--with-nth=1', '--cycle', '--height=70%',
+            "--header=$($TkStr.nav_header)", "--prompt=$($dir.Replace($HOME, '~')) $(if ($mode) { "[$mode] " })❯ ", "--preview=$preview", '--preview-window=right:50%')
         if (-not $out) { return }
         $key = $out[0]
-        $sel = if ($out.Count -gt 1) { ($out[1] -split "`t")[1] } else { $null }
+        $fields = if ($out.Count -gt 1) { $out[1] -split "`t" } else { $null }
+        $sel = if ($fields) { $fields[1] } else { $null }
+        $isDir = $fields -and $fields[2] -eq 'd'
         switch ($key) {
             'left'   { if ($parent) { $dir = $parent } }
-            'right'  { if ($sel -and (Test-Path -LiteralPath $sel)) { $dir = $sel } }
+            'right'  { if ($sel -and $isDir) { $dir = $sel } }
+            'ctrl-e' { $files = -not $files }
+            'ctrl-h' { $hidden = -not $hidden }
             'ctrl-o' { Invoke-Item $dir }
             'ctrl-f' {
-                $pick = fd --type d --hidden --exclude .git --exclude node_modules . $dir |
-                    fzf --height=60% --prompt="$($TkStr.nav_deep -f $dir.Replace($HOME, '~')) ❯ " --preview=$preview.Replace('{2}', '{}')
-                if ($pick) { Set-Location -LiteralPath $pick }
+                $cmd = "fd --hidden --exclude .git --exclude node_modules --type d$(if ($files) { ' --type f' }) . `"$dir`""
+                $pick = Invoke-FzfCommand $cmd @('--height=70%', "--prompt=$($TkStr.nav_deep -f $dir.Replace($HOME, '~')) ❯ ", "--preview=$(Get-TsPreview) {}", '--preview-window=right:50%')
+                if ($pick) {
+                    if (Test-Path -LiteralPath $pick -PathType Container) { Set-Location -LiteralPath $pick } else { Open-TsFile $pick }
+                }
                 return
             }
-            default  { Set-Location -LiteralPath $(if ($sel) { $sel } else { $dir }); return }
+            default {
+                if (-not $sel) { Set-Location -LiteralPath $dir; return }
+                if ($isDir) { Set-Location -LiteralPath $sel } else { Open-TsFile $sel }
+                return
+            }
         }
     }
 }
+
+# ── pv: files with a preview pane; rgi: live grep; pk: kill picker; gbr: branch picker ──
+function global:pv {
+    param([string]$Dir = '.', [string]$Query = '')
+    $dir = (Resolve-Path -LiteralPath $Dir).Path
+    $out = Invoke-FzfCommand "fd --type f --hidden --exclude .git --exclude node_modules . `"$dir`"" @('--expect=ctrl-p,ctrl-y', "--query=$Query", '--height=80%',
+        "--header=$($TkStr.pv_header)", "--prompt=$($TkStr.pv_prompt) ❯ ", "--preview=$(Get-TsPreview) {}", '--preview-window=right:60%')
+    if ($out.Count -lt 2) { return }
+    $file = $out[1]
+    switch ($out[0]) {
+        'ctrl-p' { bat --color=always --style=numbers,header-filename --paging=never $file }
+        'ctrl-y' { Set-Clipboard $file; Write-Host "  $($TK.dim)$file$($TK.R)" }
+        default  { Open-TsFile $file }
+    }
+}
+
+function global:rgi {
+    param([string]$Text = '', [string]$Dir = '.')
+    Push-Location -LiteralPath $Dir
+    try {
+        $rg = 'rg --line-number --no-heading --color=always --smart-case --hidden --glob !.git --glob !node_modules -- {q} .'
+        $initial = if ($Text) { $rg.Replace('{q}', "`"$Text`"") } else { 'cd.' }
+        $out = Invoke-FzfCommand $initial @('--disabled', '--ansi', "--query=$Text", '--expect=ctrl-y', '--delimiter=:', '--height=80%',
+            "--header=$($TkStr.rgi_header)", '--prompt=rg ❯ ', "--bind=change:reload:$rg",
+            '--preview=bat --color=always --style=numbers --highlight-line {2} {1}', '--preview-window=right:55%,+{2}-10')
+        if ($out.Count -lt 2) { return }
+        $file, $line = ($out[1] -split ':', 3)[0, 1]
+        $full = (Resolve-Path -LiteralPath $file).Path
+        if ($out[0] -eq 'ctrl-y') { Set-Clipboard "${full}:$line"; Write-Host "  $($TK.dim)${full}:$line$($TK.R)"; return }
+        if (Get-Command code -ErrorAction SilentlyContinue) { code -g "${full}:$line" }
+        else { bat --color=always --style=numbers --highlight-line $line --paging=never $full }
+    } finally { Pop-Location }
+}
+
+function global:pk([string]$Name) {
+    $procs = Get-Process | Where-Object { -not $Name -or $_.ProcessName -like "*$Name*" } | Sort-Object WorkingSet64 -Descending
+    $lines = $procs | ForEach-Object { "{0,-28} {1,10} {2,7}  {3}`t{2}`t{0}" -f $_.ProcessName, (Format-TkSize $_.WorkingSet64), $_.Id, $_.MainWindowTitle }
+    $out = Invoke-Fzf $lines @('--multi', '--height=60%', "--header=$($TkStr.pk_header)", '--prompt=kill ❯ ', "--delimiter=`t", '--with-nth=1')
+    foreach ($line in $out) {
+        $fields = $line -split "`t"
+        try { Stop-Process -Id ([int]$fields[1]) -Force -ErrorAction Stop; Write-Host "  $($TK.ok)✓$($TK.R) $($TkStr.pk_done -f $fields[2])" }
+        catch { Write-Host "  $($TK.err)$($fields[2]): $($_.Exception.Message)$($TK.R)" }
+    }
+}
+
+function global:gbr {
+    if (-not (git rev-parse --is-inside-work-tree 2>$null)) { Write-Host "  $($TK.dim)$($TkStr.gbr_none)$($TK.R)"; return }
+    $branches = @(git branch --all --format='%(refname:short)' | Where-Object { $_ -and $_ -notmatch '/HEAD$' })
+    $pick = Invoke-Fzf $branches @('--height=60%', "--header=$($TkStr.gbr_header)", '--prompt=branch ❯ ', '--preview=git log --oneline --color=always -25 {}', '--preview-window=right:55%')
+    if ($pick) { git checkout ($pick -replace '^origin/', '') }
+}
+
+function global:o { param([string]$Path = '.') Invoke-Item -LiteralPath $Path }
 
 # ── small helpers, same names as on the server ───────────────────────────────
 function global:ex([string]$Archive) {
@@ -1846,6 +1962,7 @@ function global:psg([string]$Name) {
 
 function global:cb {
     $lines = @($input | ForEach-Object { "$_" -replace "`e\[[0-9;]*m", '' })
+    if (-not $lines) { Get-Clipboard; return }
     $lines | Set-Clipboard
     Write-Host ("  {0}{1}{2}" -f $TK.dim, ($TkStr.cb_done -f $lines.Count), $TK.R)
 }

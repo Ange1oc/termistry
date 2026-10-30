@@ -21,7 +21,7 @@ $global:Strings = @{
             @{ Key = 'nav'; Title = 'Навигация'; Rows = @(
                 , ('z <часть имени>', 'перейти в папку, где часто бываешь', 'z coding')
                 , ('zi', 'то же, но выбрать из списка')
-                , ('Alt+C / nav', 'папки деревом: → войти, ← вверх, Enter - перейти, Ctrl+F - искать вглубь')
+                , ('Alt+C / nav', 'папки и файлы деревом с просмотром: → войти, ← вверх, Ctrl+E файлы, Ctrl+F искать вглубь')
                 , ('.. / ... / ....', 'на уровень / два / три вверх')
                 , ('mkcd <папка>', 'создать папку и сразу зайти в неё', 'mkcd new-app')
                 , ('ii .', 'открыть текущую папку в Проводнике')
@@ -33,6 +33,8 @@ $global:Strings = @{
                 , ('touch <файл>', 'создать пустой файл / обновить дату')
                 , ('which <команда>', 'где лежит программа', 'which python')
                 , ('tldr <команда>', 'короткая шпаргалка с примерами', 'tldr tar')
+                , ('pv [папка]', 'файлы с просмотром сбоку: Enter открыть, Ctrl+P показать здесь, Ctrl+Y путь', 'pv src')
+                , ('o [путь]', 'открыть файл или папку в программе по умолчанию', 'o report.pdf')
                 , ('ex <архив>', 'распаковать zip · tar.gz · 7z · xz в папку рядом', 'ex build.zip')
                 , ('bak <файл>', 'копия рядом: файл.bak-дата - перед правкой', 'bak .env')
                 , ('… | cb', 'вывод команды - в буфер обмена', 'll | cb')
@@ -40,7 +42,8 @@ $global:Strings = @{
             @{ Key = 'search'; Title = 'Поиск'; Rows = @(
                 , ('rg <текст>', 'найти текст во всех файлах папки', 'rg TODO -t py')
                 , ('fd <имя>', 'найти файл по имени', 'fd docker-compose')
-                , ('Ctrl+T', 'выбрать файл через fzf и вставить путь в строку')
+                , ('rgi <текст>', 'живой поиск по содержимому с просмотром, Enter открывает файл:строку', 'rgi TODO')
+                , ('Ctrl+T', 'выбрать файл с просмотром и вставить путь в строку')
             ) }
             @{ Key = 'keys'; Title = 'Клавиши'; Rows = @(
                 , ('F1', 'эта шпаргалка с поиском - Enter вставляет команду')
@@ -68,6 +71,7 @@ $global:Strings = @{
                 , ('gst', 'короткий статус')
                 , ('lg', 'красивый лог, 30 коммитов', 'lg -n 100')
                 , ('lazygit', 'git в полноэкранном интерфейсе: стейдж, коммиты, ветки')
+                , ('gbr', 'ветки с логом справа, Enter переключает')
                 , ('git diff', 'дифф с подсветкой (delta), n/N - к след./пред. файлу')
                 , ('gh pr create', 'пулл-реквест из терминала (gh - GitHub CLI)')
                 , ('my git', 'имя, почта, remotes текущего репо')
@@ -87,6 +91,7 @@ $global:Strings = @{
                 , ('my sys', 'процессор, память, диски, топ процессов')
                 , ('my ports [порт]', 'кто слушает порты', 'my ports 5432')
                 , ('psg <имя>', 'процессы по имени: PID, память, запуск', 'psg node')
+                , ('pk [имя]', 'выбрать процесс (Tab - несколько) и завершить', 'pk node')
                 , ('my ip', 'IP-адреса и шлюз · my ip public - внешний IP')
                 , ('my tools', 'версии всех установленных инструментов')
             ) }
@@ -103,7 +108,11 @@ $global:Strings = @{
                 , ('Update-Completions', 'обновить Tab-дополнения после обновления CLI')
             ) }
         )
-        nav_header = '→ войти  ← вверх  Enter - перейти  Ctrl+F - искать вглубь  Ctrl+O - Проводник  Esc'
+        nav_header = '→ войти  ← вверх  Enter - перейти/открыть  Ctrl+E - файлы  Ctrl+H - скрытые  Ctrl+F - искать вглубь  Ctrl+O - Проводник'
+        pv_header = 'Enter - открыть  Ctrl+P - показать здесь  Ctrl+Y - скопировать путь'; pv_prompt = 'файлы'
+        rgi_header = 'печатай - ищет по содержимому  Enter - открыть файл:строку  Ctrl+Y - скопировать'
+        pk_header = 'Tab - отметить несколько  Enter - завершить'; pk_done = 'завершён {0}'
+        gbr_header = 'Enter - переключиться на ветку'; gbr_none = 'не git-репозиторий'
         nav_deep = 'все папки внутри {0}'
         ex_nofile = 'нет файла: {0}'; ex_unknown = 'не знаю, чем распаковать: {0}'; ex_done = 'распаковано в {0}'
         cb_done = 'в буфере обмена: {0} строк'
@@ -220,7 +229,7 @@ $global:Strings = @{
             @{ Key = 'nav'; Title = 'Navigation'; Rows = @(
                 , ('z <part of name>', 'jump to a folder you use often', 'z coding')
                 , ('zi', 'same, but pick from a list')
-                , ('Alt+C / nav', 'folders as a tree: → enter, ← up, Enter - go, Ctrl+F - search deep')
+                , ('Alt+C / nav', 'folders and files as a tree with preview: → enter, ← up, Ctrl+E files, Ctrl+F search deep')
                 , ('.. / ... / ....', 'one / two / three levels up')
                 , ('mkcd <folder>', 'create a folder and enter it', 'mkcd new-app')
                 , ('ii .', 'open the current folder in Explorer')
@@ -232,6 +241,8 @@ $global:Strings = @{
                 , ('touch <file>', 'create an empty file / update its date')
                 , ('which <command>', 'where a program lives', 'which python')
                 , ('tldr <command>', 'short cheat sheet with examples', 'tldr tar')
+                , ('pv [folder]', 'files with a preview pane: Enter open, Ctrl+P print here, Ctrl+Y path', 'pv src')
+                , ('o [path]', 'open a file or folder with the default app', 'o report.pdf')
                 , ('ex <archive>', 'extract zip · tar.gz · 7z · xz into a folder next to it', 'ex build.zip')
                 , ('bak <file>', 'copy next to it: file.bak-date - before editing', 'bak .env')
                 , ('… | cb', 'command output → clipboard', 'll | cb')
@@ -239,7 +250,8 @@ $global:Strings = @{
             @{ Key = 'search'; Title = 'Search'; Rows = @(
                 , ('rg <text>', 'find text in all files of the folder', 'rg TODO -t py')
                 , ('fd <name>', 'find a file by name', 'fd docker-compose')
-                , ('Ctrl+T', 'pick a file with fzf and insert its path')
+                , ('rgi <text>', 'live grep with preview, Enter opens file:line', 'rgi TODO')
+                , ('Ctrl+T', 'pick a file with preview and insert its path')
             ) }
             @{ Key = 'keys'; Title = 'Keys'; Rows = @(
                 , ('F1', 'this cheat sheet with search - Enter inserts the command')
@@ -266,6 +278,7 @@ $global:Strings = @{
                 , ('gst', 'short status')
                 , ('lg', 'pretty log, 30 commits', 'lg -n 100')
                 , ('lazygit', 'full-screen git: stage, commit, branches')
+                , ('gbr', 'branches with their log on the right, Enter switches')
                 , ('git diff', 'diff with highlighting (delta), n/N - next/previous file')
                 , ('gh pr create', 'pull request from the terminal (gh - GitHub CLI)')
                 , ('my git', 'name, email, remotes of the current repo')
@@ -285,6 +298,7 @@ $global:Strings = @{
                 , ('my sys', 'cpu, memory, disks, top processes')
                 , ('my ports [port]', 'who listens on which port', 'my ports 5432')
                 , ('psg <name>', 'processes by name: PID, memory, command line', 'psg node')
+                , ('pk [name]', 'pick a process (Tab for several) and kill it', 'pk node')
                 , ('my ip', 'IP addresses and gateway · my ip public - external IP')
                 , ('my tools', 'versions of all installed tools')
             ) }
@@ -301,7 +315,11 @@ $global:Strings = @{
                 , ('Update-Completions', 'refresh Tab completions after updating a CLI')
             ) }
         )
-        nav_header = '→ enter  ← up  Enter - go  Ctrl+F - search deep  Ctrl+O - Explorer  Esc'
+        nav_header = '→ enter  ← up  Enter - go/open  Ctrl+E - files  Ctrl+H - hidden  Ctrl+F - search deep  Ctrl+O - Explorer'
+        pv_header = 'Enter - open  Ctrl+P - print here  Ctrl+Y - copy path'; pv_prompt = 'files'
+        rgi_header = 'type to search contents  Enter - open file:line  Ctrl+Y - copy'
+        pk_header = 'Tab - select several  Enter - kill'; pk_done = 'killed {0}'
+        gbr_header = 'Enter - switch to the branch'; gbr_none = 'not a git repository'
         nav_deep = 'all folders under {0}'
         ex_nofile = 'no such file: {0}'; ex_unknown = 'do not know how to extract: {0}'; ex_done = 'extracted to {0}'
         cb_done = 'in the clipboard: {0} lines'
