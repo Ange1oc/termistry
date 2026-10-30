@@ -3,6 +3,15 @@
 function _tkRgb([int]$hex) { $PSStyle.Foreground.FromRgb($hex) }
 function _tkBg([int]$hex) { $PSStyle.Background.FromRgb($hex) }
 
+# Get-Command without module auto-discovery, which costs 0.3-2 s for every name that does not exist.
+# The preference is only honored at global scope, so it is flipped for the duration of the call.
+function Find-TkCommand([string]$Name, [switch]$All, [string]$Type = '') {
+    $saved = $global:PSModuleAutoLoadingPreference
+    $global:PSModuleAutoLoadingPreference = 'None'
+    try {
+        if ($Type) { Get-Command $Name -CommandType $Type -ErrorAction Ignore } else { Get-Command $Name -All:$All -ErrorAction Ignore }
+    } finally { $global:PSModuleAutoLoadingPreference = $saved }
+}
 function Set-TerminalPalette {
     $p = $global:Palette
     $fg = @{}
@@ -136,7 +145,7 @@ function abbr {
 function Expand-Abbreviation([string]$Line, [int]$Cursor) {
     if (-not $global:Abbreviations.Count -or $Cursor -le 0) { return }
     $before = $Line.Substring(0, $Cursor)
-    if ($before -notmatch '(?:^|[|;&({])\s*(\S+)$') { return }
+    if ($before -notmatch '(?:^|[|;&({])\s*([^\s|;&({]+)$') { return }
     $word = $Matches[1]
     if (-not $global:Abbreviations.ContainsKey($word)) { return }
     $text = $global:Abbreviations[$word]
@@ -167,10 +176,10 @@ function Convert-Layout([string]$Text) {
 function Repair-CommandLayout([string]$Line) {
     if ($Line -notmatch '^\s*[А-Яа-яЁё]') { return }
     $first = ($Line.Trim() -split '\s+', 2)[0]
-    if (Get-Command $first -ErrorAction Ignore) { return }
+    if (Find-TkCommand $first) { return }
     $fixed = Convert-Layout $first
     if ($fixed -eq $first) { return }
-    if (-not (Get-Command $fixed -ErrorAction Ignore) -and -not $global:Abbreviations.ContainsKey($fixed)) { return }
+    if (-not (Find-TkCommand $fixed) -and -not $global:Abbreviations.ContainsKey($fixed)) { return }
     Convert-Layout $Line
 }
 
@@ -189,13 +198,33 @@ $global:ScriptRunners = [ordered]@{
     '.php' = @('php')
 }
 
+$global:TkRunners = @{}
 function Get-ScriptRunner([string]$Extension) {
-    foreach ($candidate in $global:ScriptRunners[$Extension]) {
-        if (Get-Command ($candidate -split ' ')[0] -ErrorAction Ignore) { return $candidate }
+    if (-not $global:TkRunners.ContainsKey($Extension)) {
+        $global:TkRunners[$Extension] = foreach ($candidate in $global:ScriptRunners[$Extension]) {
+            if (Find-TkCommand ($candidate -split ' ')[0]) { $candidate; break }
+        }
     }
+    $global:TkRunners[$Extension]
 }
 
-function Register-BinCommands([string]$Dir) {
+# Body of every bin command. The runner and the check for a real program of the same name happen on first use,
+# so registering a script costs nothing at startup; a program always wins over the script.
+$global:TkShadowed = @{}
+function Invoke-TkScript([string]$Path) {
+    $name = [IO.Path]::GetFileNameWithoutExtension($Path)
+    if (-not $global:TkShadowed.ContainsKey($name)) { $global:TkShadowed[$name] = (Find-TkCommand $name -Type Application | Select-Object -First 1).Source }
+    $exe = $global:TkShadowed[$name]
+    $extra = @()
+    if (-not $exe) {
+        $ext = [IO.Path]::GetExtension($Path).ToLower()
+        $runner = Get-ScriptRunner $ext
+        if (-not $runner) { Complete-TerminalSetup; Write-Host ('  ' + ($TkStr.bin_norunner -f (Split-Path $Path -Leaf), ($global:ScriptRunners[$ext] -join ' / '))); return }
+        $parts = $runner -split ' '
+        $exe = $parts[0]; $extra = @($parts | Select-Object -Skip 1) + $Path
+    }
+    if ($MyInvocation.ExpectingInput) { $input | & $exe @extra @args } else { & $exe @extra @args }
+}function Register-BinCommands([string]$Dir) {
     $global:UserCommands = @()
     if (-not (Test-Path $Dir)) { return }
     # last on PATH: a file in bin never hides a real program of the same name
@@ -204,20 +233,11 @@ function Register-BinCommands([string]$Dir) {
         $name = $f.BaseName
         $ext = $f.Extension.ToLower()
         if (-not $global:ScriptRunners.Contains($ext) -or $name -notmatch '^[A-Za-z_][\w-]*$') { continue }
-        # never shadow a real command; bin itself is on PATH, so ignore matches from there
-        $taken = Get-Command $name -All -ErrorAction Ignore |
-            Where-Object { $_.Source -notlike "$Dir\*" -and $_.ScriptBlock -notlike '*UserCommand*' } | Select-Object -First 1
-        if ($taken) { continue }
+        # never replace a function, cmdlet or alias; programs are checked on first use (see Invoke-TkScript)
+        if (Find-TkCommand $name -Type 'Function,Cmdlet,Alias' | Where-Object { $_.ScriptBlock -notlike '*UserCommand*' }) { continue }
         $help = (Get-Content $f.FullName -First 15 | Select-String -Pattern '^\s*(#|//|;;|--)\s*help:\s*(.+)$' | Select-Object -First 1)
         $help = if ($help) { $help.Matches[0].Groups[2].Value.Trim() } else { '' }
-        $runner = Get-ScriptRunner $ext
-        $body = if ($runner) {
-            $parts = ($runner -split ' ') | ForEach-Object { "'$_'" }
-            "# UserCommand`n& $($parts -join ' ') '$($f.FullName)' @args"
-        } else {
-            "# UserCommand`nComplete-TerminalSetup; Write-Host ('  ' + (`$TkStr.bin_norunner -f '$($f.Name)', '$($global:ScriptRunners[$ext] -join ' / ')'))"
-        }
-        Set-Item "Function:global:$name" -Value ([scriptblock]::Create($body))
-        $global:UserCommands += [pscustomobject]@{ Name = $name; File = $f.Name; Help = $help; Runner = $(if ($runner) { $runner } else { '- ' + ($global:ScriptRunners[$ext] -join '/') }); Path = $f.FullName }
+        Set-Item "Function:global:$name" -Value ([scriptblock]::Create("# UserCommand`nInvoke-TkScript '$($f.FullName)' @args"))
+        $global:UserCommands += [pscustomobject]@{ Name = $name; File = $f.Name; Help = $help; Extension = $ext; Path = $f.FullName }
     }
 }

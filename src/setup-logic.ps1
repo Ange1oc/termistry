@@ -177,9 +177,11 @@ if (Test-Admin) { Info $L.admin_note }
 if (-not $ProfileDir) { $ProfileDir = Split-Path $PROFILE }
 $ProfileFile = Join-Path $ProfileDir 'Microsoft.PowerShell_profile.ps1'
 
+#@@EMBEDDED_FILES@@
+
 if ($Uninstall) {
     Step $L.s_uninstall
-    $managed = @('Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh' | ForEach-Object { Join-Path $ProfileDir $_ })
+    $managed = @($EmbeddedFiles.Keys | Where-Object { $_ -ne 'custom.ps1' } | ForEach-Object { Join-Path $ProfileDir $_ })
     $managed += (Join-Path $HOME '.config\ohmyposh\soft.omp.json'), (Join-Path $HOME '.config\terminal-setup'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
     foreach ($p in $managed) {
         if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) - $($L.removed)" }
@@ -194,8 +196,6 @@ $LangFile = Join-Path $ConfigDir 'lang'
 $FontFace = 'JetBrainsMono NF'
 $FontStyles = [ordered]@{ Regular = 'Regular'; Bold = 'Bold'; Italic = 'Italic'; BoldItalic = 'Bold Italic' }
 $FontBaseUrl = 'https://github.com/ryanoasis/nerd-fonts/raw/v3.4.0/patched-fonts/JetBrainsMono/Ligatures'
-
-#@@EMBEDDED_FILES@@
 
 if (-not $SkipApps) {
     Step $L.s_apps
@@ -288,30 +288,20 @@ function Write-ManagedFile([string]$Path, [string]$Content) {
 }
 
 Step $L.s_profile
-. ([scriptblock]::Create($EmbeddedFiles['palette']))
+. ([scriptblock]::Create($EmbeddedFiles['palette.ps1']))
 if ($Theme -and -not $Themes.Contains($Theme.ToLower())) { throw "-Theme: $($Themes.Keys -join ', ')" }
 if ($Theme) { New-Item -ItemType Directory -Force $ConfigDir | Out-Null; [IO.File]::WriteAllText($ThemeFile, "$($Theme.ToLower())`n") }
 $ThemeName = Get-ThemeName
 $ThemeTitle = $Themes[$ThemeName].title
 
-$targets = [ordered]@{
-    'profile'      = $ProfileFile
-    'palette'      = Join-Path $ProfileDir 'palette.ps1'
-    'lang'         = Join-Path $ProfileDir 'lang.ps1'
-    'toolkit'      = Join-Path $ProfileDir 'toolkit.ps1'
-    'toolkit-lazy' = Join-Path $ProfileDir 'toolkit-lazy.ps1'
-    'prompt'       = Join-Path $ProfileDir 'prompt.ps1'
-    'predictor'    = Join-Path $ProfileDir 'DeepHistoryPredictor.cs'
-    'srv-bashrc'   = Join-Path $ProfileDir 'server\bashrc.local'
-    'srv-inputrc'  = Join-Path $ProfileDir 'server\inputrc'
-    'srv-install'  = Join-Path $ProfileDir 'server\install.sh'
+foreach ($rel in $EmbeddedFiles.Keys) {
+    if ($rel -ne 'custom.ps1') { Write-ManagedFile (Join-Path $ProfileDir $rel) $EmbeddedFiles[$rel] }
 }
-foreach ($key in $targets.Keys) { Write-ManagedFile $targets[$key] $EmbeddedFiles[$key] }
 Remove-Item "$HOME\.cache\terminal-setup\omp-init.txt", "$HOME\.config\ohmyposh\soft.omp.json" -ErrorAction SilentlyContinue
 
 $customFile = Join-Path $ProfileDir 'custom.ps1'
 if (Test-Path $customFile) { Ok "$(Short $customFile) - $($L.custom_yours)" }
-else { [IO.File]::WriteAllText($customFile, ($EmbeddedFiles['custom'] -replace "`r`n", "`n"), $Utf8NoBom); Ok "$(Short $customFile) - $($L.custom_created)" }
+else { [IO.File]::WriteAllText($customFile, ($EmbeddedFiles['custom.ps1'] -replace "`r`n", "`n"), $Utf8NoBom); Ok "$(Short $customFile) - $($L.custom_created)" }
 foreach ($d in 'bin', 'server\custom') {
     $p = Join-Path $ProfileDir $d
     if (-not (Test-Path $p)) { New-Item -ItemType Directory -Force $p | Out-Null; Ok "$(Short $p)\ - $($L.dir_created)" }
@@ -321,8 +311,6 @@ New-Item -ItemType Directory -Force $ConfigDir | Out-Null
 [IO.File]::WriteAllText($LangFile, "$Lang`n")
 Ok ($L.lang_set -f $Lang)
 Ok ($L.theme_set -f $ThemeName)
-
-function Set-Key($Table, [string]$Key, $Value) { $Table[$Key] = $Value }
 
 function Get-StableGuid([string]$Text) {
     $md5 = [Security.Cryptography.MD5]::Create()
@@ -343,18 +331,18 @@ function Update-TerminalSettings([string]$Path) {
     foreach ($p in $s.profiles.list) { $list.Add($p) }
 
     $d = $s.profiles.defaults
-    Set-Key $d 'colorScheme' $ThemeTitle
+    $d['colorScheme'] = $ThemeTitle
     if (-not $d.Contains('font') -or -not ($d.font -is [Collections.IDictionary])) { $d['font'] = [ordered]@{} }
-    Set-Key $d.font 'face' $FontFace
-    Set-Key $d.font 'size' 11
-    Set-Key $d.font 'cellHeight' '1.2'
-    Set-Key $d 'padding' '14, 10'
-    Set-Key $d 'cursorShape' 'bar'
-    Set-Key $d 'antialiasingMode' 'cleartype'
-    Set-Key $d 'intenseTextStyle' 'bright'
-    Set-Key $d 'scrollbarState' 'hidden'
-    Set-Key $d 'historySize' 20000
-    Set-Key $d 'bellStyle' 'none'
+    $d.font['face'] = $FontFace
+    $d.font['size'] = 11
+    $d.font['cellHeight'] = '1.2'
+    $d['padding'] = '14, 10'
+    $d['cursorShape'] = 'bar'
+    $d['antialiasingMode'] = 'cleartype'
+    $d['intenseTextStyle'] = 'bright'
+    $d['scrollbarState'] = 'hidden'
+    $d['historySize'] = 20000
+    $d['bellStyle'] = 'none'
 
     $pwshGuid = '{574e775e-4f2a-5b96-ac1e-a2962a402336}'
     $pw = $list | Where-Object { $_.guid -eq $pwshGuid } | Select-Object -First 1
@@ -362,28 +350,28 @@ function Update-TerminalSettings([string]$Path) {
         $pw = [ordered]@{ guid = $pwshGuid; name = 'PowerShell 7'; source = 'Windows.Terminal.PowershellCore'; hidden = $false }
         $list.Insert(0, $pw)
     }
-    Set-Key $pw 'name' 'PowerShell 7'
-    Set-Key $pw 'hidden' $false
-    if ($StartingDirectory) { Set-Key $pw 'startingDirectory' $StartingDirectory }
-    Set-Key $s 'defaultProfile' $pwshGuid
+    $pw['name'] = 'PowerShell 7'
+    $pw['hidden'] = $false
+    if ($StartingDirectory) { $pw['startingDirectory'] = $StartingDirectory }
+    $s['defaultProfile'] = $pwshGuid
 
-    foreach ($p in $list) { if ($p.source -eq 'Windows.Terminal.Azure') { Set-Key $p 'hidden' $true } }
+    foreach ($p in $list) { if ($p.source -eq 'Windows.Terminal.Azure') { $p['hidden'] = $true } }
 
     foreach ($h in $SshTabs) {
         $tab = $list | Where-Object { $_.commandline -eq "ssh $h" } | Select-Object -First 1
         if (-not $tab) { $tab = [ordered]@{ guid = (Get-StableGuid "ssh:$h") }; $list.Add($tab) }
-        Set-Key $tab 'name' "$h (ssh)"
-        Set-Key $tab 'commandline' "ssh $h"
-        Set-Key $tab 'icon' ([string][char]0xF233)
-        Set-Key $tab 'tabColor' '#FAB387'
-        Set-Key $tab 'hidden' $false
+        $tab['name'] = "$h (ssh)"
+        $tab['commandline'] = "ssh $h"
+        $tab['icon'] = ([string][char]0xF233)
+        $tab['tabColor'] = '#FAB387'
+        $tab['hidden'] = $false
     }
     $s.profiles['list'] = $list.ToArray()
 
     $ours = @($Themes.Values.title)
     $s['schemes'] = @(@($s.schemes | Where-Object { $_ -and $_.name -notin $ours -and $_.name -notlike 'Catppuccin *' }) + @($Themes.Keys | ForEach-Object { Get-TerminalScheme $_ }))
     $s['themes'] = @(@($s.themes | Where-Object { $_ -and $_.name -notin $ours -and $_.name -notlike 'Catppuccin *' }) + @($Themes.Keys | ForEach-Object { Get-TerminalTheme $_ }))
-    Set-Key $s 'theme' $ThemeTitle
+    $s['theme'] = $ThemeTitle
 
     if (-not $s.Contains('actions')) { $s['actions'] = @() }
     if (-not $s.Contains('keybindings')) { $s['keybindings'] = @() }

@@ -47,6 +47,7 @@ irm https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1 | 
 | `-SshTabs host1,host2` | вкладки в меню Windows Terminal для хостов из `~/.ssh/config` |
 | `-SkipApps` | только конфиги, без программ и шрифта |
 | `-Uninstall` | снять всё своё, оставить `custom.ps1`, `bin\`, программы и `*.bak` |
+| `-ProfileDir D:\pwsh` | положить файлы профиля не в папку `$PROFILE`, а в другую (так работают тесты) |
 
 Без интернета: скачайте [`setup-terminal.ps1`](setup-terminal.ps1) и запустите `powershell -ExecutionPolicy Bypass -File .\setup-terminal.ps1`. Это один файл, в него встроено всё.
 
@@ -61,7 +62,7 @@ irm https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1 | 
 | Шрифт | JetBrainsMono Nerd Font, с иконками, для всех пользователей |
 | Windows Terminal | PowerShell 7 по умолчанию, тема, шрифт, отступы, `Win+\`` открывает терминал поверх любого окна |
 | Ввод | подсветка синтаксиса, подсказки из истории, сокращения, раскладка, `↑`/`↓` по началу команды |
-| Дополнения | kubectl, helm, docker, gh, kind, minikube, ssh-хосты. Кэшируются, старт от этого не страдает |
+| Дополнения | kubectl, helm, docker, gh, kind, k3d, minikube, ssh-хосты. Кэшируются, старт от этого не страдает |
 | VS Code и git | тот же шрифт во встроенном терминале, диффы через delta в тех же цветах |
 
 Старт профиля занимает около полусекунды: при запуске грузится только ядро, а словарь команд, автодополнения и zoxide подтягиваются сразу после того, как промпт появился на экране.
@@ -91,7 +92,7 @@ irm https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1 | 
 
 <p align="center"><img src="docs/my-sys.png" width="860" alt="my sys"></p>
 
-`my sys` · `my ssh` · `my ports 5432` · `my ip public` · `my k8s` · `my docker` · `my tools` · `my path` · `my git` · `my cmds` · `my config`
+`my sys` · `my ssh` · `my ports 5432` · `my ip public` · `my k8s` · `my docker` · `my tools` · `my path` · `my git` · `my cmds` · `my config` · `my keys`
 
 Рядом мелочи, которые есть и на сервере: `ex архив` распаковывает zip, tar.gz, 7z; `bak файл` делает копию перед правкой; `psg node` ищет процессы; `ll | cb` кладёт вывод в буфер обмена.
 
@@ -104,7 +105,7 @@ new weather.py 'погода в городе'     # создаёт bin\weather.p
 weather Минск                         # уже команда, без перезапуска
 ```
 
-Файл в `bin\` рядом с профилем равен команде. Строка `# help: …` в начале файла попадает в `help` и `my cmds`. Чем запускать, решает расширение: `.py` через **uv** (зависимости прямо в файле, `# /// script`), `.ps1`, `.js`, `.ts` (bun, deno или node), `.sh`, `.go`, `.rs` (rust-script), `.clj` (babashka), `.rb`, `.lua`, `.php`. Скомпилированный `.exe` просто положите в `bin\`.
+Файл в `bin\` рядом с профилем равен команде. Строка `# help: …` в начале файла попадает в `help` и `my cmds`. Чем запускать, решает расширение: `.py` через **uv** (зависимости прямо в файле, `# /// script`), `.ps1`, `.js`, `.ts` (bun, deno или node), `.sh`, `.go`, `.rs` (rust-script), `.clj` (babashka), `.rb`, `.lua`, `.php`. Скомпилированный `.exe` просто положите в `bin\`. Занятое имя не перекрывается: `new git.py` откажется, а файл с именем настоящей программы уступит ей.
 
 `custom.ps1` в той же папке: свои функции, сокращения и переключатели. Загружается последним, никогда не перезаписывается, функции из него тоже видны в `help`. `ep` открывает папку профиля в VS Code.
 
@@ -132,7 +133,7 @@ srv remove prod                   # откатить
 - Промпт с меткой окружения (`prod` красная, `staging` жёлтая, `dev` зелёная), веткой git, временем долгой команды и кодом ошибки.
 - Защита: `docker compose down -v`, `volume rm`, `system prune` требуют набрать `yes`; `rm`, `cp`, `mv` спрашивают перед массовым удалением. Скрипты это не затрагивает.
 - `sys` показывает нагрузку, память, диск, процессы и контейнеры. `help` ищет по шпаргалке. `bak`, `ex`, `psg`, `h` работают так же, как на Windows.
-- Свои файлы для серверов: `server\custom\*.sh` рядом с профилем уезжают на каждый сервер в `~/.bashrc.d/`. Скрипты в `~/bin` и строки `# help: имя - описание` попадают в `help` на сервере.
+- Свои файлы для серверов: `server\custom\*.sh` рядом с профилем уезжают на каждый сервер в `~/.bashrc.d/`. В `help` на сервере попадают скрипты из `~/bin` (подпись из строки `# help: …`) и функции из `~/.bashrc.d/*.sh` (строки `# help: имя - описание`).
 
 ## Где что лежит
 

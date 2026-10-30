@@ -177,29 +177,12 @@ if (Test-Admin) { Info $L.admin_note }
 if (-not $ProfileDir) { $ProfileDir = Split-Path $PROFILE }
 $ProfileFile = Join-Path $ProfileDir 'Microsoft.PowerShell_profile.ps1'
 
-if ($Uninstall) {
-    Step $L.s_uninstall
-    $managed = @('Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh' | ForEach-Object { Join-Path $ProfileDir $_ })
-    $managed += (Join-Path $HOME '.config\ohmyposh\soft.omp.json'), (Join-Path $HOME '.config\terminal-setup'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
-    foreach ($p in $managed) {
-        if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) - $($L.removed)" }
-    }
-    Write-Host ''
-    Write-Host "  $($L.uninstall_kept)" -ForegroundColor Gray
-    Write-Host ''
-    exit 0
-}
-$ThemeFile = Join-Path $ConfigDir 'theme'
-$LangFile = Join-Path $ConfigDir 'lang'
-$FontFace = 'JetBrainsMono NF'
-$FontStyles = [ordered]@{ Regular = 'Regular'; Bold = 'Bold'; Italic = 'Italic'; BoldItalic = 'Bold Italic' }
-$FontBaseUrl = 'https://github.com/ryanoasis/nerd-fonts/raw/v3.4.0/patched-fonts/JetBrainsMono/Ligatures'
-
-# ── Встроенные файлы (собраны build.ps1 из src/) ────────────────────────────
+# ── Embedded files (build.ps1 puts them here from src/) ─────────────────────
 $EmbeddedFiles = [ordered]@{}
-$EmbeddedFiles['profile'] = @'
+$EmbeddedFiles['Microsoft.PowerShell_profile.ps1'] = @'
 $global:TerminalSetupVersion = '2.3.0'
 $global:TerminalSetupLoaded = $false
+$global:TsFiles = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh'
 $global:ProfileDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $PROFILE }
 $env:XDG_CONFIG_HOME = "$HOME\.config"
 $global:isInteractive = -not [Console]::IsOutputRedirected -and $Host.Name -eq 'ConsoleHost'
@@ -231,7 +214,7 @@ function global:Complete-TerminalSetup {
     . (Join-Path $global:ProfileDir 'lang.ps1')
     $global:TkStr = $global:Strings[$global:LangName]
     . (Join-Path $global:ProfileDir 'toolkit-lazy.ps1')
-    if (Get-Command zoxide -ErrorAction Ignore) {
+    if (Find-TkCommand zoxide) {
         $zoxideInit = "$HOME\.cache\terminal-setup\zoxide-init.ps1"
         $zoxideExe = (Get-Command zoxide).Source
         if (-not (Test-Path $zoxideInit) -or (Get-Item $zoxideInit).LastWriteTime -lt (Get-Item $zoxideExe).LastWriteTime) {
@@ -250,6 +233,7 @@ function global:Complete-TerminalSetup {
         try { . $file.FullName } catch { Write-Warning "$($file.Name): $_" }
     }
     $null = Get-TsPreview
+    Register-BinCommands (Join-Path $global:ProfileDir 'bin')
 }
 # Until then these names forward to the real functions on first use
 foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'kctx', 'kns', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions', 'Get-TsPreview') {
@@ -266,7 +250,6 @@ if (Test-Path $customFile) {
     } catch { Write-Warning "custom.ps1: $_" }
 }
 Remove-Variable customFile
-Register-BinCommands (Join-Path $ProfileDir 'bin')
 
 if ($isInteractive) {
     try {
@@ -363,7 +346,7 @@ if (-not $env:BAT_PAGER) {
     if ([IO.File]::Exists($gitLess)) { $env:BAT_PAGER = "`"$gitLess`" -RF" }
 }
 
-if ($isInteractive -and (Get-Command fzf -ErrorAction Ignore)) {
+if ($isInteractive -and (Find-TkCommand fzf)) {
     # PSFzf auto-loads on first use; importing it eagerly costs ~0.3 s at startup
     Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock { Invoke-FzfPsReadlineHandlerHistory }
     Set-PSReadLineKeyHandler -Key Ctrl+t -ScriptBlock { Invoke-FzfPsReadlineHandlerProvider }
@@ -393,7 +376,7 @@ if ($isInteractive) {
     Complete-TerminalSetup
 }
 '@
-$EmbeddedFiles['palette'] = @'
+$EmbeddedFiles['palette.ps1'] = @'
 # Every theme uses the same 26 Catppuccin-style slots, so one table drives Windows Terminal,
 # the oh-my-posh prompt, PSReadLine colors and fzf. Add a theme here and it works everywhere.
 $Themes = [ordered]@{
@@ -511,7 +494,7 @@ function Get-TerminalTheme([string]$Name) {
     }
 }
 '@
-$EmbeddedFiles['lang'] = @'
+$EmbeddedFiles['lang.ps1'] = @'
 $global:LangFile = Join-Path $HOME '.config\terminal-setup\lang'
 
 function global:Get-LangName {
@@ -942,12 +925,21 @@ $global:Strings = @{
     }
 }
 '@
-$EmbeddedFiles['toolkit'] = @'
+$EmbeddedFiles['toolkit.ps1'] = @'
 # Core: loaded before the first prompt. Everything the user types lives in toolkit-lazy.ps1,
 # which Complete-TerminalSetup loads once the prompt is on screen.
 function _tkRgb([int]$hex) { $PSStyle.Foreground.FromRgb($hex) }
 function _tkBg([int]$hex) { $PSStyle.Background.FromRgb($hex) }
 
+# Get-Command without module auto-discovery, which costs 0.3-2 s for every name that does not exist.
+# The preference is only honored at global scope, so it is flipped for the duration of the call.
+function Find-TkCommand([string]$Name, [switch]$All, [string]$Type = '') {
+    $saved = $global:PSModuleAutoLoadingPreference
+    $global:PSModuleAutoLoadingPreference = 'None'
+    try {
+        if ($Type) { Get-Command $Name -CommandType $Type -ErrorAction Ignore } else { Get-Command $Name -All:$All -ErrorAction Ignore }
+    } finally { $global:PSModuleAutoLoadingPreference = $saved }
+}
 function Set-TerminalPalette {
     $p = $global:Palette
     $fg = @{}
@@ -1081,7 +1073,7 @@ function abbr {
 function Expand-Abbreviation([string]$Line, [int]$Cursor) {
     if (-not $global:Abbreviations.Count -or $Cursor -le 0) { return }
     $before = $Line.Substring(0, $Cursor)
-    if ($before -notmatch '(?:^|[|;&({])\s*(\S+)$') { return }
+    if ($before -notmatch '(?:^|[|;&({])\s*([^\s|;&({]+)$') { return }
     $word = $Matches[1]
     if (-not $global:Abbreviations.ContainsKey($word)) { return }
     $text = $global:Abbreviations[$word]
@@ -1112,10 +1104,10 @@ function Convert-Layout([string]$Text) {
 function Repair-CommandLayout([string]$Line) {
     if ($Line -notmatch '^\s*[А-Яа-яЁё]') { return }
     $first = ($Line.Trim() -split '\s+', 2)[0]
-    if (Get-Command $first -ErrorAction Ignore) { return }
+    if (Find-TkCommand $first) { return }
     $fixed = Convert-Layout $first
     if ($fixed -eq $first) { return }
-    if (-not (Get-Command $fixed -ErrorAction Ignore) -and -not $global:Abbreviations.ContainsKey($fixed)) { return }
+    if (-not (Find-TkCommand $fixed) -and -not $global:Abbreviations.ContainsKey($fixed)) { return }
     Convert-Layout $Line
 }
 
@@ -1134,13 +1126,33 @@ $global:ScriptRunners = [ordered]@{
     '.php' = @('php')
 }
 
+$global:TkRunners = @{}
 function Get-ScriptRunner([string]$Extension) {
-    foreach ($candidate in $global:ScriptRunners[$Extension]) {
-        if (Get-Command ($candidate -split ' ')[0] -ErrorAction Ignore) { return $candidate }
+    if (-not $global:TkRunners.ContainsKey($Extension)) {
+        $global:TkRunners[$Extension] = foreach ($candidate in $global:ScriptRunners[$Extension]) {
+            if (Find-TkCommand ($candidate -split ' ')[0]) { $candidate; break }
+        }
     }
+    $global:TkRunners[$Extension]
 }
 
-function Register-BinCommands([string]$Dir) {
+# Body of every bin command. The runner and the check for a real program of the same name happen on first use,
+# so registering a script costs nothing at startup; a program always wins over the script.
+$global:TkShadowed = @{}
+function Invoke-TkScript([string]$Path) {
+    $name = [IO.Path]::GetFileNameWithoutExtension($Path)
+    if (-not $global:TkShadowed.ContainsKey($name)) { $global:TkShadowed[$name] = (Find-TkCommand $name -Type Application | Select-Object -First 1).Source }
+    $exe = $global:TkShadowed[$name]
+    $extra = @()
+    if (-not $exe) {
+        $ext = [IO.Path]::GetExtension($Path).ToLower()
+        $runner = Get-ScriptRunner $ext
+        if (-not $runner) { Complete-TerminalSetup; Write-Host ('  ' + ($TkStr.bin_norunner -f (Split-Path $Path -Leaf), ($global:ScriptRunners[$ext] -join ' / '))); return }
+        $parts = $runner -split ' '
+        $exe = $parts[0]; $extra = @($parts | Select-Object -Skip 1) + $Path
+    }
+    if ($MyInvocation.ExpectingInput) { $input | & $exe @extra @args } else { & $exe @extra @args }
+}function Register-BinCommands([string]$Dir) {
     $global:UserCommands = @()
     if (-not (Test-Path $Dir)) { return }
     # last on PATH: a file in bin never hides a real program of the same name
@@ -1149,25 +1161,16 @@ function Register-BinCommands([string]$Dir) {
         $name = $f.BaseName
         $ext = $f.Extension.ToLower()
         if (-not $global:ScriptRunners.Contains($ext) -or $name -notmatch '^[A-Za-z_][\w-]*$') { continue }
-        # never shadow a real command; bin itself is on PATH, so ignore matches from there
-        $taken = Get-Command $name -All -ErrorAction Ignore |
-            Where-Object { $_.Source -notlike "$Dir\*" -and $_.ScriptBlock -notlike '*UserCommand*' } | Select-Object -First 1
-        if ($taken) { continue }
+        # never replace a function, cmdlet or alias; programs are checked on first use (see Invoke-TkScript)
+        if (Find-TkCommand $name -Type 'Function,Cmdlet,Alias' | Where-Object { $_.ScriptBlock -notlike '*UserCommand*' }) { continue }
         $help = (Get-Content $f.FullName -First 15 | Select-String -Pattern '^\s*(#|//|;;|--)\s*help:\s*(.+)$' | Select-Object -First 1)
         $help = if ($help) { $help.Matches[0].Groups[2].Value.Trim() } else { '' }
-        $runner = Get-ScriptRunner $ext
-        $body = if ($runner) {
-            $parts = ($runner -split ' ') | ForEach-Object { "'$_'" }
-            "# UserCommand`n& $($parts -join ' ') '$($f.FullName)' @args"
-        } else {
-            "# UserCommand`nComplete-TerminalSetup; Write-Host ('  ' + (`$TkStr.bin_norunner -f '$($f.Name)', '$($global:ScriptRunners[$ext] -join ' / ')'))"
-        }
-        Set-Item "Function:global:$name" -Value ([scriptblock]::Create($body))
-        $global:UserCommands += [pscustomobject]@{ Name = $name; File = $f.Name; Help = $help; Runner = $(if ($runner) { $runner } else { '- ' + ($global:ScriptRunners[$ext] -join '/') }); Path = $f.FullName }
+        Set-Item "Function:global:$name" -Value ([scriptblock]::Create("# UserCommand`nInvoke-TkScript '$($f.FullName)' @args"))
+        $global:UserCommands += [pscustomobject]@{ Name = $name; File = $f.Name; Help = $help; Extension = $ext; Path = $f.FullName }
     }
 }
 '@
-$EmbeddedFiles['toolkit-lazy'] = @'
+$EmbeddedFiles['toolkit-lazy.ps1'] = @'
 # Loaded by Complete-TerminalSetup right after the first prompt (PowerShell.OnIdle), so startup stays fast.
 
 function global:Format-TkSize([double]$Bytes) {
@@ -1177,7 +1180,7 @@ function global:Format-TkSize([double]$Bytes) {
 
 # docker/kubectl can hang for a long time when their daemon is down
 function global:Invoke-WithTimeout([string]$Command, [string[]]$Arguments, [int]$Milliseconds = 3000) {
-    $exe = (Get-Command $Command -ErrorAction Ignore).Source
+    $exe = (Find-TkCommand $Command).Source
     if (-not $exe) { return $null }
     $psi = [Diagnostics.ProcessStartInfo]::new($exe)
     foreach ($a in $Arguments) { $psi.ArgumentList.Add($a) }
@@ -1186,7 +1189,7 @@ function global:Invoke-WithTimeout([string]$Command, [string[]]$Arguments, [int]
     $out = $proc.StandardOutput.ReadToEndAsync()
     if (-not $proc.WaitForExit($Milliseconds)) { try { $proc.Kill() } catch {}; return $null }
     if ($proc.ExitCode -ne 0) { return $null }
-    $out.Result -split "`n" | Where-Object { $_.Trim() }
+    $out.Result -split "`r?`n" | Where-Object { $_.Trim() }
 }
 
 # ── help ─────────────────────────────────────────────────────────────────────
@@ -1429,7 +1432,7 @@ function global:Show-MySys {
         Write-Host ("  {0}{1,-26}{2} {3,9}{4}{5}" -f $TK.cmd, $t.Name, $TK.R, (Format-TkSize $t.Memory), $TK.dim, $(if ($t.Count -gt 1) { "  ×$($t.Count)" }), $TK.R)
     }
 
-    if (Get-Command docker -ErrorAction Ignore) {
+    if (Find-TkCommand docker) {
         Write-Host ''
         Write-Host ("  {0}{1}{2}" -f $TK.title, $TkStr.sys_containers, $TK.R)
         $rows = Invoke-WithTimeout docker @('ps', '-a', '--format', '{{.Names}}\t{{.Status}}')
@@ -1445,7 +1448,7 @@ function global:Show-MySys {
 }
 
 function global:Show-MyK8s {
-    if (-not (Get-Command kubectl -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
+    if (-not (Find-TkCommand kubectl)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
     $rows = Invoke-WithTimeout kubectl @('config', 'get-contexts', '--no-headers') 5000
     Write-TkTitle 'Kubernetes' $TkStr.k8s_hint
     if (-not $rows) { Write-Host "  $($TK.dim)$($TkStr.k8s_none)$($TK.R)"; Write-Host ''; return }
@@ -1465,7 +1468,7 @@ function global:Show-MyK8s {
 }
 
 function global:Show-MyDocker {
-    if (-not (Get-Command docker -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.docker_missing)$($TK.R)"; return }
+    if (-not (Find-TkCommand docker)) { Write-Host "  $($TK.dim)$($TkStr.docker_missing)$($TK.R)"; return }
     $rows = Invoke-WithTimeout docker @('ps', '-a', '--format', '{{.Names}}\t{{.Status}}\t{{.Ports}}')
     Write-TkTitle 'Docker' $TkStr.docker_hint
     if ($null -eq $rows) { Write-Host "  $($TK.dim)$($TkStr.docker_down)$($TK.R)"; Write-Host ''; return }
@@ -1612,7 +1615,10 @@ function global:Show-MyCommands {
     Write-TkTitle $TkStr.cmds_title ($TkStr.cmds_hint -f $global:ProfileDir)
     if ($global:UserCommands) {
         Write-Host ("  {0}bin\{1}" -f $TK.title, $TK.R)
-        foreach ($c in $global:UserCommands) { Write-TkRow $c.Name $c.Help "$($c.File) · $($c.Runner)" }
+        foreach ($c in $global:UserCommands) {
+            $runner = Get-ScriptRunner $c.Extension
+            Write-TkRow $c.Name $c.Help "$($c.File) · $(if ($runner) { $runner } else { '- ' + ($global:ScriptRunners[$c.Extension] -join '/') })"
+        }
     } else {
         Write-Host ("  {0}{1}{2}" -f $TK.dim, $TkStr.cmds_empty, $TK.R)
     }
@@ -1704,7 +1710,7 @@ function global:new {
     $name = [IO.Path]::GetFileNameWithoutExtension($FileName)
     if (-not $TkTemplates.ContainsKey($ext)) { Write-Host "  $($TK.err)$($TkStr.new_bad_ext -f $ext)$($TK.R)"; return }
     if ($name -notmatch '^[A-Za-z_][\w-]*$') { Write-Host "  $($TK.err)$($TkStr.new_bad_name)$($TK.R)"; return }
-    $taken = Get-Command $name -All -ErrorAction Ignore |
+    $taken = Find-TkCommand $name -All |
         Where-Object { $_.Source -notlike "$bin\*" -and $_.ScriptBlock -notlike '*UserCommand*' } | Select-Object -First 1
     if ($taken) { Write-Host "  $($TK.err)$($TkStr.new_taken -f $name, $taken.CommandType, $taken.Source)$($TK.R)"; return }
     New-Item -ItemType Directory -Force $bin | Out-Null
@@ -1718,7 +1724,7 @@ function global:new {
     $runner = Get-ScriptRunner $ext
     if ($runner) { Write-Host ("  {0}{1}{2}{3}{4} {5}{6}  {7}{8}{9}" -f $TK.dim, $TkStr.new_ready, $TK.cmd, $name, $TK.R, $TK.dim, $TkStr.new_args, $TK.dim, ($TkStr.new_via -f $runner), $TK.R) }
     else { Write-Host ("  {0}{1}{2}" -f $TK.warn, ($TkStr.new_norunner -f ($global:ScriptRunners[$ext] -join ' / ')), $TK.R) }
-    if ($global:isInteractive -and (Get-Command code -ErrorAction Ignore)) { code $path }
+    if ($global:isInteractive -and (Find-TkCommand code)) { code $path }
 }
 
 # ── theme / lang ─────────────────────────────────────────────────────────────
@@ -1807,13 +1813,13 @@ function global:Get-TsPreview {
 }
 
 function global:Open-TsFile([string]$Path) {
-    if (Get-Command code -ErrorAction Ignore) { code $Path } else { Invoke-Item $Path }
+    if (Find-TkCommand code) { code $Path } else { Invoke-Item $Path }
 }
 
 # ── nav: folders (and files with Ctrl+E) as a tree on fzf ────────────────────
 function global:nav {
     param([string]$Start = (Get-Location).Path)
-    if (-not (Get-Command fzf -ErrorAction Ignore)) { return }
+    if (-not (Find-TkCommand fzf)) { return }
     $dir = (Resolve-Path -LiteralPath $Start).Path
     $preview = "$(Get-TsPreview) {2}"
     $files = $false; $hidden = $false
@@ -1825,7 +1831,7 @@ function global:nav {
         $entries += $items | Sort-Object { -not $_.PSIsContainer }, Name | ForEach-Object {
             if ($_.PSIsContainer) { "$($_.Name)`t$($_.FullName)`td" } else { "  $($_.Name)`t$($_.FullName)`tf" }
         }
-        $mode = @($(if ($files) { 'files' }), $(if ($hidden) { 'hidden' })) -ne $null -join ' '
+        $mode = @(if ($files) { 'files' }; if ($hidden) { 'hidden' }) -join ' '
         $out = Invoke-Fzf $entries @('--expect=right,left,ctrl-f,ctrl-o,ctrl-e,ctrl-h', "--delimiter=`t", '--with-nth=1', '--cycle', '--height=70%',
             "--header=$($TkStr.nav_header)", "--prompt=$($dir.Replace($HOME, '~')) $(if ($mode) { "[$mode] " })❯ ", "--preview=$preview", '--preview-window=right:50%')
         if (-not $out) { return }
@@ -1884,7 +1890,7 @@ function global:rgi {
         $file, $line = ($out[1] -split ':', 3)[0, 1]
         $full = (Resolve-Path -LiteralPath $file).Path
         if ($out[0] -eq 'ctrl-y') { Set-Clipboard "${full}:$line"; Write-Host "  $($TK.dim)${full}:$line$($TK.R)"; return }
-        if (Get-Command code -ErrorAction Ignore) { code -g "${full}:$line" }
+        if (Find-TkCommand code) { code -g "${full}:$line" }
         else { bat --color=always --style=numbers --highlight-line $line --paging=never $full }
     } finally { Pop-Location }
 }
@@ -1911,7 +1917,7 @@ function global:o { param([string]$Path = '.') Invoke-Item -LiteralPath $Path }
 
 # ── kubernetes: switch context / namespace, the prompt picks it up by itself ─
 function global:kctx([string]$Name) {
-    if (-not (Get-Command kubectl -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
+    if (-not (Find-TkCommand kubectl)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
     if (-not $Name) {
         $list = @(Invoke-WithTimeout kubectl @('config', 'get-contexts', '-o', 'name') 5000 | Where-Object { $_ })
         if (-not $list) { Write-Host "  $($TK.dim)$($TkStr.k8s_none)$($TK.R)"; return }
@@ -1921,7 +1927,7 @@ function global:kctx([string]$Name) {
 }
 
 function global:kns([string]$Name) {
-    if (-not (Get-Command kubectl -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
+    if (-not (Find-TkCommand kubectl)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
     if (-not $Name) {
         $list = @(Invoke-WithTimeout kubectl @('get', 'namespaces', '-o', 'name') 8000 | ForEach-Object { $_ -replace '^namespace/', '' } | Where-Object { $_ })
         if (-not $list) { Write-Host "  $($TK.dim)$($TkStr.kns_none)$($TK.R)"; return }
@@ -2002,11 +2008,10 @@ function global:doctor {
     $check = { param($ok, $label, $detail) if ($ok) { Write-Host "  $($TK.ok)✓$($TK.R) $label $($TK.dim)$detail$($TK.R)" } else { $state.problems++; Write-Host "  $($TK.err)✗$($TK.R) $label $($TK.dim)$detail$($TK.R)" } }
 
     $tools = 'git', 'fzf', 'zoxide', 'eza', 'bat', 'rg', 'fd', 'delta', 'lazygit', 'tldr', 'gh'
-    $missing = @($tools | Where-Object { -not (Get-Command $_ -ErrorAction Ignore) })
+    $missing = @($tools | Where-Object { -not (Find-TkCommand $_) })
     & $check (-not $missing) $TkStr.doctor_tools $(if ($missing) { $TkStr.doctor_missing -f ($missing -join ', ') } else { $tools -join ' ' })
 
-    $files = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\install.sh', 'server\inputrc'
-    $lost = @($files | Where-Object { -not (Test-Path (Join-Path $global:ProfileDir $_)) })
+    $lost = @($global:TsFiles | Where-Object { -not (Test-Path (Join-Path $global:ProfileDir $_)) })
     & $check (-not $lost) $TkStr.doctor_files $(if ($lost) { $TkStr.doctor_missing -f ($lost -join ', ') } else { $global:ProfileDir.Replace($HOME, '~') })
 
     & $check (Test-Path "$env:windir\Fonts\JetBrainsMonoNerdFont-Regular.ttf") $TkStr.doctor_font 'JetBrainsMono NF'
@@ -2063,7 +2068,7 @@ function global:Update-Completions {
     New-Item -ItemType Directory -Force $dir | Out-Null
     foreach ($name in $global:CompletionGenerators.Keys) {
         $file = Join-Path $dir "$name.ps1"
-        if (Get-Command $name -ErrorAction Ignore) {
+        if (Find-TkCommand $name) {
             $text = (& $global:CompletionGenerators[$name] | Out-String)
             $text = [regex]::Replace($text, '(?m)^(\s*)(function|filter)\s+(?!global:)(\S+)', '$1$2 global:$3')
             Set-Content $file ("# global`n" + $text) -Encoding utf8
@@ -2074,7 +2079,7 @@ function global:Update-Completions {
     }
 }
 '@
-$EmbeddedFiles['prompt'] = @'
+$EmbeddedFiles['prompt.ps1'] = @'
 # The prompt is rendered in PowerShell itself (a few ms) instead of spawning oh-my-posh (~140 ms + git).
 # Branch comes from .git/HEAD, k8s context from kubeconfig; git status counts are fetched on PowerShell.OnIdle
 # and the prompt is redrawn in place, so a slow `git status` never delays the prompt.
@@ -2178,7 +2183,7 @@ function global:Get-TsToolVersion([string]$Tool) {
     if ($global:TsVersions.ContainsKey($Tool)) { return $global:TsVersions[$Tool] }
     $v = ''
     $exe = if ($Tool -eq 'rust') { 'rustc' } else { $Tool }
-    if (Get-Command $exe -ErrorAction Ignore) {
+    if (Find-TkCommand $exe) {
         $exit = $global:LASTEXITCODE
         $out = switch ($Tool) { 'go' { go version 2>$null } default { & $exe --version 2>$null } }
         $global:LASTEXITCODE = $exit
@@ -2190,6 +2195,7 @@ function global:Get-TsToolVersion([string]$Tool) {
 
 function global:Get-TsShortPath([string]$Dir) {
     $p = if ($Dir.StartsWith($HOME, [StringComparison]::OrdinalIgnoreCase)) { '~' + $Dir.Substring($HOME.Length) } else { $Dir }
+    if ($p -match '^[A-Za-z]:\\?$') { return $p.TrimEnd('\') + '\' }
     $parts = $p.TrimEnd('\') -split '\\'
     if ($parts.Count -gt 4) { $parts = @($parts[0], '..') + $parts[-3..-1] }
     $parts -join '\'
@@ -2259,7 +2265,7 @@ function global:prompt {
         $native = $false
         if ($exit -and $exit -eq $global:TsLastExit -and $last) {
             $first = ($last.CommandLine.TrimStart() -split '[\s|;(]', 2)[0]
-            $native = (Get-Command $first -ErrorAction Ignore).CommandType -eq 'Application'
+            $native = (Find-TkCommand $first).CommandType -eq 'Application'
         }
         $code = if ($exit -and ($exit -ne $global:TsLastExit -or $native)) { $exit } else { 1 }
     }
@@ -2280,23 +2286,7 @@ if ($global:isInteractive) {
     }
 }
 '@
-$EmbeddedFiles['custom'] = @'
-# custom.ps1 - yours. setup-terminal.ps1 never overwrites this file. Loaded after toolkit.ps1; check with: reload
-#
-#   $TerminalSetup.Abbreviations = $false     # g␣ → git␣
-#   $TerminalSetup.LayoutFix     = $false     # Russian layout fix on Enter
-#   $TerminalSetup.Predictions   = 20         # history suggestions (0 - PSReadLine default 10)
-#   $TerminalSetup.Kube          = 'always'   # kubernetes context in the prompt: auto (k8s folders and prod only), always, off
-#
-#   abbr gcm 'git commit -m "%"'              # % - cursor position
-#   abbr -Remove d
-#
-#   function deploy { ssh prod 'cd app && git pull && docker compose up -d' }   # shows up in help
-#
-#   Commands in other languages: files in bin\ next to this file (new name.py); "# help: ..." is the caption.
-#   $ScriptRunners['.ts'] = @('bun', 'node')  # which runner to use per extension
-'@
-$EmbeddedFiles['predictor'] = @'
+$EmbeddedFiles['DeepHistoryPredictor.cs'] = @'
 // History suggestions without PSReadLine's built-in cap: the History source is hard-limited
 // to 10 entries, plugins get up to 50. Compiled by the profile into ~/.cache/pwsh-predictor.
 
@@ -2408,7 +2398,7 @@ public sealed class DeepHistoryPredictor : ICommandPredictor
     public void OnCommandLineExecuted(PredictionClient client, string commandLine, bool success) { }
 }
 '@
-$EmbeddedFiles['srv-bashrc'] = @'
+$EmbeddedFiles['server\bashrc.local'] = @'
 # ~/.bashrc.local - installed by `srv install <host>` from terminal-setup. Nothing runs in the background.
 # version: 2.1.0
 # Per-server settings: ~/.config/bashrc-local.conf (PROMPT_ENV=prod, LANG_UI=en)
@@ -2888,7 +2878,7 @@ if shopt -q login_shell; then
     unset __names
 fi
 '@
-$EmbeddedFiles['srv-inputrc'] = @'
+$EmbeddedFiles['server\inputrc'] = @'
 # srv: managed. Installed by srv install; the previous file is kept as ~/.inputrc.bak-*
 $include /etc/inputrc
 
@@ -2905,7 +2895,7 @@ set bell-style none
 "\e[1;5C": forward-word
 "\e[1;5D": backward-word
 '@
-$EmbeddedFiles['srv-install'] = @'
+$EmbeddedFiles['server\install.sh'] = @'
 # Runs on the server through `ssh host 'bash -s'`; placeholders __…__ are filled by srv (PowerShell).
 set -eu
 umask 022
@@ -2972,6 +2962,9 @@ trap 'rm -rf "$work"' EXIT
 printf '%s' '__BASHRC_B64__' | base64 -d > "$work/bashrc.local"
 printf '%s' '__INPUTRC_B64__' | base64 -d > "$work/inputrc"
 
+mkdir -p ~/.bashrc.d
+__CUSTOM_FILES__
+
 bash -n "$work/bashrc.local" || { echo "$bad $(m syntax_err)"; exit 1; }
 errors=$(HOME=$HOME bash --norc -i -c ". '$work/bashrc.local'" </dev/null 2>&1 >/dev/null |
     grep -v -e 'job control' -e 'terminal process group' -e 'Inappropriate ioctl' || true)
@@ -3030,9 +3023,6 @@ else
     echo "$ok $(m hook_added) ${dim}($(m backup) ~/.bashrc.bak-$ts)${r}"
 fi
 
-mkdir -p ~/.bashrc.d
-__CUSTOM_FILES__
-
 if [ -f ~/.bash_profile ]; then
     grep -q 'bashrc' ~/.bash_profile || echo "$warn $(m profile_warn)"
 elif [ ! -f ~/.bash_login ] && [ ! -f ~/.profile ]; then
@@ -3044,6 +3034,40 @@ projects=$(bash --norc -i -c '. ~/.bashrc.local; printf "%s " "${!PROJ_DIR[@]}"'
 echo "${dim}$(m projects): ${projects:-$(m none)} · $(m relogin)${r}"
 # end
 '@
+$EmbeddedFiles['custom.ps1'] = @'
+# custom.ps1 - yours. setup-terminal.ps1 never overwrites this file. Loaded after toolkit.ps1; check with: reload
+#
+#   $TerminalSetup.Abbreviations = $false     # g␣ → git␣
+#   $TerminalSetup.LayoutFix     = $false     # Russian layout fix on Enter
+#   $TerminalSetup.Predictions   = 20         # history suggestions (0 - PSReadLine default 10)
+#   $TerminalSetup.Kube          = 'always'   # kubernetes context in the prompt: auto (k8s folders and prod only), always, off
+#
+#   abbr gcm 'git commit -m "%"'              # % - cursor position
+#   abbr -Remove d
+#
+#   function deploy { ssh prod 'cd app && git pull && docker compose up -d' }   # shows up in help
+#
+#   Commands in other languages: files in bin\ next to this file (new name.py); "# help: ..." is the caption.
+#   $ScriptRunners['.ts'] = @('bun', 'node')  # which runner to use per extension
+'@
+
+if ($Uninstall) {
+    Step $L.s_uninstall
+    $managed = @($EmbeddedFiles.Keys | Where-Object { $_ -ne 'custom.ps1' } | ForEach-Object { Join-Path $ProfileDir $_ })
+    $managed += (Join-Path $HOME '.config\ohmyposh\soft.omp.json'), (Join-Path $HOME '.config\terminal-setup'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
+    foreach ($p in $managed) {
+        if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) - $($L.removed)" }
+    }
+    Write-Host ''
+    Write-Host "  $($L.uninstall_kept)" -ForegroundColor Gray
+    Write-Host ''
+    exit 0
+}
+$ThemeFile = Join-Path $ConfigDir 'theme'
+$LangFile = Join-Path $ConfigDir 'lang'
+$FontFace = 'JetBrainsMono NF'
+$FontStyles = [ordered]@{ Regular = 'Regular'; Bold = 'Bold'; Italic = 'Italic'; BoldItalic = 'Bold Italic' }
+$FontBaseUrl = 'https://github.com/ryanoasis/nerd-fonts/raw/v3.4.0/patched-fonts/JetBrainsMono/Ligatures'
 
 if (-not $SkipApps) {
     Step $L.s_apps
@@ -3136,30 +3160,20 @@ function Write-ManagedFile([string]$Path, [string]$Content) {
 }
 
 Step $L.s_profile
-. ([scriptblock]::Create($EmbeddedFiles['palette']))
+. ([scriptblock]::Create($EmbeddedFiles['palette.ps1']))
 if ($Theme -and -not $Themes.Contains($Theme.ToLower())) { throw "-Theme: $($Themes.Keys -join ', ')" }
 if ($Theme) { New-Item -ItemType Directory -Force $ConfigDir | Out-Null; [IO.File]::WriteAllText($ThemeFile, "$($Theme.ToLower())`n") }
 $ThemeName = Get-ThemeName
 $ThemeTitle = $Themes[$ThemeName].title
 
-$targets = [ordered]@{
-    'profile'      = $ProfileFile
-    'palette'      = Join-Path $ProfileDir 'palette.ps1'
-    'lang'         = Join-Path $ProfileDir 'lang.ps1'
-    'toolkit'      = Join-Path $ProfileDir 'toolkit.ps1'
-    'toolkit-lazy' = Join-Path $ProfileDir 'toolkit-lazy.ps1'
-    'prompt'       = Join-Path $ProfileDir 'prompt.ps1'
-    'predictor'    = Join-Path $ProfileDir 'DeepHistoryPredictor.cs'
-    'srv-bashrc'   = Join-Path $ProfileDir 'server\bashrc.local'
-    'srv-inputrc'  = Join-Path $ProfileDir 'server\inputrc'
-    'srv-install'  = Join-Path $ProfileDir 'server\install.sh'
+foreach ($rel in $EmbeddedFiles.Keys) {
+    if ($rel -ne 'custom.ps1') { Write-ManagedFile (Join-Path $ProfileDir $rel) $EmbeddedFiles[$rel] }
 }
-foreach ($key in $targets.Keys) { Write-ManagedFile $targets[$key] $EmbeddedFiles[$key] }
 Remove-Item "$HOME\.cache\terminal-setup\omp-init.txt", "$HOME\.config\ohmyposh\soft.omp.json" -ErrorAction SilentlyContinue
 
 $customFile = Join-Path $ProfileDir 'custom.ps1'
 if (Test-Path $customFile) { Ok "$(Short $customFile) - $($L.custom_yours)" }
-else { [IO.File]::WriteAllText($customFile, ($EmbeddedFiles['custom'] -replace "`r`n", "`n"), $Utf8NoBom); Ok "$(Short $customFile) - $($L.custom_created)" }
+else { [IO.File]::WriteAllText($customFile, ($EmbeddedFiles['custom.ps1'] -replace "`r`n", "`n"), $Utf8NoBom); Ok "$(Short $customFile) - $($L.custom_created)" }
 foreach ($d in 'bin', 'server\custom') {
     $p = Join-Path $ProfileDir $d
     if (-not (Test-Path $p)) { New-Item -ItemType Directory -Force $p | Out-Null; Ok "$(Short $p)\ - $($L.dir_created)" }
@@ -3169,8 +3183,6 @@ New-Item -ItemType Directory -Force $ConfigDir | Out-Null
 [IO.File]::WriteAllText($LangFile, "$Lang`n")
 Ok ($L.lang_set -f $Lang)
 Ok ($L.theme_set -f $ThemeName)
-
-function Set-Key($Table, [string]$Key, $Value) { $Table[$Key] = $Value }
 
 function Get-StableGuid([string]$Text) {
     $md5 = [Security.Cryptography.MD5]::Create()
@@ -3191,18 +3203,18 @@ function Update-TerminalSettings([string]$Path) {
     foreach ($p in $s.profiles.list) { $list.Add($p) }
 
     $d = $s.profiles.defaults
-    Set-Key $d 'colorScheme' $ThemeTitle
+    $d['colorScheme'] = $ThemeTitle
     if (-not $d.Contains('font') -or -not ($d.font -is [Collections.IDictionary])) { $d['font'] = [ordered]@{} }
-    Set-Key $d.font 'face' $FontFace
-    Set-Key $d.font 'size' 11
-    Set-Key $d.font 'cellHeight' '1.2'
-    Set-Key $d 'padding' '14, 10'
-    Set-Key $d 'cursorShape' 'bar'
-    Set-Key $d 'antialiasingMode' 'cleartype'
-    Set-Key $d 'intenseTextStyle' 'bright'
-    Set-Key $d 'scrollbarState' 'hidden'
-    Set-Key $d 'historySize' 20000
-    Set-Key $d 'bellStyle' 'none'
+    $d.font['face'] = $FontFace
+    $d.font['size'] = 11
+    $d.font['cellHeight'] = '1.2'
+    $d['padding'] = '14, 10'
+    $d['cursorShape'] = 'bar'
+    $d['antialiasingMode'] = 'cleartype'
+    $d['intenseTextStyle'] = 'bright'
+    $d['scrollbarState'] = 'hidden'
+    $d['historySize'] = 20000
+    $d['bellStyle'] = 'none'
 
     $pwshGuid = '{574e775e-4f2a-5b96-ac1e-a2962a402336}'
     $pw = $list | Where-Object { $_.guid -eq $pwshGuid } | Select-Object -First 1
@@ -3210,28 +3222,28 @@ function Update-TerminalSettings([string]$Path) {
         $pw = [ordered]@{ guid = $pwshGuid; name = 'PowerShell 7'; source = 'Windows.Terminal.PowershellCore'; hidden = $false }
         $list.Insert(0, $pw)
     }
-    Set-Key $pw 'name' 'PowerShell 7'
-    Set-Key $pw 'hidden' $false
-    if ($StartingDirectory) { Set-Key $pw 'startingDirectory' $StartingDirectory }
-    Set-Key $s 'defaultProfile' $pwshGuid
+    $pw['name'] = 'PowerShell 7'
+    $pw['hidden'] = $false
+    if ($StartingDirectory) { $pw['startingDirectory'] = $StartingDirectory }
+    $s['defaultProfile'] = $pwshGuid
 
-    foreach ($p in $list) { if ($p.source -eq 'Windows.Terminal.Azure') { Set-Key $p 'hidden' $true } }
+    foreach ($p in $list) { if ($p.source -eq 'Windows.Terminal.Azure') { $p['hidden'] = $true } }
 
     foreach ($h in $SshTabs) {
         $tab = $list | Where-Object { $_.commandline -eq "ssh $h" } | Select-Object -First 1
         if (-not $tab) { $tab = [ordered]@{ guid = (Get-StableGuid "ssh:$h") }; $list.Add($tab) }
-        Set-Key $tab 'name' "$h (ssh)"
-        Set-Key $tab 'commandline' "ssh $h"
-        Set-Key $tab 'icon' ([string][char]0xF233)
-        Set-Key $tab 'tabColor' '#FAB387'
-        Set-Key $tab 'hidden' $false
+        $tab['name'] = "$h (ssh)"
+        $tab['commandline'] = "ssh $h"
+        $tab['icon'] = ([string][char]0xF233)
+        $tab['tabColor'] = '#FAB387'
+        $tab['hidden'] = $false
     }
     $s.profiles['list'] = $list.ToArray()
 
     $ours = @($Themes.Values.title)
     $s['schemes'] = @(@($s.schemes | Where-Object { $_ -and $_.name -notin $ours -and $_.name -notlike 'Catppuccin *' }) + @($Themes.Keys | ForEach-Object { Get-TerminalScheme $_ }))
     $s['themes'] = @(@($s.themes | Where-Object { $_ -and $_.name -notin $ours -and $_.name -notlike 'Catppuccin *' }) + @($Themes.Keys | ForEach-Object { Get-TerminalTheme $_ }))
-    Set-Key $s 'theme' $ThemeTitle
+    $s['theme'] = $ThemeTitle
 
     if (-not $s.Contains('actions')) { $s['actions'] = @() }
     if (-not $s.Contains('keybindings')) { $s['keybindings'] = @() }

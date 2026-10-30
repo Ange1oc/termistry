@@ -1,5 +1,6 @@
 $global:TerminalSetupVersion = '2.3.0'
 $global:TerminalSetupLoaded = $false
+$global:TsFiles = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh'
 $global:ProfileDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $PROFILE }
 $env:XDG_CONFIG_HOME = "$HOME\.config"
 $global:isInteractive = -not [Console]::IsOutputRedirected -and $Host.Name -eq 'ConsoleHost'
@@ -31,7 +32,7 @@ function global:Complete-TerminalSetup {
     . (Join-Path $global:ProfileDir 'lang.ps1')
     $global:TkStr = $global:Strings[$global:LangName]
     . (Join-Path $global:ProfileDir 'toolkit-lazy.ps1')
-    if (Get-Command zoxide -ErrorAction Ignore) {
+    if (Find-TkCommand zoxide) {
         $zoxideInit = "$HOME\.cache\terminal-setup\zoxide-init.ps1"
         $zoxideExe = (Get-Command zoxide).Source
         if (-not (Test-Path $zoxideInit) -or (Get-Item $zoxideInit).LastWriteTime -lt (Get-Item $zoxideExe).LastWriteTime) {
@@ -50,6 +51,7 @@ function global:Complete-TerminalSetup {
         try { . $file.FullName } catch { Write-Warning "$($file.Name): $_" }
     }
     $null = Get-TsPreview
+    Register-BinCommands (Join-Path $global:ProfileDir 'bin')
 }
 # Until then these names forward to the real functions on first use
 foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'kctx', 'kns', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions', 'Get-TsPreview') {
@@ -66,7 +68,6 @@ if (Test-Path $customFile) {
     } catch { Write-Warning "custom.ps1: $_" }
 }
 Remove-Variable customFile
-Register-BinCommands (Join-Path $ProfileDir 'bin')
 
 if ($isInteractive) {
     try {
@@ -163,7 +164,7 @@ if (-not $env:BAT_PAGER) {
     if ([IO.File]::Exists($gitLess)) { $env:BAT_PAGER = "`"$gitLess`" -RF" }
 }
 
-if ($isInteractive -and (Get-Command fzf -ErrorAction Ignore)) {
+if ($isInteractive -and (Find-TkCommand fzf)) {
     # PSFzf auto-loads on first use; importing it eagerly costs ~0.3 s at startup
     Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock { Invoke-FzfPsReadlineHandlerHistory }
     Set-PSReadLineKeyHandler -Key Ctrl+t -ScriptBlock { Invoke-FzfPsReadlineHandlerProvider }

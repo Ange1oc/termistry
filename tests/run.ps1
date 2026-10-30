@@ -6,11 +6,10 @@
     .\tests\run.ps1 -Only profile      static | profile | setup | server
     .\tests\run.ps1 -Keep              leave the sandbox folder behind for a look
 #>
-param(
-    [ValidateSet('static', 'profile', 'setup', 'server')][string[]]$Only = @('static', 'profile', 'setup', 'server'),
-    [switch]$Keep
-)
+param([string[]]$Only = @('static', 'profile', 'setup', 'server'), [switch]$Keep)
 $ErrorActionPreference = 'Stop'
+$Only = @($Only | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+foreach ($o in $Only) { if ($o -notin 'static', 'profile', 'setup', 'server') { throw "-Only: static, profile, setup, server (got '$o')" } }
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot 'lib.ps1')
 $root = Split-Path $PSScriptRoot
@@ -81,6 +80,14 @@ if ('static' -in $Only) {
         $version = (Get-Content (Join-Path $root 'src\profile\Microsoft.PowerShell_profile.ps1') -First 1) -replace ".*'([^']+)'.*", '$1'
         AssertMatch (Get-Content $setup -Raw) "\`$SetupVersion = '$([regex]::Escape($version))'" 'version injected'
     }
+    Test 'build.ps1 and the profile agree on the managed files' {
+        $build = Get-Content (Join-Path $root 'build.ps1') -Raw
+        $built = [regex]::Matches($build, "(?m)^\s+'([^']+)'\s+= 'src\\") | ForEach-Object { $_.Groups[1].Value } | Where-Object { $_ -ne 'custom.ps1' }
+        $profile = Get-Content (Join-Path $root 'src\profile\Microsoft.PowerShell_profile.ps1') -Raw
+        Assert ($profile -match "(?m)^\`$global:TsFiles = (.+)$") 'TsFiles not found'
+        $listed = [regex]::Matches($Matches[1], "'([^']+)'") | ForEach-Object { $_.Groups[1].Value }
+        AssertEq ($built -join ',') ($listed -join ',') 'same files in the same order'
+    }
 }
 
 if ('profile' -in $Only) {
@@ -107,6 +114,28 @@ if ('profile' -in $Only) {
     Set-Content "$repo\d.txt" 'd'
     G worktree add -q "$work\wt" -b wt-branch
     G worktree add -q --detach "$work\detached"
+    G branch feature
+    Add-Content "$prof\custom.ps1" "`nfunction deploy-demo { 'demo' }`nabbr dd 'docker compose down'"
+    New-Item -ItemType Directory -Force "$sandboxHome\.ssh" | Out-Null
+    @'
+# hosts for the tests
+Host prod
+    HostName 10.0.0.1
+    User root
+    Port 2222
+    IdentityFile ~/.ssh/id_prod
+Host staging
+  HostName=staging.example.com
+  User deploy
+Host db web
+    User deploy
+Match host prod
+    User ignored
+Host db
+    User later
+Host *
+    ServerAliveInterval 30
+'@ | Set-Content "$sandboxHome\.ssh\config"
     & git -C "$work\k8sroot" init -q 2>&1 | Out-Null
     Set-Content "$work\chart\Chart.yaml" 'apiVersion: v2'
     $contexts = @"
@@ -131,6 +160,17 @@ users:
 
     Invoke-Sandboxed $sandboxHome {
         Invoke-ChildTests { & pwsh -NoProfile -NoLogo -File (Join-Path $PSScriptRoot 'profile.tests.ps1') -Work $work }
+    }
+    Test 'a broken custom.ps1 does not take the profile down' {
+        $broken = Join-Path $work 'profile-broken'
+        Copy-Item $prof $broken -Recurse
+        Add-Content "$broken\custom.ps1" 'function broken {'
+        $out = Invoke-Sandboxed $sandboxHome {
+            & pwsh -NoProfile -NoLogo -Command "`$PROFILE = '$broken\Microsoft.PowerShell_profile.ps1'; . `$PROFILE 3>&1 2>&1 | Out-String; (Get-Command help).CommandType; (prompt).Split([char]10).Count" 2>&1 | ForEach-Object { "$_" }
+        }
+        AssertMatch ($out -join "`n") 'custom\.ps1' 'warning names the file'
+        AssertMatch ($out -join "`n") 'Function' 'commands still defined'
+        AssertMatch ($out -join "`n") '(?m)^3$' 'prompt still renders'
     }
     Test 'profile loads in under 2 s (sandbox, warm caches)' {
         $ms = Invoke-Sandboxed $sandboxHome {
@@ -189,6 +229,58 @@ if ('setup' -in $Only) {
         Assert (Test-Path (Join-Path $pdir 'bin')) 'bin kept'
         Assert (-not (Test-Path (Join-Path $setupHome '.config\terminal-setup'))) 'config removed'
     }
+
+    # a second machine: english, a theme, ssh tabs, a starting folder, and settings the user already had
+    $setupHome2 = Join-Path $work 'setup-home2'; New-SandboxHome $setupHome2
+    $wt2 = Join-Path $setupHome2 'AppData\Local\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
+    @'
+{
+    "defaultProfile": "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}",
+    "profiles": [
+        { "guid": "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}", "name": "Windows PowerShell", "colorScheme": "Campbell" },
+        { "guid": "{11111111-2222-3333-4444-555555555555}", "name": "My Ubuntu", "commandline": "wsl -d Ubuntu", "colorScheme": "MyScheme" }
+    ],
+    "schemes": [ { "name": "MyScheme", "background": "#000000", "foreground": "#FFFFFF" } ],
+    "actions": [ { "command": "paste", "keys": "ctrl+v" } ]
+}
+'@ | Set-Content $wt2 -Encoding utf8
+    $vs2 = Join-Path $setupHome2 'AppData\Roaming\Code\User\settings.json'
+    New-Item -ItemType Directory -Force (Split-Path $vs2) | Out-Null
+    '{ "editor.fontSize": 14, "terminal.integrated.fontFamily": "Consolas" }' | Set-Content $vs2 -Encoding utf8
+    $pdir2 = Join-Path $work 'setup-profile2'
+    $out5 = Invoke-Sandboxed $setupHome2 {
+        (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $setup -Lang en -Theme gruvbox -SshTabs prod,staging -StartingDirectory 'D:\code' -SkipApps -ProfileDir $pdir2 2>&1 | ForEach-Object { "$_" }) -join "`n"
+    }
+    Test 'english run with a theme, ssh tabs and a starting folder' {
+        AssertMatch $out5 'Done\.' 'english messages'
+        AssertEq (Get-Content (Join-Path $setupHome2 '.config\terminal-setup\lang') -First 1) 'en' 'lang file'
+        AssertEq (Get-Content (Join-Path $setupHome2 '.config\terminal-setup\theme') -First 1) 'gruvbox' 'theme file'
+        $s = Get-Content $wt2 -Raw | ConvertFrom-Json
+        AssertEq $s.profiles.defaults.colorScheme 'Gruvbox Dark' 'default scheme'
+        AssertEq $s.theme 'Gruvbox Dark' 'window theme'
+        $pw = $s.profiles.list | Where-Object guid -eq '{574e775e-4f2a-5b96-ac1e-a2962a402336}'
+        AssertEq $pw.startingDirectory 'D:\code' 'starting folder'
+        foreach ($h in 'prod', 'staging') { Assert ($s.profiles.list | Where-Object commandline -eq "ssh $h") "tab for $h" }
+    }
+    Test 'settings the user already had survive' {
+        $s = Get-Content $wt2 -Raw | ConvertFrom-Json
+        Assert ($s.profiles.list | Where-Object name -eq 'My Ubuntu') 'own profile kept'
+        Assert ($s.schemes | Where-Object name -eq 'MyScheme') 'own scheme kept'
+        Assert ($s.actions | Where-Object command -eq 'paste') 'own action kept'
+        Assert ($s.actions | Where-Object command -eq 'quakeMode') 'quake added next to it'
+        $vs = Get-Content $vs2 -Raw | ConvertFrom-Json
+        AssertEq $vs.'editor.fontSize' 14 'vs code setting kept'
+        AssertMatch $vs.'terminal.integrated.fontFamily' 'JetBrainsMono|Cascadia' 'terminal font replaced'
+        Assert (Get-ChildItem (Split-Path $vs2) -Filter 'settings.json.bak-*') 'vs code backup made'
+    }
+    if ((Get-Command git -ErrorAction Ignore) -and (Get-Command delta -ErrorAction Ignore)) {
+        Test 'git gets delta as its pager in the sandbox home' {
+            AssertMatch (Get-Content (Join-Path $setupHome2 '.gitconfig') -Raw) '(?m)^\s*pager = delta' 'core.pager'
+            AssertMatch $out5 'settings changed: \d+' 'reported'
+            $out6 = Invoke-Sandboxed $setupHome2 { (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $setup -Lang en -SkipApps -ProfileDir $pdir2 2>&1 | ForEach-Object { "$_" }) -join "`n" }
+            AssertMatch $out6 '\.gitconfig - unchanged' 'second run leaves git alone'
+        }
+    } else { Skip 'git delta config' 'git or delta not installed' }
 }
 
 if ('server' -in $Only) {
@@ -197,6 +289,16 @@ if ('server' -in $Only) {
     else {
         $toLinux = { param($p) (& wsl wslpath -a ($p -replace '\\', '/')).Trim() }
         Invoke-ChildTests { & wsl -e bash (& $toLinux (Join-Path $PSScriptRoot 'server.sh')) (& $toLinux (Join-Path $root 'src\server')) }
+        $srvScript = Join-Path $work 'srv-script.sh'
+        if (Test-Path $srvScript) {
+            Test 'the script srv built on Windows installs on a Linux box' {
+                $out = (& wsl -e bash -c "export HOME=`$(mktemp -d); bash '$(& $toLinux $srvScript)' 2>&1; echo EXIT=`$?") -join "`n"
+                AssertMatch $out 'EXIT=0' 'exit code'
+                AssertMatch $out 'label: prod · language: en' 'label and language'
+                AssertMatch $out '~/\.bashrc\.local' 'bashrc installed'
+                AssertMatch $out 'reconnect over ssh' 'finished'
+            }
+        } else { Skip 'srv script on Linux' 'needs the profile tests in the same run' }
     }
 }
 

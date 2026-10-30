@@ -47,6 +47,7 @@ Any file that differs from the new version is saved next to it as `*.bak-<date>`
 | `-SshTabs host1,host2` | tabs in the Windows Terminal menu for hosts from `~/.ssh/config` |
 | `-SkipApps` | configs only, no programs or font |
 | `-Uninstall` | remove everything of its own, keep `custom.ps1`, `bin\`, programs and `*.bak` files |
+| `-ProfileDir D:\pwsh` | put the profile files somewhere other than the `$PROFILE` folder (the tests use it) |
 
 Offline: download [`setup-terminal.ps1`](setup-terminal.ps1) and run `powershell -ExecutionPolicy Bypass -File .\setup-terminal.ps1`. It is a single file with everything embedded.
 
@@ -61,7 +62,7 @@ Offline: download [`setup-terminal.ps1`](setup-terminal.ps1) and run `powershell
 | Font | JetBrainsMono Nerd Font, with icons, for all users |
 | Windows Terminal | PowerShell 7 by default, theme, font, padding, `Win+\`` drops the terminal over any window |
 | Input | syntax highlighting, history suggestions, abbreviations, layout fix, `↑`/`↓` by prefix |
-| Completions | kubectl, helm, docker, gh, kind, minikube, ssh hosts. Cached, startup does not pay for them |
+| Completions | kubectl, helm, docker, gh, kind, k3d, minikube, ssh hosts. Cached, startup does not pay for them |
 | VS Code and git | the same font in the integrated terminal, diffs through delta in the same colors |
 
 The profile starts in about half a second: only the core loads up front, while the command dictionary, completions and zoxide load right after the prompt is on screen.
@@ -91,7 +92,7 @@ The profile starts in about half a second: only the core loads up front, while t
 
 <p align="center"><img src="docs/my-sys.png" width="860" alt="my sys"></p>
 
-`my sys` · `my ssh` · `my ports 5432` · `my ip public` · `my k8s` · `my docker` · `my tools` · `my path` · `my git` · `my cmds` · `my config`
+`my sys` · `my ssh` · `my ports 5432` · `my ip public` · `my k8s` · `my docker` · `my tools` · `my path` · `my git` · `my cmds` · `my config` · `my keys`
 
 Small helpers that exist on the server too: `ex archive` extracts zip, tar.gz, 7z; `bak file` makes a copy before editing; `psg node` finds processes; `ll | cb` puts the output into the clipboard.
 
@@ -104,7 +105,7 @@ new weather.py 'weather in a city'   # creates bin\weather.py from a template an
 weather Minsk                        # already a command, no restart
 ```
 
-A file in `bin\` next to the profile is a command. A `# help: …` line at the top becomes its caption in `help` and `my cmds`. The extension picks the runner: `.py` via **uv** (dependencies right in the file, `# /// script`), `.ps1`, `.js`, `.ts` (bun, deno or node), `.sh`, `.go`, `.rs` (rust-script), `.clj` (babashka), `.rb`, `.lua`, `.php`. A compiled `.exe` just goes into `bin\`.
+A file in `bin\` next to the profile is a command. A `# help: …` line at the top becomes its caption in `help` and `my cmds`. The extension picks the runner: `.py` via **uv** (dependencies right in the file, `# /// script`), `.ps1`, `.js`, `.ts` (bun, deno or node), `.sh`, `.go`, `.rs` (rust-script), `.clj` (babashka), `.rb`, `.lua`, `.php`. A compiled `.exe` just goes into `bin\`. A taken name is never overridden: `new git.py` refuses, and a file named after a real program yields to it.
 
 `custom.ps1` in the same folder holds your functions, abbreviations and switches. It loads last, is never overwritten, and its functions show up in `help`. `ep` opens the profile folder in VS Code.
 
@@ -132,7 +133,7 @@ One ssh connection, a backup and a trial load before anything is replaced, one l
 - A prompt with an environment label (`prod` red, `staging` yellow, `dev` green), git branch, duration of long commands and exit code.
 - Guards: `docker compose down -v`, `volume rm`, `system prune` require typing `yes`; `rm`, `cp`, `mv` ask before mass changes. Scripts are unaffected.
 - `sys` shows load, memory, disk, processes and containers. `help` searches the cheat sheet. `bak`, `ex`, `psg`, `h` work the same way as on Windows.
-- Your own files for servers: `server\custom\*.sh` next to the profile go to every server into `~/.bashrc.d/`. Scripts in `~/bin` and `# help: name - description` lines show up in `help` on the server.
+- Your own files for servers: `server\custom\*.sh` next to the profile go to every server into `~/.bashrc.d/`. `help` on the server also lists scripts from `~/bin` (caption from a `# help: …` line) and functions from `~/.bashrc.d/*.sh` (`# help: name - description` lines).
 
 ## Where things live
 

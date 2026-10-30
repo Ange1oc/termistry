@@ -1,50 +1,49 @@
 <#
 .SYNOPSIS
-  Собирает setup-terminal.ps1 из src/: логика (src/setup-logic.ps1) + файлы, встроенные как here-strings.
+  Builds setup-terminal.ps1 from src/: the installer logic plus every profile file embedded as a here-string.
 
 .EXAMPLE
-  .\build.ps1               # собрать из src/
+  .\build.ps1               # build from src/
 .EXAMPLE
-  .\build.ps1 -FromProfile  # сначала забрать в src/ текущую рабочую настройку с этой машины, потом собрать
+  .\build.ps1 -FromProfile  # pull the working setup from this machine into src/ first, then build
 #>
 param([switch]$FromProfile)
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $profileDir = Split-Path $PROFILE
 
-# key in $EmbeddedFiles → file in src/ → live location on this machine
+# installed path (relative to the profile folder) → source in src/
 $files = [ordered]@{
-    'profile'     = @('src\profile\Microsoft.PowerShell_profile.ps1', $PROFILE)
-    'palette'     = @('src\profile\palette.ps1', (Join-Path $profileDir 'palette.ps1'))
-    'lang'        = @('src\profile\lang.ps1', (Join-Path $profileDir 'lang.ps1'))
-    'toolkit'     = @('src\profile\toolkit.ps1', (Join-Path $profileDir 'toolkit.ps1'))
-    'toolkit-lazy' = @('src\profile\toolkit-lazy.ps1', (Join-Path $profileDir 'toolkit-lazy.ps1'))
-    'prompt'      = @('src\profile\prompt.ps1', (Join-Path $profileDir 'prompt.ps1'))
-    'custom'      = @('src\profile\custom.ps1', $null)     # template, installed once, never pulled back
-    'predictor'   = @('src\profile\DeepHistoryPredictor.cs', (Join-Path $profileDir 'DeepHistoryPredictor.cs'))
-    'srv-bashrc'  = @('src\server\bashrc.local', (Join-Path $profileDir 'server\bashrc.local'))
-    'srv-inputrc' = @('src\server\inputrc', (Join-Path $profileDir 'server\inputrc'))
-    'srv-install' = @('src\server\install.sh', (Join-Path $profileDir 'server\install.sh'))
+    'Microsoft.PowerShell_profile.ps1' = 'src\profile\Microsoft.PowerShell_profile.ps1'
+    'palette.ps1'                      = 'src\profile\palette.ps1'
+    'lang.ps1'                         = 'src\profile\lang.ps1'
+    'toolkit.ps1'                      = 'src\profile\toolkit.ps1'
+    'toolkit-lazy.ps1'                 = 'src\profile\toolkit-lazy.ps1'
+    'prompt.ps1'                       = 'src\profile\prompt.ps1'
+    'DeepHistoryPredictor.cs'          = 'src\profile\DeepHistoryPredictor.cs'
+    'server\bashrc.local'              = 'src\server\bashrc.local'
+    'server\inputrc'                   = 'src\server\inputrc'
+    'server\install.sh'                = 'src\server\install.sh'
+    'custom.ps1'                       = 'src\profile\custom.ps1'   # template: written once, never overwritten, never pulled back
 }
 $utf8 = [Text.UTF8Encoding]::new($false)
 
 if ($FromProfile) {
-    foreach ($key in $files.Keys) {
-        $src, $live = $files[$key]
-        if (-not $live) { continue }
-        $text = [IO.File]::ReadAllText($live) -replace "`r`n", "`n"
-        [IO.File]::WriteAllText((Join-Path $root $src), $text, $utf8)
-        "  ← $src"
+    foreach ($rel in $files.Keys) {
+        if ($rel -eq 'custom.ps1') { continue }
+        $text = [IO.File]::ReadAllText((Join-Path $profileDir $rel)) -replace "`r`n", "`n"
+        [IO.File]::WriteAllText((Join-Path $root $files[$rel]), $text, $utf8)
+        "  ← $($files[$rel])"
     }
 }
 
 $sb = [Text.StringBuilder]::new()
-[void]$sb.AppendLine('# ── Встроенные файлы (собраны build.ps1 из src/) ────────────────────────────')
+[void]$sb.AppendLine('# ── Embedded files (build.ps1 puts them here from src/) ─────────────────────')
 [void]$sb.AppendLine('$EmbeddedFiles = [ordered]@{}')
-foreach ($key in $files.Keys) {
-    $text = ([IO.File]::ReadAllText((Join-Path $root $files[$key][0])) -replace "`r`n", "`n").TrimEnd("`n")
-    if ($text -match "(?m)^['`"]@") { throw "${key}: строка, начинающаяся с '@ или `"@, сломает here-string" }
-    [void]$sb.AppendLine("`$EmbeddedFiles['$key'] = @'")
+foreach ($rel in $files.Keys) {
+    $text = ([IO.File]::ReadAllText((Join-Path $root $files[$rel])) -replace "`r`n", "`n").TrimEnd("`n")
+    if ($text -match "(?m)^['`"]@") { throw "$($files[$rel]): a line starting with '@ or `"@ would end the here-string" }
+    [void]$sb.AppendLine("`$EmbeddedFiles['$rel'] = @'")
     [void]$sb.AppendLine($text)
     [void]$sb.AppendLine("'@")
 }
@@ -59,5 +58,5 @@ $out = Join-Path $root 'setup-terminal.ps1'
 
 $errors = $null
 [void][System.Management.Automation.Language.Parser]::ParseFile($out, [ref]$null, [ref]$errors)
-if ($errors) { $errors | ForEach-Object { "  ✗ строка $($_.Extent.StartLineNumber): $($_.Message)" }; throw 'setup-terminal.ps1 не разбирается' }
+if ($errors) { $errors | ForEach-Object { "  ✗ line $($_.Extent.StartLineNumber): $($_.Message)" }; throw 'setup-terminal.ps1 does not parse' }
 "  ✓ setup-terminal.ps1 v$version, $([math]::Round((Get-Item $out).Length / 1KB)) KB, parses"

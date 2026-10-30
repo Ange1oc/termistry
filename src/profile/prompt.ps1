@@ -101,7 +101,7 @@ function global:Get-TsToolVersion([string]$Tool) {
     if ($global:TsVersions.ContainsKey($Tool)) { return $global:TsVersions[$Tool] }
     $v = ''
     $exe = if ($Tool -eq 'rust') { 'rustc' } else { $Tool }
-    if (Get-Command $exe -ErrorAction Ignore) {
+    if (Find-TkCommand $exe) {
         $exit = $global:LASTEXITCODE
         $out = switch ($Tool) { 'go' { go version 2>$null } default { & $exe --version 2>$null } }
         $global:LASTEXITCODE = $exit
@@ -113,6 +113,7 @@ function global:Get-TsToolVersion([string]$Tool) {
 
 function global:Get-TsShortPath([string]$Dir) {
     $p = if ($Dir.StartsWith($HOME, [StringComparison]::OrdinalIgnoreCase)) { '~' + $Dir.Substring($HOME.Length) } else { $Dir }
+    if ($p -match '^[A-Za-z]:\\?$') { return $p.TrimEnd('\') + '\' }
     $parts = $p.TrimEnd('\') -split '\\'
     if ($parts.Count -gt 4) { $parts = @($parts[0], '..') + $parts[-3..-1] }
     $parts -join '\'
@@ -182,7 +183,7 @@ function global:prompt {
         $native = $false
         if ($exit -and $exit -eq $global:TsLastExit -and $last) {
             $first = ($last.CommandLine.TrimStart() -split '[\s|;(]', 2)[0]
-            $native = (Get-Command $first -ErrorAction Ignore).CommandType -eq 'Application'
+            $native = (Find-TkCommand $first).CommandType -eq 'Application'
         }
         $code = if ($exit -and ($exit -ne $global:TsLastExit -or $native)) { $exit } else { 1 }
     }

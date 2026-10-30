@@ -64,6 +64,9 @@ trap 'rm -rf "$work"' EXIT
 printf '%s' '__BASHRC_B64__' | base64 -d > "$work/bashrc.local"
 printf '%s' '__INPUTRC_B64__' | base64 -d > "$work/inputrc"
 
+mkdir -p ~/.bashrc.d
+__CUSTOM_FILES__
+
 bash -n "$work/bashrc.local" || { echo "$bad $(m syntax_err)"; exit 1; }
 errors=$(HOME=$HOME bash --norc -i -c ". '$work/bashrc.local'" </dev/null 2>&1 >/dev/null |
     grep -v -e 'job control' -e 'terminal process group' -e 'Inappropriate ioctl' || true)
@@ -121,9 +124,6 @@ else
     printf '\n%s\n' "$hook" >> ~/.bashrc
     echo "$ok $(m hook_added) ${dim}($(m backup) ~/.bashrc.bak-$ts)${r}"
 fi
-
-mkdir -p ~/.bashrc.d
-__CUSTOM_FILES__
 
 if [ -f ~/.bash_profile ]; then
     grep -q 'bashrc' ~/.bash_profile || echo "$warn $(m profile_warn)"

@@ -7,7 +7,7 @@ function global:Format-TkSize([double]$Bytes) {
 
 # docker/kubectl can hang for a long time when their daemon is down
 function global:Invoke-WithTimeout([string]$Command, [string[]]$Arguments, [int]$Milliseconds = 3000) {
-    $exe = (Get-Command $Command -ErrorAction Ignore).Source
+    $exe = (Find-TkCommand $Command).Source
     if (-not $exe) { return $null }
     $psi = [Diagnostics.ProcessStartInfo]::new($exe)
     foreach ($a in $Arguments) { $psi.ArgumentList.Add($a) }
@@ -16,7 +16,7 @@ function global:Invoke-WithTimeout([string]$Command, [string[]]$Arguments, [int]
     $out = $proc.StandardOutput.ReadToEndAsync()
     if (-not $proc.WaitForExit($Milliseconds)) { try { $proc.Kill() } catch {}; return $null }
     if ($proc.ExitCode -ne 0) { return $null }
-    $out.Result -split "`n" | Where-Object { $_.Trim() }
+    $out.Result -split "`r?`n" | Where-Object { $_.Trim() }
 }
 
 # ── help ─────────────────────────────────────────────────────────────────────
@@ -259,7 +259,7 @@ function global:Show-MySys {
         Write-Host ("  {0}{1,-26}{2} {3,9}{4}{5}" -f $TK.cmd, $t.Name, $TK.R, (Format-TkSize $t.Memory), $TK.dim, $(if ($t.Count -gt 1) { "  ×$($t.Count)" }), $TK.R)
     }
 
-    if (Get-Command docker -ErrorAction Ignore) {
+    if (Find-TkCommand docker) {
         Write-Host ''
         Write-Host ("  {0}{1}{2}" -f $TK.title, $TkStr.sys_containers, $TK.R)
         $rows = Invoke-WithTimeout docker @('ps', '-a', '--format', '{{.Names}}\t{{.Status}}')
@@ -275,7 +275,7 @@ function global:Show-MySys {
 }
 
 function global:Show-MyK8s {
-    if (-not (Get-Command kubectl -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
+    if (-not (Find-TkCommand kubectl)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
     $rows = Invoke-WithTimeout kubectl @('config', 'get-contexts', '--no-headers') 5000
     Write-TkTitle 'Kubernetes' $TkStr.k8s_hint
     if (-not $rows) { Write-Host "  $($TK.dim)$($TkStr.k8s_none)$($TK.R)"; Write-Host ''; return }
@@ -295,7 +295,7 @@ function global:Show-MyK8s {
 }
 
 function global:Show-MyDocker {
-    if (-not (Get-Command docker -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.docker_missing)$($TK.R)"; return }
+    if (-not (Find-TkCommand docker)) { Write-Host "  $($TK.dim)$($TkStr.docker_missing)$($TK.R)"; return }
     $rows = Invoke-WithTimeout docker @('ps', '-a', '--format', '{{.Names}}\t{{.Status}}\t{{.Ports}}')
     Write-TkTitle 'Docker' $TkStr.docker_hint
     if ($null -eq $rows) { Write-Host "  $($TK.dim)$($TkStr.docker_down)$($TK.R)"; Write-Host ''; return }
@@ -442,7 +442,10 @@ function global:Show-MyCommands {
     Write-TkTitle $TkStr.cmds_title ($TkStr.cmds_hint -f $global:ProfileDir)
     if ($global:UserCommands) {
         Write-Host ("  {0}bin\{1}" -f $TK.title, $TK.R)
-        foreach ($c in $global:UserCommands) { Write-TkRow $c.Name $c.Help "$($c.File) · $($c.Runner)" }
+        foreach ($c in $global:UserCommands) {
+            $runner = Get-ScriptRunner $c.Extension
+            Write-TkRow $c.Name $c.Help "$($c.File) · $(if ($runner) { $runner } else { '- ' + ($global:ScriptRunners[$c.Extension] -join '/') })"
+        }
     } else {
         Write-Host ("  {0}{1}{2}" -f $TK.dim, $TkStr.cmds_empty, $TK.R)
     }
@@ -534,7 +537,7 @@ function global:new {
     $name = [IO.Path]::GetFileNameWithoutExtension($FileName)
     if (-not $TkTemplates.ContainsKey($ext)) { Write-Host "  $($TK.err)$($TkStr.new_bad_ext -f $ext)$($TK.R)"; return }
     if ($name -notmatch '^[A-Za-z_][\w-]*$') { Write-Host "  $($TK.err)$($TkStr.new_bad_name)$($TK.R)"; return }
-    $taken = Get-Command $name -All -ErrorAction Ignore |
+    $taken = Find-TkCommand $name -All |
         Where-Object { $_.Source -notlike "$bin\*" -and $_.ScriptBlock -notlike '*UserCommand*' } | Select-Object -First 1
     if ($taken) { Write-Host "  $($TK.err)$($TkStr.new_taken -f $name, $taken.CommandType, $taken.Source)$($TK.R)"; return }
     New-Item -ItemType Directory -Force $bin | Out-Null
@@ -548,7 +551,7 @@ function global:new {
     $runner = Get-ScriptRunner $ext
     if ($runner) { Write-Host ("  {0}{1}{2}{3}{4} {5}{6}  {7}{8}{9}" -f $TK.dim, $TkStr.new_ready, $TK.cmd, $name, $TK.R, $TK.dim, $TkStr.new_args, $TK.dim, ($TkStr.new_via -f $runner), $TK.R) }
     else { Write-Host ("  {0}{1}{2}" -f $TK.warn, ($TkStr.new_norunner -f ($global:ScriptRunners[$ext] -join ' / ')), $TK.R) }
-    if ($global:isInteractive -and (Get-Command code -ErrorAction Ignore)) { code $path }
+    if ($global:isInteractive -and (Find-TkCommand code)) { code $path }
 }
 
 # ── theme / lang ─────────────────────────────────────────────────────────────
@@ -637,13 +640,13 @@ function global:Get-TsPreview {
 }
 
 function global:Open-TsFile([string]$Path) {
-    if (Get-Command code -ErrorAction Ignore) { code $Path } else { Invoke-Item $Path }
+    if (Find-TkCommand code) { code $Path } else { Invoke-Item $Path }
 }
 
 # ── nav: folders (and files with Ctrl+E) as a tree on fzf ────────────────────
 function global:nav {
     param([string]$Start = (Get-Location).Path)
-    if (-not (Get-Command fzf -ErrorAction Ignore)) { return }
+    if (-not (Find-TkCommand fzf)) { return }
     $dir = (Resolve-Path -LiteralPath $Start).Path
     $preview = "$(Get-TsPreview) {2}"
     $files = $false; $hidden = $false
@@ -655,7 +658,7 @@ function global:nav {
         $entries += $items | Sort-Object { -not $_.PSIsContainer }, Name | ForEach-Object {
             if ($_.PSIsContainer) { "$($_.Name)`t$($_.FullName)`td" } else { "  $($_.Name)`t$($_.FullName)`tf" }
         }
-        $mode = @($(if ($files) { 'files' }), $(if ($hidden) { 'hidden' })) -ne $null -join ' '
+        $mode = @(if ($files) { 'files' }; if ($hidden) { 'hidden' }) -join ' '
         $out = Invoke-Fzf $entries @('--expect=right,left,ctrl-f,ctrl-o,ctrl-e,ctrl-h', "--delimiter=`t", '--with-nth=1', '--cycle', '--height=70%',
             "--header=$($TkStr.nav_header)", "--prompt=$($dir.Replace($HOME, '~')) $(if ($mode) { "[$mode] " })❯ ", "--preview=$preview", '--preview-window=right:50%')
         if (-not $out) { return }
@@ -714,7 +717,7 @@ function global:rgi {
         $file, $line = ($out[1] -split ':', 3)[0, 1]
         $full = (Resolve-Path -LiteralPath $file).Path
         if ($out[0] -eq 'ctrl-y') { Set-Clipboard "${full}:$line"; Write-Host "  $($TK.dim)${full}:$line$($TK.R)"; return }
-        if (Get-Command code -ErrorAction Ignore) { code -g "${full}:$line" }
+        if (Find-TkCommand code) { code -g "${full}:$line" }
         else { bat --color=always --style=numbers --highlight-line $line --paging=never $full }
     } finally { Pop-Location }
 }
@@ -741,7 +744,7 @@ function global:o { param([string]$Path = '.') Invoke-Item -LiteralPath $Path }
 
 # ── kubernetes: switch context / namespace, the prompt picks it up by itself ─
 function global:kctx([string]$Name) {
-    if (-not (Get-Command kubectl -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
+    if (-not (Find-TkCommand kubectl)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
     if (-not $Name) {
         $list = @(Invoke-WithTimeout kubectl @('config', 'get-contexts', '-o', 'name') 5000 | Where-Object { $_ })
         if (-not $list) { Write-Host "  $($TK.dim)$($TkStr.k8s_none)$($TK.R)"; return }
@@ -751,7 +754,7 @@ function global:kctx([string]$Name) {
 }
 
 function global:kns([string]$Name) {
-    if (-not (Get-Command kubectl -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
+    if (-not (Find-TkCommand kubectl)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
     if (-not $Name) {
         $list = @(Invoke-WithTimeout kubectl @('get', 'namespaces', '-o', 'name') 8000 | ForEach-Object { $_ -replace '^namespace/', '' } | Where-Object { $_ })
         if (-not $list) { Write-Host "  $($TK.dim)$($TkStr.kns_none)$($TK.R)"; return }
@@ -832,11 +835,10 @@ function global:doctor {
     $check = { param($ok, $label, $detail) if ($ok) { Write-Host "  $($TK.ok)✓$($TK.R) $label $($TK.dim)$detail$($TK.R)" } else { $state.problems++; Write-Host "  $($TK.err)✗$($TK.R) $label $($TK.dim)$detail$($TK.R)" } }
 
     $tools = 'git', 'fzf', 'zoxide', 'eza', 'bat', 'rg', 'fd', 'delta', 'lazygit', 'tldr', 'gh'
-    $missing = @($tools | Where-Object { -not (Get-Command $_ -ErrorAction Ignore) })
+    $missing = @($tools | Where-Object { -not (Find-TkCommand $_) })
     & $check (-not $missing) $TkStr.doctor_tools $(if ($missing) { $TkStr.doctor_missing -f ($missing -join ', ') } else { $tools -join ' ' })
 
-    $files = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\install.sh', 'server\inputrc'
-    $lost = @($files | Where-Object { -not (Test-Path (Join-Path $global:ProfileDir $_)) })
+    $lost = @($global:TsFiles | Where-Object { -not (Test-Path (Join-Path $global:ProfileDir $_)) })
     & $check (-not $lost) $TkStr.doctor_files $(if ($lost) { $TkStr.doctor_missing -f ($lost -join ', ') } else { $global:ProfileDir.Replace($HOME, '~') })
 
     & $check (Test-Path "$env:windir\Fonts\JetBrainsMonoNerdFont-Regular.ttf") $TkStr.doctor_font 'JetBrainsMono NF'
@@ -893,7 +895,7 @@ function global:Update-Completions {
     New-Item -ItemType Directory -Force $dir | Out-Null
     foreach ($name in $global:CompletionGenerators.Keys) {
         $file = Join-Path $dir "$name.ps1"
-        if (Get-Command $name -ErrorAction Ignore) {
+        if (Find-TkCommand $name) {
             $text = (& $global:CompletionGenerators[$name] | Out-String)
             $text = [regex]::Replace($text, '(?m)^(\s*)(function|filter)\s+(?!global:)(\S+)', '$1$2 global:$3')
             Set-Content $file ("# global`n" + $text) -Encoding utf8

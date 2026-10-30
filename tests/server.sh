@@ -11,7 +11,7 @@ t() {   # t "name" function: whatever the function prints is shown when it fails
     local name=$1; shift
     local out
     if out=$("$@" 2>&1); then pass=$((pass+1)); printf '  %s %s\n' "$ok" "$name"
-    else fail=$((fail+1)); printf '  %s %s%s  %s%s%s\n' "$bad" "$name" "$r" "$dim" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)" "$r"; fi
+    else fail=$((fail+1)); printf '  %s %s%s  %s%s%s\n' "$bad" "$name" "$r" "$dim" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-700)" "$r"; fi
 }
 has() { [[ $1 == *"$2"* ]] || { printf 'missing "%s" in: %s\n' "$2" "$1"; return 1; }; }
 lacks() { [[ $1 != *"$2"* ]] || { printf 'unexpected "%s" in: %s\n' "$2" "$1"; return 1; }; }
@@ -51,7 +51,7 @@ installer() {   # action env lang
     printf '%s' "$s" | bash -s
 }
 # An interactive bash with bashrc.local loaded, like a session on the server
-run() { bash --norc -i -c ". ~/.bashrc.local; $1" </dev/null 2>&1 | grep -v -e 'job control' -e 'terminal process group' -e 'Inappropriate ioctl'; }
+run() { bash --norc -i -c $'. ~/.bashrc.local\n'"$1" </dev/null 2>&1 | grep -v -e 'job control' -e 'terminal process group' -e 'Inappropriate ioctl'; }
 
 printf '\n  %s── static%s\n' "$dim" "$r"
 t 'bashrc.local: bash -n'                 bash -n "$src/bashrc.local"
@@ -86,11 +86,59 @@ test_remove() {
     local out; out=$(installer remove '' ru)
     has "$out" 'убрана' && ! grep -q 'bashrc.local' "$HOME/.bashrc" && ls "$HOME"/.bashrc.local.off-* >/dev/null 2>&1 && file "$HOME/.config/bashrc-local.conf"
 }
+test_conf_kept() {
+    printf 'MY_SETTING=1\n' >> "$HOME/.config/bashrc-local.conf"
+    installer install '' ru >/dev/null
+    grep -q '^MY_SETTING=1$' "$HOME/.config/bashrc-local.conf" && [[ $(grep -c '^PROMPT_ENV=' "$HOME/.config/bashrc-local.conf") == 1 ]]
+}
+test_custom_update() {
+    local out; out=$(installer install '' ru)
+    has "$out" '~/.bashrc.d/mine.sh уже актуален' || return 1
+    printf 'hello() { echo changed; }\n' > "$HOME/.bashrc.d/mine.sh"
+    out=$(installer install '' ru)
+    has "$out" '~/.bashrc.d/mine.sh' && lacks "$out" 'mine.sh уже актуален' && grep -q 'says hello' "$HOME/.bashrc.d/mine.sh"
+}
+test_no_bashrc() {
+    rm -f "$HOME/.bashrc"
+    local out; out=$(installer install '' ru)
+    has "$out" '~/.bashrc создан' && grep -q 'bashrc.local' "$HOME/.bashrc"
+}
+test_bash_profile_warn() {
+    printf 'export FOO=1\n' > "$HOME/.bash_profile"
+    local out; out=$(installer install '' ru)
+    rm -f "$HOME/.bash_profile"
+    has "$out" '~/.bash_profile не подключает'
+}
+test_legacy_label() {
+    installer remove '' ru >/dev/null
+    rm -f "$HOME/.config/bashrc-local.conf"
+    printf '# old\nPROMPT_ENV=legacy\n' > "$HOME/.bashrc.local"
+    local out; out=$(installer install '' ru)
+    has "$out" 'перенесена' && grep -q '^PROMPT_ENV=legacy$' "$HOME/.config/bashrc-local.conf"
+}
+test_broken_payload() {
+    local s; s=$(<"$src/install.sh")
+    s=${s//__ACTION__/install}; s=${s//__ENV__/}; s=${s//__LANG__/ru}
+    s=${s//__BASHRC_B64__/$(printf 'if [[ ; then\n' | base64 -w0)}
+    s=${s//__INPUTRC_B64__/$(base64 -w0 "$src/inputrc")}
+    s=${s//__CUSTOM_FILES__/}
+    local before; before=$(md5sum "$HOME/.bashrc.local")
+    local out; out=$(printf '%s' "$s" | bash -s 2>&1); local code=$?
+    (( code != 0 )) || { echo "exit $code"; return 1; }
+    has "$out" 'синтаксическая ошибка' && [[ $(md5sum "$HOME/.bashrc.local") == "$before" ]]
+}
 t 'install: files, hook, label, language'  test_install
 t 'reinstall: up to date, no backup'       test_reinstall
 t 'relabel and switch language'            test_relabel
 t 'label none clears it'                   test_nolabel
 t 'remove: hook gone, files set aside'     test_remove
+installer install prod ru >/dev/null
+t 'other lines in the conf survive'        test_conf_kept
+t 'custom files: up to date or refreshed'  test_custom_update
+t 'no ~/.bashrc: created with the hook'    test_no_bashrc
+t '~/.bash_profile without bashrc warns'   test_bash_profile_warn
+t 'label migrates from an old bashrc.local' test_legacy_label
+t 'a broken payload is refused, nothing changes' test_broken_payload
 installer install prod ru >/dev/null
 
 printf '\n  %s── bashrc.local%s\n' "$dim" "$r"
@@ -164,6 +212,67 @@ test_sys() {
     [[ $out == *'█'* || $out == *'░'* ]] || { echo "no bars: $out"; return 1; }
 }
 test_aliases() { local out; out=$(run 'alias rm; alias ll; type -t dc'); has "$out" 'rm -I' && has "$out" 'ls -lah' && has "$out" 'alias'; }
+test_prompt_extra() {
+    local out; out=$(run '__ts=$((SECONDS-5)); VIRTUAL_ENV=/x/venv __prompt; printf "%s" "$PS1"')
+    has "$out" '⏱ 5s' && has "$out" '(venv)' || return 1
+    out=$(run 'PROMPT_ENV=staging __prompt; printf "%s" "$PS1"'); has "$out" '\[\e[33m\]● staging' || return 1
+    out=$(run 'PROMPT_ENV=dev __prompt; printf "%s" "$PS1"'); has "$out" '\[\e[32m\]● dev' || return 1
+    out=$(run 'PROMPT_ENV= __prompt; printf "%s" "$PS1"'); lacks "$out" '●'
+}
+test_git_detached() {
+    local repo=$T/repo
+    git -C "$repo" checkout -q --detach 2>/dev/null
+    local out; out=$(run "cd '$repo'; __git_branch")
+    git -C "$repo" checkout -q - 2>/dev/null
+    [[ $out =~ ⎇\ [0-9a-f]{7} ]] || { echo "$out"; return 1; }
+}
+test_lang_fallback() {
+    sed -i 's/^LANG_UI=.*/LANG_UI=klingon/' "$HOME/.config/bashrc-local.conf"
+    local out; out=$(run help)
+    sed -i 's/^LANG_UI=.*/LANG_UI=ru/' "$HOME/.config/bashrc-local.conf"
+    has "$out" 'Проекты'
+}
+test_dots_bars_pad() {
+    local out; out=$(run '__dot "Up 2 hours (healthy)"; __dot "Up 3 seconds (health: starting)"; __dot "Exited (0) 2 hours ago"; __dot "Exited (1) 2 hours ago"; echo; __bar 50 10; echo; __bar 95 10; echo; __pad "ядро" 8; echo "|"')
+    [[ $out == *$'\e[32m●'*$'\e[33m●'*$'\e[90m●'*$'\e[31m●'* ]] || { echo "dots: $out"; return 1; }
+    [[ $out == *'█████'$'\e[90m''░░░░░'* ]] || { echo "bar 50: $out"; return 1; }
+    [[ $out == *$'\e[31m'*'█████████'* ]] || { echo "bar 95 not red: $out"; return 1; }
+    [[ $out == *'ядро    |'* ]] || { echo "pad: $out"; return 1; }
+}
+test_proj_more() {
+    local out; out=$(run 'shop logs web; shop cd; pwd; shop restart web')
+    has "$out" 'docker compose logs -f --tail=200 web' && has "$out" "$HOME/apps/shop" && has "$out" 'docker compose restart web' || return 1
+    out=$(run "cd '$HOME/apps/shop'; dsh web"); has "$out" 'docker compose exec web' || return 1
+    out=$(run "cd '$T'; dsh web"); has "$out" 'проектов несколько' || return 1
+    out=$(run 'shop sh'); has "$out" 'укажи сервис'
+}
+test_completion() {
+    local out; out=$(run 'COMP_WORDS=(shop sh ""); COMP_CWORD=2; __proj_complete; echo "${COMPREPLY[*]}"; COMP_WORDS=(proj ""); COMP_CWORD=1; __proj_complete; echo "${COMPREPLY[*]}"; COMP_WORDS=(shop ""); COMP_CWORD=1; __proj_complete; echo "${COMPREPLY[*]}"')
+    has "$out" 'web db' && has "$out" 'add rm' && has "$out" 'shop' && has "$out" 'logs'
+}
+test_guard_more() {
+    rm -f "$MARK"
+    local out; out=$(run 'docker compose down --volumes; docker volume prune; dc down -v')
+    [[ $(grep -c 'Отменено' <<<"$out") == 3 && ! -f $MARK ]] || { echo "$out"; return 1; }
+}
+test_inputrc() {
+    grep -q '^set completion-ignore-case on' "$HOME/.inputrc" && grep -q 'history-search-backward' "$HOME/.inputrc" &&
+    ! grep -vE '^\s*(#|$|set |"|\$)' "$HOME/.inputrc"
+}
+test_history_settings() {
+    local out; out=$(run 'echo "$HISTSIZE $HISTCONTROL"; shopt -p histappend')
+    has "$out" '50000 ignoreboth:erasedups' && has "$out" 'shopt -s histappend'
+}
+test_login_banner() {
+    local out; out=$(bash --norc --noprofile -l -i -c '. ~/.bashrc.local' </dev/null 2>&1 | grep -v -e 'job control' -e 'terminal process group' -e 'Inappropriate ioctl')
+    has "$out" 'help - шпаргалка' && has "$out" 'shop'
+}
+test_bin_not_executable() {
+    printf '# help: not runnable\n' > "$HOME/bin/draft"
+    local out; out=$(run help)
+    rm -f "$HOME/bin/draft"
+    lacks "$out" 'not runnable'
+}
 t 'loads clean in an interactive shell'    test_load_clean
 t 'no background jobs after loading'       test_no_jobs
 t 'help: sections, projects, own scripts'  test_help_ru
@@ -187,6 +296,17 @@ t 'mkcd'                                   test_mkcd
 t 'h filters history'                      test_h
 t 'sys draws load, memory, containers'     test_sys
 t 'aliases and guards are in place'        test_aliases
+t 'prompt: duration, venv, label colors'   test_prompt_extra
+t 'git branch when detached'               test_git_detached
+t 'unknown LANG_UI falls back to ru'       test_lang_fallback
+t '__dot, __bar, __pad'                    test_dots_bars_pad
+t '<project> logs / cd / restart, dsh'     test_proj_more
+t 'tab completion for projects'            test_completion
+t 'docker guard: --volumes, prune, dc'     test_guard_more
+t 'inputrc loads and sets its options'     test_inputrc
+t 'history settings'                       test_history_settings
+t 'login shell prints the banner'          test_login_banner
+t 'non-executable ~/bin files stay out'    test_bin_not_executable
 
 color=$'\e[32m'; (( fail )) && color=$'\e[31m'
 printf '\n  %s%d passed, %d failed%s\n' "$color" "$pass" "$fail" "$r"

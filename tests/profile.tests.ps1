@@ -275,7 +275,11 @@ Test 'new makes a command from a template, bin never shadows a real command' {
     Assert (-not (Test-Path (Join-Path $global:ProfileDir 'bin\git.py'))) 'git.py refused'
     Set-Content (Join-Path $global:ProfileDir 'bin\git.ps1') '# help: shadow'
     Register-BinCommands (Join-Path $global:ProfileDir 'bin')
-    AssertEq (Get-Command git).CommandType 'Application' 'git is still the real one'
+    AssertMatch ((git --version) -join ' ') '^git version' 'git still runs the real program'
+    Set-Content (Join-Path $global:ProfileDir 'bin\help.py') '# help: shadow'
+    Register-BinCommands (Join-Path $global:ProfileDir 'bin')
+    AssertNotMatch "$((Get-Command help).ScriptBlock)" 'Invoke-TkScript' 'help is still ours'
+    Remove-Item (Join-Path $global:ProfileDir 'bin\git.ps1'), (Join-Path $global:ProfileDir 'bin\help.py')
     new 'bad name.py' *> $null
     Assert (-not (Test-Path (Join-Path $global:ProfileDir 'bin\bad name.py'))) 'bad name refused'
 }
@@ -356,5 +360,295 @@ if ((Get-Command bat -ErrorAction Ignore) -and (Get-Command eza -ErrorAction Ign
         AssertMatch (Plain ((& $pv $dir) -join "`n")) 'файл\.txt' 'folder preview'
     }
 } else { Skip 'fzf preview script' 'bat or eza not installed' }
+
+Section 'prompt: more cases'
+Test 'GitStatus switch keeps the branch and drops the counts' {
+    $global:TerminalSetup.GitStatus = $false; $global:TsGit.Pending = ''
+    $p = Plain (Get-TsPrompt -Dir $repo -Width 100)
+    AssertMatch $p "$branchIcon main\s" 'branch stays'
+    AssertNotMatch $p '\+1' 'no counts'
+    AssertEq $global:TsGit.Pending '' 'no refresh requested'
+    $global:TerminalSetup.GitStatus = $true
+}
+Test 'kube: KUBECONFIG with several files uses the first, ~/.kube/config is the fallback' {
+    $env:KUBECONFIG = (Join-Path $Work 'kube-prod') + ';' + (Join-Path $Work 'kube-dev')
+    AssertMatch (Plain (Get-TsKubeText)) 'prod-eu' 'first file'
+    $env:KUBECONFIG = ''
+    New-Item -ItemType Directory -Force (Join-Path $HOME '.kube') | Out-Null
+    Copy-Item (Join-Path $Work 'kube-dev') (Join-Path $HOME '.kube\config')
+    try { AssertMatch (Plain (Get-TsKubeText)) 'kind-dev/shop' 'home config' }
+    finally { Remove-Item (Join-Path $HOME '.kube\config'); $env:KUBECONFIG = Join-Path $Work 'kube-none' }
+}
+Test 'prompt function: the duration comes from history and is shown once' {
+    Set-Location $plain
+    $t = Get-Date
+    Add-History ([pscustomobject]@{ CommandLine = 'slow'; ExecutionStatus = 'Completed'; StartExecutionTime = $t; EndExecutionTime = $t.AddSeconds(3.4) })
+    Get-Date | Out-Null
+    AssertMatch (Plain (prompt)) '3\.4s' 'shown'
+    Get-Date | Out-Null
+    AssertNotMatch (Plain (prompt)) '3\.4s' 'not repeated for the next prompt'
+}
+Test 'drive root and window title' {
+    $p = Get-TsPrompt -Dir 'C:\' -Width 100
+    AssertMatch $p "`e\]0;C:\\`a" 'title for a drive root'
+    AssertMatch (Plain $p) 'C:\\' 'path'
+    AssertMatch (Get-TsPrompt -Dir $repo -Width 100) "`e\]0;repo`a" 'title is the folder name'
+}
+$python = Get-Command python -ErrorAction Ignore
+if ($python -and $python.Source -notlike '*WindowsApps*') {
+    Test 'python venv name in the prompt' {
+        $env:VIRTUAL_ENV = Join-Path $Work 'myenv'
+        try { AssertMatch (Plain (Get-TsPrompt -Dir $plain -Width 100)) '\(myenv\)' 'venv name' }
+        finally { Remove-Item env:VIRTUAL_ENV }
+    }
+} else { Skip 'python venv in the prompt' 'python not installed' }
+Test 'history predictor source compiles' {
+    $dll = Join-Path $Work 'predictor-test.dll'
+    Add-Type -Path (Join-Path $global:ProfileDir 'DeepHistoryPredictor.cs') -OutputAssembly $dll -OutputType Library
+    Assert (Test-Path $dll) 'dll built'
+}
+
+Section 'input: more cases'
+Test 'abbreviations after ; and (, case-sensitive' {
+    AssertEq (Expand-Abbreviation 'cd x; g' 7).Text 'git' 'after ;'
+    AssertEq (Expand-Abbreviation '(g' 2).Text 'git' 'after ('
+    AssertEq (Expand-Abbreviation 'G' 1) $null 'case-sensitive'
+}
+Test 'layout fix leaves a real cyrillic command and an empty line alone' {
+    Set-Item Function:global:вщслук -Value { 'ru' }
+    try { AssertEq (Repair-CommandLayout 'вщслук') $null 'defined command kept' }
+    finally { Remove-Item Function:global:вщслук }
+    AssertEq (Repair-CommandLayout '') $null 'empty line'
+}
+Test 'custom.ps1: its functions and abbreviations are picked up' {
+    Assert ($global:CustomFunctions -contains 'deploy-demo') 'function registered'
+    AssertMatch (Plain (Capture { help })) 'deploy-demo' 'listed in help'
+    AssertMatch (Plain (Capture { my cmds })) 'deploy-demo' 'listed in my cmds'
+    AssertEq (Expand-Abbreviation 'dd' 2).Text 'docker compose down' 'abbr from custom.ps1'
+}
+
+Section 'commands: more cases'
+Test 'theme recolors fzf and PSStyle too' {
+    theme nord *> $null
+    AssertMatch $env:FZF_DEFAULT_OPTS ('fg:#{0:x6}' -f $Themes.nord.text) 'fzf colors'
+    AssertEq $PSStyle.FileInfo.Directory (_tkRgb $Themes.nord.blue) 'directory color'
+    theme mocha *> $null
+}
+Test 'theme, lang, abbr and my without arguments list their options' {
+    AssertMatch (Plain (Capture { theme })) 'gruvbox' 'theme list'
+    AssertMatch (Plain (Capture { lang })) '\ben\b' 'lang list'
+    AssertMatch (Plain (Capture { abbr })) 'git' 'abbr list'
+    $out = Plain (Capture { my })
+    foreach ($k in $global:TkStr.my_topics.get_Keys()) { AssertMatch $out "my $k\b" "topic $k" }
+    AssertMatch (Plain (Capture { my keys })) ([regex]::Escape(($global:TkStr.sections | Where-Object Key -eq 'keys').Title)) 'my keys'
+}
+Test 'help on a cmdlet falls through to Get-Help' { AssertMatch (Plain (Capture { help Get-Item })) 'Get-Item' 'cmdlet help' }
+Test 'new: every template makes a command with its caption, the ps1 one runs' {
+    foreach ($ext in $global:TkTemplates.Keys) { new "tpl_$($ext.TrimStart('.'))$ext" "template $ext" *> $null }
+    $cmds = Plain (Capture { my cmds })
+    foreach ($ext in $global:TkTemplates.Keys) { AssertMatch $cmds "tpl_$($ext.TrimStart('.'))\s+template $([regex]::Escape($ext))" "caption for $ext" }
+    AssertEq (& tpl_ps1 a b) 'hello from tpl_ps1: a b' 'the ps1 command runs through its runner'
+}
+Test 'bin: captions in any comment style, odd names skipped, an exe is not wrapped' {
+    $bin = Join-Path $global:ProfileDir 'bin'
+    Set-Content "$bin\lua_demo.lua" '-- help: lua caption'
+    Set-Content "$bin\clj_demo.clj" ';; help: clj caption'
+    Set-Content "$bin\js_demo.js" '// help: js caption'
+    Set-Content "$bin\1bad.py" '# help: bad'
+    Set-Content "$bin\tool.exe" ''
+    Register-BinCommands $bin
+    foreach ($pair in @(@('lua_demo', 'lua caption'), @('clj_demo', 'clj caption'), @('js_demo', 'js caption'))) {
+        $c = $global:UserCommands | Where-Object Name -eq $pair[0]
+        Assert $c "$($pair[0]) registered"
+        AssertEq $c.Help $pair[1] "$($pair[0]) caption"
+    }
+    Assert (-not ($global:UserCommands | Where-Object Name -eq '1bad')) 'bad name skipped'
+    Assert (-not ($global:UserCommands | Where-Object Name -eq 'tool')) 'exe not wrapped'
+}
+Test 'Get-ScriptRunner picks the first installed runner' {
+    $saved = $global:ScriptRunners['.ts']
+    $global:ScriptRunners['.ts'] = @('no-such-runner-xyz', 'pwsh -NoProfile -File'); $global:TkRunners.Remove('.ts')
+    try { AssertEq (Get-ScriptRunner '.ts') 'pwsh -NoProfile -File' 'fallback runner' }
+    finally { $global:ScriptRunners['.ts'] = $saved; $global:TkRunners.Remove('.ts') }
+    AssertEq (Get-ScriptRunner '.zzz') $null 'unknown extension'
+}
+Test 'Invoke-WithTimeout returns the output of a quick command' {
+    AssertEq ((Invoke-WithTimeout pwsh @('-NoProfile', '-Command', '"a"; "b"') 5000) -join ',') 'a,b' 'lines'
+    AssertEq (Invoke-WithTimeout no-such-exe-xyz @() 500) $null 'missing command'
+}
+Test 'Get-TkBar fills by percent' {
+    AssertEq (((Plain (Get-TkBar 50 10)) -replace '[^█]', '').Length) 5 'half'
+    AssertEq (((Plain (Get-TkBar 100 10)) -replace '[^█]', '').Length) 10 'full'
+}
+Test 'ex handles zip too' {
+    $dir = Join-Path $Work 'arch2'; New-Item -ItemType Directory -Force "$dir\src" | Out-Null
+    Set-Content "$dir\src\z.txt" 'zip'
+    Compress-Archive "$dir\src\z.txt" "$dir\pack.zip"
+    Push-Location $dir
+    try { ex pack.zip *> $null; Assert (Test-Path "$dir\pack\z.txt") 'zip extracted' } finally { Pop-Location }
+}
+
+# fzf, the editor and ssh are replaced by stand-ins: the pickers get real lists and a planned answer
+Section 'pickers (fzf, code and ssh are stand-ins)'
+$global:FzfCalls = [Collections.Generic.List[object]]::new()
+$global:FzfPlan = [Collections.Generic.List[scriptblock]]::new()
+$global:CodeCalls = [Collections.Generic.List[object]]::new()
+$global:SshCalls = [Collections.Generic.List[object]]::new()
+function global:fzf {
+    $lines = @($input)
+    if (-not $lines.Count -and $env:FZF_DEFAULT_COMMAND) { $lines = @(cmd /d /c $env:FZF_DEFAULT_COMMAND 2>$null) }
+    $global:FzfCalls.Add(@{ Args = @($args); Lines = $lines })
+    if (-not $global:FzfPlan.Count) { return }
+    $step = $global:FzfPlan[0]; $global:FzfPlan.RemoveAt(0)
+    & $step $lines @($args)
+}
+function global:code { $global:CodeCalls.Add(@($args)) }
+function global:ssh { $global:SshCalls.Add(@{ Args = @($args); Script = (@($input) -join "`n") }) }
+function Plan([scriptblock]$Step) { $global:FzfPlan.Add($Step) }
+# the next fzf call answers with the first line containing $Match; with --expect, $Key comes first like the real fzf
+function PickLine([string]$Match, [string]$Key = '') {
+    Plan ({ param($lines, $argv) $hit = $lines | Where-Object { $_ -like "*$Match*" } | Select-Object -First 1; if ($argv -match '^--expect') { $Key; $hit } else { $hit } }.GetNewClosure())
+}
+$tree = Join-Path $Work 'tree'
+New-Item -ItemType Directory -Force "$tree\alpha\inner", "$tree\beta" | Out-Null
+Set-Content "$tree\beta\note.txt" 'pv-content-marker'
+Set-Content "$tree\beta\code.txt" "one`ntwo needle`nthree"
+
+Test 'nav: enter a folder with →, go up with ←, Enter picks one' {
+    Push-Location $Work
+    try {
+        PickLine 'alpha' 'right'
+        PickLine '..' 'left'
+        PickLine 'beta'
+        nav $tree
+        AssertEq (Get-Location).Path "$tree\beta" 'ended in beta'
+        AssertEq $global:FzfCalls.Count 3 'three screens'
+        AssertMatch $global:FzfCalls[0].Lines[0] '^\.\.\t' 'parent entry first'
+        AssertNotMatch ($global:FzfCalls[0].Lines -join '|') 'note\.txt' 'files hidden by default'
+        AssertMatch ($global:FzfCalls[1].Lines -join '|') 'inner' 'second screen is inside alpha'
+    } finally { Pop-Location }
+}
+Test 'nav: Ctrl+E shows files, Enter on a file opens it in the editor' {
+    $global:FzfCalls.Clear(); $global:CodeCalls.Clear()
+    Plan { param($lines, $argv) 'ctrl-e'; $lines[0] }
+    PickLine 'note.txt'
+    nav "$tree\beta"
+    AssertMatch ($global:FzfCalls[1].Lines -join '|') 'note\.txt' 'files listed after Ctrl+E'
+    AssertMatch ($global:FzfCalls[1].Args -join ' ') '\[files\]' 'mode shown in the prompt'
+    AssertEq $global:CodeCalls.Count 1 'editor opened once'
+    AssertMatch ($global:CodeCalls[0] -join ' ') 'note\.txt$' 'with the file'
+}
+if (Get-Command fd -ErrorAction Ignore) {
+    Test 'nav: Ctrl+F searches every folder below with fd' {
+        $global:FzfCalls.Clear()
+        Plan { param($lines, $argv) 'ctrl-f'; $lines[0] }
+        PickLine 'inner'
+        Push-Location $Work
+        try { nav $tree; AssertEq (Get-Location).Path "$tree\alpha\inner" 'jumped into the deep folder' } finally { Pop-Location }
+        AssertMatch ($global:FzfCalls[1].Lines -join '|') 'alpha' 'fd ran through FZF_DEFAULT_COMMAND'
+    }
+} else { Skip 'nav Ctrl+F' 'fd not installed' }
+Test 'pv: Enter opens the file in the editor, Ctrl+P prints it' {
+    $global:CodeCalls.Clear()
+    PickLine 'note.txt'
+    pv "$tree\beta"
+    AssertMatch ($global:CodeCalls[0] -join ' ') 'note\.txt$' 'opened in the editor'
+    PickLine 'note.txt' 'ctrl-p'
+    AssertMatch (Plain (Capture { pv "$tree\beta" })) 'pv-content-marker' 'printed with bat'
+}
+if (Get-Command rg -ErrorAction Ignore) {
+    Test 'rgi: rg runs on every keystroke, a hit opens the editor at file:line' {
+        $global:FzfCalls.Clear(); $global:CodeCalls.Clear()
+        Plan { param($lines, $argv) ''; 'code.txt:2:two needle' }
+        rgi needle "$tree\beta"
+        AssertMatch (Plain ($global:FzfCalls[0].Lines -join '|')) 'code\.txt:2:two needle' 'rg found the line'
+        AssertMatch ($global:FzfCalls[0].Args -join ' ') '--bind=change:reload:rg' 'reload on typing'
+        AssertMatch ($global:CodeCalls[0] -join ' ') 'code\.txt:2$' 'editor opened at line 2'
+    }
+} else { Skip 'rgi' 'rg not installed' }
+Test 'pk: kills the picked process' {
+    $p = Start-Process pwsh -ArgumentList '-NoProfile', '-Command', 'Start-Sleep 60' -PassThru -WindowStyle Hidden
+    try {
+        PickLine "`t$($p.Id)`t"
+        pk pwsh *> $null
+        Start-Sleep -Milliseconds 500
+        Assert $p.HasExited 'process gone'
+    } finally { if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force } }
+}
+Test 'gbr: switches to the picked branch, says so outside git' {
+    Push-Location $repo
+    try {
+        PickLine 'feature'
+        gbr *> $null
+        AssertEq (git branch --show-current) 'feature' 'on feature'
+        PickLine 'main'
+        gbr *> $null
+        AssertEq (git branch --show-current) 'main' 'back on main'
+    } finally { Pop-Location }
+    Push-Location $plain
+    try { AssertMatch (Plain (Capture { gbr })) ([regex]::Escape($global:TkStr.gbr_none)) 'not a repo' } finally { Pop-Location }
+}
+if (Get-Command kubectl -ErrorAction Ignore) {
+    Test 'kctx picker lists the contexts, kns reports an unreachable cluster' {
+        $env:KUBECONFIG = Join-Path $Work 'kube-dev'
+        $global:FzfCalls.Clear()
+        PickLine 'prod-eu'
+        kctx *> $null
+        AssertMatch ($global:FzfCalls[0].Lines -join '|') 'kind-dev' 'contexts listed'
+        AssertMatch (Plain (Get-TsKubeText)) 'prod-eu' 'switched'
+        kctx kind-dev *> $null
+        AssertMatch (Plain (Capture { kns })) ([regex]::Escape($global:TkStr.kns_none)) 'no namespaces from a dead cluster'
+        $env:KUBECONFIG = Join-Path $Work 'kube-none'
+    }
+} else { Skip 'kctx picker' 'kubectl not installed' }
+
+Section 'ssh and srv (ssh is a stand-in)'
+Test 'Get-SshHost reads ~/.ssh/config the way ssh does' {
+    $hosts = @(Get-SshHost)
+    AssertEq ($hosts.Name -join ',') 'prod,staging,db,web' 'hosts in order, wildcards and Match skipped'
+    $prod = $hosts | Where-Object Name -eq 'prod'
+    AssertEq $prod.HostName '10.0.0.1' 'HostName'; AssertEq $prod.User 'root' 'User'; AssertEq $prod.Port '2222' 'Port'; AssertEq $prod.IdentityFile 'id_prod' 'IdentityFile'
+    $db = $hosts | Where-Object Name -eq 'db'
+    AssertEq $db.HostName 'db' 'HostName defaults to the alias'; AssertEq $db.Port '22' 'default port'
+    AssertEq $db.User 'deploy' 'first value wins over a later duplicate block'
+    AssertEq ($hosts | Where-Object Name -eq 'staging').HostName 'staging.example.com' 'key=value syntax'
+}
+Test 'my ssh lists and filters, jump connects to the pick' {
+    AssertMatch (Plain (Capture { my ssh })) 'prod.*10\.0\.0\.1' 'listed'
+    $out = Plain (Capture { my ssh stag })
+    AssertMatch $out 'staging' 'filter keeps'; AssertNotMatch $out '10\.0\.0\.1' 'filter drops'
+    $global:SshCalls.Clear()
+    PickLine 'staging'
+    jump *> $null
+    AssertEq ($global:SshCalls[0].Args -join ' ') 'staging' 'ssh staging'
+}
+Test 'srv install builds the server script and ships it over ssh' {
+    $global:SshCalls.Clear()
+    New-Item -ItemType Directory -Force (Join-Path $global:ProfileDir 'server\custom') | Out-Null
+    Set-Content (Join-Path $global:ProfileDir 'server\custom\mine.sh') "# help: hello - says hello`nhello() { echo hi; }"
+    srv install prod -Env prod -Lang en *> $null
+    AssertEq $global:SshCalls.Count 1 'one ssh call'
+    AssertEq ($global:SshCalls[0].Args -join ' ') 'prod bash -s' 'ssh prod bash -s'
+    $s = $global:SshCalls[0].Script
+    AssertNotMatch $s '__(ACTION|ENV|LANG|BASHRC_B64|INPUTRC_B64|CUSTOM_FILES)__' 'placeholders filled'
+    AssertMatch $s "action='install'" 'action'; AssertMatch $s "env_label='prod'" 'label'; AssertMatch $s "lang='en'" 'lang'
+    AssertMatch $s "__put '\.bashrc\.d/mine\.sh' '[A-Za-z0-9+/=]+'" 'custom file shipped'
+    $b64 = [regex]::Match($s, 'printf ''%s'' ''([A-Za-z0-9+/=]+)'' \| base64 -d > "\$work/bashrc\.local"').Groups[1].Value
+    AssertMatch ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))) '^# ~/\.bashrc\.local' 'bashrc payload decodes'
+    [IO.File]::WriteAllText((Join-Path $Work 'srv-script.sh'), $s + "`n", [Text.UTF8Encoding]::new($false))
+}
+Test 'srv remove, srv without a host, srv with a bad label' {
+    $global:SshCalls.Clear()
+    srv remove prod *> $null
+    AssertMatch $global:SshCalls[0].Script "action='remove'" 'remove script'
+    $global:SshCalls.Clear()
+    PickLine 'staging'
+    srv install *> $null
+    AssertEq $global:SshCalls[0].Args[0] 'staging' 'host picked from the list'
+    $global:SshCalls.Clear()
+    $out = Plain (Capture { srv install prod -Env 'bad env!' })
+    AssertEq $global:SshCalls.Count 0 'nothing sent with a bad label'
+    AssertMatch $out ([regex]::Escape($global:TkStr.srv_env)) 'label error shown'
+}
 
 exit (Write-TestSummary -Machine)
