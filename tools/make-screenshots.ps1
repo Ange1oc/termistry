@@ -19,7 +19,6 @@ New-Item -ItemType Directory -Force "$work\home\profile\bin", "$work\home\profil
 
 Copy-Item "$root\src\profile\*" "$work\home\profile" -Recurse -Force
 Copy-Item "$root\src\server\*" "$work\home\profile\server" -Recurse -Force
-Copy-Item "$root\src\ohmyposh\soft.omp.json" "$work\home\.config\ohmyposh\soft.omp.json"
 @'
 # help: погода в городе
 import sys
@@ -70,14 +69,11 @@ $capture = @"
 `$env:KUBECONFIG = '$kube'
 `$PROFILE = '$work\home\profile\Microsoft.PowerShell_profile.ps1'
 . `$PROFILE *> `$null
-`$omp = '$work\home\.config\ohmyposh\soft.omp.json'
-`$env:POSH_THEME = `$omp      # профиль выставил свою тему - для сцен нужна копия из src
 `$W = 100
+Update-TsGitStatus '$demo'
 function Prompt-Line([string]`$Dir, [int]`$Status = 0, [int]`$Ms = 0) {
-    `$a = @('print', 'primary', '--config', `$omp, '--shell', 'pwsh', '--pwd', `$Dir, '--terminal-width', `$W)
-    if (`$Status) { `$a += @('--status', `$Status) }
-    if (`$Ms) { `$a += @('--execution-time', `$Ms) }
-    (((& oh-my-posh @a) -join "``n") -replace "``e\]0;[^``a]*``a", '').TrimEnd("``n")
+    `$global:TsGit.Time = Get-Date
+    ((Get-TsPrompt -Dir `$Dir -Status `$Status -Ms `$Ms -Width `$W) -replace "``e\]0;[^``a]*``a", '').TrimEnd("``n")
 }
 function Typed([string]`$Cmd) {     # как подсветит PSReadLine: команда, параметры, строки
     `$p = `$global:Palette

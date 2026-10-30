@@ -56,7 +56,8 @@ Offline: download [`setup-terminal.ps1`](setup-terminal.ps1) and run `powershell
 
 | | |
 |---|---|
-| Programs | PowerShell 7, Windows Terminal, git, oh-my-posh, fzf, zoxide, eza, bat, ripgrep, fd, delta, lazygit, tldr, gh. Installed via winget, only the missing ones |
+| Programs | PowerShell 7, Windows Terminal, git, fzf, zoxide, eza, bat, ripgrep, fd, delta, lazygit, tldr, gh. Installed via winget, only the missing ones |
+| Prompt | rendered by PowerShell itself in a few milliseconds, no external programs: the branch is read from `.git/HEAD`, the kubernetes context from kubeconfig, and git status counts are fetched in the background and drawn in once they are ready |
 | Font | JetBrainsMono Nerd Font, with icons, for all users |
 | Windows Terminal | PowerShell 7 by default, theme, font, padding, `Win+\`` drops the terminal over any window |
 | Input | syntax highlighting, history suggestions, abbreviations, layout fix, `↑`/`↓` by prefix |
@@ -140,7 +141,6 @@ One ssh connection, a backup and a trial load before anything is replaced, one l
 |---|---|
 | `~\Documents\PowerShell\` | profile and commands, your `custom.ps1`, `bin\`, `server\custom\`. This is the `$PROFILE` folder; with Documents redirected to OneDrive it lives there and syncs between machines |
 | `~\.config\terminal-setup\` | `theme`, `lang` |
-| `~\.config\ohmyposh\soft.omp.json` | prompt theme |
 | `~\.cache\terminal-setup\`, `~\.cache\pwsh-*` | caches, safe to delete, rebuilt automatically |
 | `%LOCALAPPDATA%\Packages\Microsoft.WindowsTerminal_*\LocalState\settings.json` | Windows Terminal |
 | `%APPDATA%\Code\User\settings.json`, `~\.gitconfig` | VS Code terminal font, delta for git |
@@ -157,8 +157,7 @@ setup-terminal.ps1    everything in one file, built from src/, do not edit by ha
 build.ps1             .\build.ps1  ·  .\build.ps1 -FromProfile pulls the setup from this machine
 src/
   setup-logic.ps1     installer logic
-  profile/            profile, palette.ps1 (themes), lang.ps1 (ru/en strings), toolkit.ps1 and toolkit-lazy.ps1 (commands), suggestions plugin
-  ohmyposh/           prompt theme
+  profile/            profile, prompt.ps1 (prompt), palette.ps1 (themes), lang.ps1 (ru/en strings), toolkit.ps1 and toolkit-lazy.ps1 (commands), suggestions plugin
   server/             bashrc.local, inputrc and the installer behind srv
 tools/                make-screenshots.ps1: the images in docs/ come from real command output
 ```

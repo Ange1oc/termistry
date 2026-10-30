@@ -56,7 +56,8 @@ irm https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1 | 
 
 | | |
 |---|---|
-| Программы | PowerShell 7, Windows Terminal, git, oh-my-posh, fzf, zoxide, eza, bat, ripgrep, fd, delta, lazygit, tldr, gh. Ставятся через winget, только те, которых нет |
+| Программы | PowerShell 7, Windows Terminal, git, fzf, zoxide, eza, bat, ripgrep, fd, delta, lazygit, tldr, gh. Ставятся через winget, только те, которых нет |
+| Промпт | рисуется самим PowerShell за несколько миллисекунд, без внешних программ: ветка читается из `.git/HEAD`, контекст kubernetes из kubeconfig, а счётчики git-статуса подтягиваются фоном и дорисовываются, когда готовы |
 | Шрифт | JetBrainsMono Nerd Font, с иконками, для всех пользователей |
 | Windows Terminal | PowerShell 7 по умолчанию, тема, шрифт, отступы, `Win+\`` открывает терминал поверх любого окна |
 | Ввод | подсветка синтаксиса, подсказки из истории, сокращения, раскладка, `↑`/`↓` по началу команды |
@@ -140,7 +141,6 @@ srv remove prod                   # откатить
 |---|---|
 | `~\Documents\PowerShell\` | профиль и команды, ваш `custom.ps1`, `bin\`, `server\custom\`. Это папка `$PROFILE`; если Документы перенесены в OneDrive, она лежит там и синхронизируется между машинами |
 | `~\.config\terminal-setup\` | `theme`, `lang` |
-| `~\.config\ohmyposh\soft.omp.json` | тема промпта |
 | `~\.cache\terminal-setup\`, `~\.cache\pwsh-*` | кэши, можно удалять, пересоздадутся |
 | `%LOCALAPPDATA%\Packages\Microsoft.WindowsTerminal_*\LocalState\settings.json` | Windows Terminal |
 | `%APPDATA%\Code\User\settings.json`, `~\.gitconfig` | шрифт терминала VS Code, delta в git |
@@ -157,8 +157,7 @@ setup-terminal.ps1    всё в одном файле, собирается из
 build.ps1             .\build.ps1  ·  .\build.ps1 -FromProfile забирает настройку с этой машины
 src/
   setup-logic.ps1     логика установки
-  profile/            профиль, palette.ps1 (темы), lang.ps1 (строки ru/en), toolkit.ps1 и toolkit-lazy.ps1 (команды), плагин подсказок
-  ohmyposh/           тема промпта
+  profile/            профиль, prompt.ps1 (промпт), palette.ps1 (темы), lang.ps1 (строки ru/en), toolkit.ps1 и toolkit-lazy.ps1 (команды), плагин подсказок
   server/             bashrc.local, inputrc и установщик для srv
 tools/                make-screenshots.ps1: картинки в docs/ из настоящего вывода команд
 ```

@@ -115,22 +115,3 @@ function Get-TerminalTheme([string]$Name) {
     }
 }
 
-function Get-OmpPalette([string]$Name) {
-    $p = $Themes[$Name]
-    [ordered]@{
-        text = ConvertTo-Hex $p.text; subtext = ConvertTo-Hex $p.subtext0; overlay = ConvertTo-Hex $p.overlay1; dim = ConvertTo-Hex $p.overlay0
-        blue = ConvertTo-Hex $p.blue; mauve = ConvertTo-Hex $p.mauve; green = ConvertTo-Hex $p.green; red = ConvertTo-Hex $p.red
-        peach = ConvertTo-Hex $p.peach; yellow = ConvertTo-Hex $p.yellow; teal = ConvertTo-Hex $p.teal; lavender = ConvertTo-Hex $p.lavender
-        sapphire = ConvertTo-Hex $p.sapphire
-    }
-}
-
-# Rewrites the palette blocks of the oh-my-posh config from this table and returns the JSON text
-function Set-OmpPalettes([string]$Json, [string]$Current) {
-    $cfg = $Json | ConvertFrom-Json -AsHashtable
-    $list = [ordered]@{}
-    foreach ($k in $Themes.Keys) { $list[$k] = Get-OmpPalette $k }
-    $cfg['palettes'] = [ordered]@{ template = '{{ .Env.TERMINAL_THEME }}'; list = $list }
-    $cfg['palette'] = Get-OmpPalette $Current
-    $cfg | ConvertTo-Json -Depth 16
-}

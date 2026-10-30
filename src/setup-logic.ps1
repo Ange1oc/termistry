@@ -173,7 +173,7 @@ $ProfileDir = Split-Path $PROFILE
 
 if ($Uninstall) {
     Step $L.s_uninstall
-    $managed = @('Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh' | ForEach-Object { Join-Path $ProfileDir $_ })
+    $managed = @('Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh' | ForEach-Object { Join-Path $ProfileDir $_ })
     $managed += (Join-Path $HOME '.config\ohmyposh\soft.omp.json'), (Join-Path $HOME '.config\terminal-setup'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
     foreach ($p in $managed) {
         if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) - $($L.removed)" }
@@ -199,7 +199,6 @@ if (-not $SkipApps) {
         Install-WingetPackage 'Microsoft.WindowsTerminal' 'wt' 'Windows Terminal'
         $apps = @(
             @('Git.Git', 'git', 'git'),
-            @('JanDeDobbeleer.OhMyPosh', 'oh-my-posh', 'oh-my-posh'),
             @('junegunn.fzf', 'fzf', 'fzf'),
             @('ajeetdsouza.zoxide', 'zoxide', 'zoxide'),
             @('eza-community.eza', 'eza', 'eza'),
@@ -288,7 +287,6 @@ if ($Theme -and -not $Themes.Contains($Theme.ToLower())) { throw "-Theme: $($The
 if ($Theme) { New-Item -ItemType Directory -Force $ConfigDir | Out-Null; [IO.File]::WriteAllText($ThemeFile, "$($Theme.ToLower())`n") }
 $ThemeName = Get-ThemeName
 $ThemeTitle = $Themes[$ThemeName].title
-$EmbeddedFiles['omp-theme'] = Set-OmpPalettes $EmbeddedFiles['omp-theme'] $ThemeName
 
 $targets = [ordered]@{
     'profile'      = $PROFILE
@@ -296,14 +294,14 @@ $targets = [ordered]@{
     'lang'         = Join-Path $ProfileDir 'lang.ps1'
     'toolkit'      = Join-Path $ProfileDir 'toolkit.ps1'
     'toolkit-lazy' = Join-Path $ProfileDir 'toolkit-lazy.ps1'
+    'prompt'       = Join-Path $ProfileDir 'prompt.ps1'
     'predictor'    = Join-Path $ProfileDir 'DeepHistoryPredictor.cs'
-    'omp-theme'    = Join-Path $HOME '.config\ohmyposh\soft.omp.json'
     'srv-bashrc'   = Join-Path $ProfileDir 'server\bashrc.local'
     'srv-inputrc'  = Join-Path $ProfileDir 'server\inputrc'
     'srv-install'  = Join-Path $ProfileDir 'server\install.sh'
 }
 foreach ($key in $targets.Keys) { Write-ManagedFile $targets[$key] $EmbeddedFiles[$key] }
-Remove-Item "$HOME\.cache\terminal-setup\omp-init.txt" -ErrorAction SilentlyContinue
+Remove-Item "$HOME\.cache\terminal-setup\omp-init.txt", "$HOME\.config\ohmyposh\soft.omp.json" -ErrorAction SilentlyContinue
 
 $customFile = Join-Path $ProfileDir 'custom.ps1'
 if (Test-Path $customFile) { Ok "$(Short $customFile) - $($L.custom_yours)" }

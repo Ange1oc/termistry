@@ -5,26 +5,27 @@ function _tkBg([int]$hex) { $PSStyle.Background.FromRgb($hex) }
 
 function Set-TerminalPalette {
     $p = $global:Palette
+    $fg = @{}
+    foreach ($k in 'mauve', 'blue', 'text', 'overlay0', 'overlay1', 'green', 'yellow', 'red', 'peach', 'teal', 'lavender', 'sky', 'flamingo') { $fg[$k] = $PSStyle.Foreground.FromRgb($p[$k]) }
     $global:TK = @{
         R = $PSStyle.Reset; B = $PSStyle.Bold; I = $PSStyle.Italic
-        title = _tkRgb $p.mauve; cmd = _tkRgb $p.blue; text = _tkRgb $p.text; dim = _tkRgb $p.overlay0
-        ok = _tkRgb $p.green; warn = _tkRgb $p.yellow; err = _tkRgb $p.red; accent = _tkRgb $p.peach
-        teal = _tkRgb $p.teal; lavender = _tkRgb $p.lavender
+        title = $fg.mauve; cmd = $fg.blue; text = $fg.text; dim = $fg.overlay0
+        ok = $fg.green; warn = $fg.yellow; err = $fg.red; accent = $fg.peach; teal = $fg.teal; lavender = $fg.lavender
     }
 
-    $PSStyle.FileInfo.Directory    = _tkRgb $p.blue
-    $PSStyle.FileInfo.SymbolicLink = _tkRgb $p.teal
-    $PSStyle.FileInfo.Executable   = _tkRgb $p.green
-    foreach ($ext in '.zip', '.7z', '.rar', '.tar', '.gz') { $PSStyle.FileInfo.Extension[$ext] = _tkRgb $p.peach }
-    foreach ($ext in '.ps1', '.psm1', '.sh', '.py', '.js', '.ts') { $PSStyle.FileInfo.Extension[$ext] = _tkRgb $p.green }
-    $PSStyle.Formatting.TableHeader  = (_tkRgb $p.mauve) + $PSStyle.Bold
-    $PSStyle.Formatting.FormatAccent = _tkRgb $p.mauve
-    $PSStyle.Formatting.Error        = _tkRgb $p.red
-    $PSStyle.Formatting.ErrorAccent  = _tkRgb $p.peach
-    $PSStyle.Formatting.Warning      = _tkRgb $p.yellow
-    $PSStyle.Formatting.Verbose      = _tkRgb $p.overlay1
-    $PSStyle.Formatting.Debug        = _tkRgb $p.overlay1
-    $PSStyle.Progress.Style          = _tkRgb $p.mauve
+    $PSStyle.FileInfo.Directory    = $fg.blue
+    $PSStyle.FileInfo.SymbolicLink = $fg.teal
+    $PSStyle.FileInfo.Executable   = $fg.green
+    foreach ($ext in '.zip', '.7z', '.rar', '.tar', '.gz') { $PSStyle.FileInfo.Extension[$ext] = $fg.peach }
+    foreach ($ext in '.ps1', '.psm1', '.sh', '.py', '.js', '.ts') { $PSStyle.FileInfo.Extension[$ext] = $fg.green }
+    $PSStyle.Formatting.TableHeader  = $fg.mauve + $PSStyle.Bold
+    $PSStyle.Formatting.FormatAccent = $fg.mauve
+    $PSStyle.Formatting.Error        = $fg.red
+    $PSStyle.Formatting.ErrorAccent  = $fg.peach
+    $PSStyle.Formatting.Warning      = $fg.yellow
+    $PSStyle.Formatting.Verbose      = $fg.overlay1
+    $PSStyle.Formatting.Debug        = $fg.overlay1
+    $PSStyle.Progress.Style          = $fg.mauve
 
     $hex = { param($c) '#{0:x6}' -f $c }
     $env:FZF_DEFAULT_OPTS = @(
@@ -37,25 +38,25 @@ function Set-TerminalPalette {
 
     if ($global:isInteractive -and (Get-Module PSReadLine)) {
         Set-PSReadLineOption -Colors @{
-            Default                = _tkRgb $p.text
-            Command                = _tkRgb $p.blue
-            Parameter              = _tkRgb $p.teal
-            Operator               = _tkRgb $p.sky
-            Variable               = _tkRgb $p.flamingo
-            String                 = _tkRgb $p.green
-            Number                 = _tkRgb $p.peach
-            Type                   = _tkRgb $p.yellow
-            Member                 = _tkRgb $p.lavender
-            Keyword                = _tkRgb $p.mauve
-            Comment                = (_tkRgb $p.overlay0) + $PSStyle.Italic
-            Error                  = _tkRgb $p.red
-            Emphasis               = _tkRgb $p.yellow
-            Selection              = _tkBg $p.surface1
-            ContinuationPrompt     = _tkRgb $p.overlay0
-            InlinePrediction       = _tkRgb $p.overlay0
-            ListPrediction         = _tkRgb $p.mauve
-            ListPredictionSelected = _tkBg $p.surface0
-            ListPredictionTooltip  = _tkRgb $p.overlay1
+            Default                = $fg.text
+            Command                = $fg.blue
+            Parameter              = $fg.teal
+            Operator               = $fg.sky
+            Variable               = $fg.flamingo
+            String                 = $fg.green
+            Number                 = $fg.peach
+            Type                   = $fg.yellow
+            Member                 = $fg.lavender
+            Keyword                = $fg.mauve
+            Comment                = $fg.overlay0 + $PSStyle.Italic
+            Error                  = $fg.red
+            Emphasis               = $fg.yellow
+            Selection              = $PSStyle.Background.FromRgb($p.surface1)
+            ContinuationPrompt     = $fg.overlay0
+            InlinePrediction       = $fg.overlay0
+            ListPrediction         = $fg.mauve
+            ListPredictionSelected = $PSStyle.Background.FromRgb($p.surface0)
+            ListPredictionTooltip  = $fg.overlay1
         }
     }
 }

@@ -119,7 +119,7 @@ $global:Strings = @{
         config_title = 'Где что лежит'; config_hint = 'ep - открыть папку профиля'
         config_rows = [ordered]@{
             profile = 'профиль PowerShell и команды'; custom = 'своё: функции, сокращения, переключатели'; bin = 'свои команды на любом языке'
-            srvcustom = 'свои файлы для серверов (→ ~/.bashrc.d)'; settings = 'тема и язык'; omp = 'тема промпта oh-my-posh'
+            srvcustom = 'свои файлы для серверов (→ ~/.bashrc.d)'; settings = 'тема и язык'
             completions = 'кэш Tab-дополнений'; predictor = 'кэш плагина подсказок'; wt = 'настройки Windows Terminal'
             vscode = 'настройки VS Code'; gitconfig = 'git: delta и имя'; ssh = 'SSH-хосты (my ssh, jump, srv)'
         }
@@ -326,7 +326,7 @@ $global:Strings = @{
         config_title = 'Where things live'; config_hint = 'ep - open the profile folder'
         config_rows = [ordered]@{
             profile = 'PowerShell profile and commands'; custom = 'yours: functions, abbreviations, switches'; bin = 'your commands in any language'
-            srvcustom = 'your files for servers (→ ~/.bashrc.d)'; settings = 'theme and language'; omp = 'oh-my-posh prompt theme'
+            srvcustom = 'your files for servers (→ ~/.bashrc.d)'; settings = 'theme and language'
             completions = 'Tab completion cache'; predictor = 'suggestions plugin cache'; wt = 'Windows Terminal settings'
             vscode = 'VS Code settings'; gitconfig = 'git: delta and identity'; ssh = 'SSH hosts (my ssh, jump, srv)'
         }

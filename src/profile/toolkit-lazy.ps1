@@ -399,7 +399,7 @@ function global:Show-MyTools {
     $specs = [ordered]@{
         pwsh = '--version'; git = '--version'; gh = '--version'; lazygit = '--version'; node = '--version'; python = '--version'
         uv = '--version'; docker = '--version'; kubectl = 'version --client'; helm = 'version --short'; kind = 'version'
-        minikube = 'version --short'; code = '--version'; 'oh-my-posh' = 'version'; fzf = '--version'; zoxide = '--version'
+        minikube = 'version --short'; code = '--version'; fzf = '--version'; zoxide = '--version'
         eza = '--version'; bat = '--version'; rg = '--version'; fd = '--version'; delta = '--version'; tldr = '--version'
     }
     $rows = $specs.GetEnumerator() | ForEach-Object -ThrottleLimit 10 -Parallel {
@@ -589,8 +589,6 @@ function global:theme {
         $new = $raw -replace "(`"colorScheme`"\s*:\s*)`"($known)`"", "`$1`"$title`"" -replace "(`"theme`"\s*:\s*)`"($known)`"", "`$1`"$title`""
         if ($new -ne $raw) { [IO.File]::WriteAllText($path, $new, [Text.UTF8Encoding]::new($false)) }
     }
-    $omp = "$HOME\.config\ohmyposh\soft.omp.json"
-    if (Test-Path $omp) { [IO.File]::WriteAllText($omp, (Set-OmpPalettes ([IO.File]::ReadAllText($omp)) $Name), [Text.UTF8Encoding]::new($false)) }
     Write-Host ("  {0}✓ {1}{2}  {3}{4}{5}" -f $TK.ok, $title, $TK.R, $TK.dim, $TkStr.theme_done, $TK.R)
 }
 
@@ -784,7 +782,6 @@ function global:Get-ConfigLocations {
         bin         = Join-Path $global:ProfileDir 'bin'
         srvcustom   = Join-Path $global:ProfileDir 'server\custom'
         settings    = Join-Path $HOME '.config\terminal-setup'
-        omp         = Join-Path $HOME '.config\ohmyposh\soft.omp.json'
         completions = Join-Path $HOME '.cache\pwsh-completions'
         predictor   = Join-Path $HOME '.cache\pwsh-predictor'
         wt          = $(if ($wt) { $wt } else { Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json' })
@@ -813,13 +810,12 @@ function global:doctor {
     $state = @{ problems = 0 }
     $check = { param($ok, $label, $detail) if ($ok) { Write-Host "  $($TK.ok)✓$($TK.R) $label $($TK.dim)$detail$($TK.R)" } else { $state.problems++; Write-Host "  $($TK.err)✗$($TK.R) $label $($TK.dim)$detail$($TK.R)" } }
 
-    $tools = 'git', 'oh-my-posh', 'fzf', 'zoxide', 'eza', 'bat', 'rg', 'fd', 'delta', 'lazygit', 'tldr', 'gh'
-    $missing = @($tools | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) })
+    $tools = 'git', 'fzf', 'zoxide', 'eza', 'bat', 'rg', 'fd', 'delta', 'lazygit', 'tldr', 'gh'
+    $missing = @($tools | Where-Object { -not (Get-Command $_ -ErrorAction Ignore) })
     & $check (-not $missing) $TkStr.doctor_tools $(if ($missing) { $TkStr.doctor_missing -f ($missing -join ', ') } else { $tools -join ' ' })
 
-    $files = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\install.sh', 'server\inputrc'
+    $files = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\install.sh', 'server\inputrc'
     $lost = @($files | Where-Object { -not (Test-Path (Join-Path $global:ProfileDir $_)) })
-    if (-not (Test-Path "$HOME\.config\ohmyposh\soft.omp.json")) { $lost += 'soft.omp.json' }
     & $check (-not $lost) $TkStr.doctor_files $(if ($lost) { $TkStr.doctor_missing -f ($lost -join ', ') } else { $global:ProfileDir.Replace($HOME, '~') })
 
     & $check (Test-Path "$env:windir\Fonts\JetBrainsMonoNerdFont-Regular.ttf") $TkStr.doctor_font 'JetBrainsMono NF'

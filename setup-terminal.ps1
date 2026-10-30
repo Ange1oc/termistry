@@ -173,7 +173,7 @@ $ProfileDir = Split-Path $PROFILE
 
 if ($Uninstall) {
     Step $L.s_uninstall
-    $managed = @('Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh' | ForEach-Object { Join-Path $ProfileDir $_ })
+    $managed = @('Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh' | ForEach-Object { Join-Path $ProfileDir $_ })
     $managed += (Join-Path $HOME '.config\ohmyposh\soft.omp.json'), (Join-Path $HOME '.config\terminal-setup'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
     foreach ($p in $managed) {
         if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) - $($L.removed)" }
@@ -203,6 +203,7 @@ $global:TerminalSetup = @{
     Abbreviations = $true
     LayoutFix     = $true
     Predictions   = 50
+    GitStatus     = $true
 }
 
 . (Join-Path $ProfileDir 'palette.ps1')
@@ -248,13 +249,16 @@ foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 
     Set-Item "Function:global:$n" -Value ([scriptblock]::Create("Complete-TerminalSetup; & '$n' @args"))
 }
 
-$before = @(Get-ChildItem Function: | Select-Object -ExpandProperty Name)
 $customFile = Join-Path $ProfileDir 'custom.ps1'
+$global:CustomFunctions = @()
 if (Test-Path $customFile) {
-    try { . $customFile } catch { Write-Warning "custom.ps1: $_" }
+    try {
+        . $customFile
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($customFile, [ref]$null, [ref]$null)
+        $global:CustomFunctions = @($ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false) | ForEach-Object Name)
+    } catch { Write-Warning "custom.ps1: $_" }
 }
-$global:CustomFunctions = @(Get-ChildItem Function: | Where-Object { $_.Name -notin $before -and $_.Name -notmatch ':' } | Select-Object -ExpandProperty Name)
-Remove-Variable before, customFile
+Remove-Variable customFile
 Register-BinCommands (Join-Path $ProfileDir 'bin')
 
 if ($isInteractive) {
@@ -321,34 +325,12 @@ if ($isInteractive) {
     }
 }
 
-# Prompt: oh-my-posh renders it, but its own `init` script costs ~0.4 s to evaluate on every start.
-# This is the same call it makes, without the module around it. Transient prompt: see the Enter handler.
-if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
-    $global:TsOmp = (Get-Command oh-my-posh).Source
-    $global:TsOmpConfig = "$HOME\.config\ohmyposh\soft.omp.json"
-    $env:POSH_THEME = $TsOmpConfig
-    $env:POSH_SHELL = 'pwsh'
-    $global:TsTransient = $false
-    $global:TsLastHistoryId = 0
-    [Console]::OutputEncoding = [Text.Encoding]::UTF8
-    function global:prompt {
-        $ok = $?
-        $code = if ($ok) { 0 } elseif ($global:LASTEXITCODE) { $global:LASTEXITCODE } else { 1 }
-        $ms = 0
-        $last = Get-History -Count 1
-        if ($last -and $last.Id -ne $global:TsLastHistoryId) {
-            $global:TsLastHistoryId = $last.Id
-            $ms = [int]($last.EndExecutionTime - $last.StartExecutionTime).TotalMilliseconds
-        }
-        $width = $Host.UI.RawUI.WindowSize.Width
-        $kind = if ($global:TsTransient) { $global:TsTransient = $false; 'transient' } else { 'primary' }
-        $out = & $global:TsOmp print $kind --shell pwsh --config $global:TsOmpConfig --pwd $PWD.ProviderPath --terminal-width $width --status $code --execution-time $ms
-        $out -join "`n"
-    }
-}
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+. (Join-Path $ProfileDir 'prompt.ps1')
+if ($isInteractive) { Set-PSReadLineOption -ContinuationPrompt '❯❯ ' }
 
 # Enter: layout fix + abbreviation, redraw the prompt in its transient form, then run
-if ($isInteractive -and ($TerminalSetup.LayoutFix -or $TerminalSetup.Abbreviations -or $global:TsOmp)) {
+if ($isInteractive) {
     Set-PSReadLineKeyHandler -Key Enter -BriefDescription 'TerminalSetupEnter' -ScriptBlock {
         $line = $null; $cursor = $null; $errors = $null
         [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
@@ -361,7 +343,7 @@ if ($isInteractive -and ($TerminalSetup.LayoutFix -or $TerminalSetup.Abbreviatio
             if ($exp) { [Microsoft.PowerShell.PSConsoleReadLine]::Replace($exp.Start, $exp.Length, $exp.Text) }
         }
         [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$null, [ref]$null, [ref]$errors, [ref]$null)
-        if ($global:TsOmp -and $errors.Count -eq 0) {
+        if ($errors.Count -eq 0) {
             $global:TsTransient = $true
             try { [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt() } catch { $global:TsTransient = $false }
         }
@@ -519,26 +501,6 @@ function Get-TerminalTheme([string]$Name) {
         window = [ordered]@{ applicationTheme = $(if ($p.dark) { 'dark' } else { 'light' }); useMica = $false }
     }
 }
-
-function Get-OmpPalette([string]$Name) {
-    $p = $Themes[$Name]
-    [ordered]@{
-        text = ConvertTo-Hex $p.text; subtext = ConvertTo-Hex $p.subtext0; overlay = ConvertTo-Hex $p.overlay1; dim = ConvertTo-Hex $p.overlay0
-        blue = ConvertTo-Hex $p.blue; mauve = ConvertTo-Hex $p.mauve; green = ConvertTo-Hex $p.green; red = ConvertTo-Hex $p.red
-        peach = ConvertTo-Hex $p.peach; yellow = ConvertTo-Hex $p.yellow; teal = ConvertTo-Hex $p.teal; lavender = ConvertTo-Hex $p.lavender
-        sapphire = ConvertTo-Hex $p.sapphire
-    }
-}
-
-# Rewrites the palette blocks of the oh-my-posh config from this table and returns the JSON text
-function Set-OmpPalettes([string]$Json, [string]$Current) {
-    $cfg = $Json | ConvertFrom-Json -AsHashtable
-    $list = [ordered]@{}
-    foreach ($k in $Themes.Keys) { $list[$k] = Get-OmpPalette $k }
-    $cfg['palettes'] = [ordered]@{ template = '{{ .Env.TERMINAL_THEME }}'; list = $list }
-    $cfg['palette'] = Get-OmpPalette $Current
-    $cfg | ConvertTo-Json -Depth 16
-}
 '@
 $EmbeddedFiles['lang'] = @'
 $global:LangFile = Join-Path $HOME '.config\terminal-setup\lang'
@@ -662,7 +624,7 @@ $global:Strings = @{
         config_title = 'Где что лежит'; config_hint = 'ep - открыть папку профиля'
         config_rows = [ordered]@{
             profile = 'профиль PowerShell и команды'; custom = 'своё: функции, сокращения, переключатели'; bin = 'свои команды на любом языке'
-            srvcustom = 'свои файлы для серверов (→ ~/.bashrc.d)'; settings = 'тема и язык'; omp = 'тема промпта oh-my-posh'
+            srvcustom = 'свои файлы для серверов (→ ~/.bashrc.d)'; settings = 'тема и язык'
             completions = 'кэш Tab-дополнений'; predictor = 'кэш плагина подсказок'; wt = 'настройки Windows Terminal'
             vscode = 'настройки VS Code'; gitconfig = 'git: delta и имя'; ssh = 'SSH-хосты (my ssh, jump, srv)'
         }
@@ -869,7 +831,7 @@ $global:Strings = @{
         config_title = 'Where things live'; config_hint = 'ep - open the profile folder'
         config_rows = [ordered]@{
             profile = 'PowerShell profile and commands'; custom = 'yours: functions, abbreviations, switches'; bin = 'your commands in any language'
-            srvcustom = 'your files for servers (→ ~/.bashrc.d)'; settings = 'theme and language'; omp = 'oh-my-posh prompt theme'
+            srvcustom = 'your files for servers (→ ~/.bashrc.d)'; settings = 'theme and language'
             completions = 'Tab completion cache'; predictor = 'suggestions plugin cache'; wt = 'Windows Terminal settings'
             vscode = 'VS Code settings'; gitconfig = 'git: delta and identity'; ssh = 'SSH hosts (my ssh, jump, srv)'
         }
@@ -974,26 +936,27 @@ function _tkBg([int]$hex) { $PSStyle.Background.FromRgb($hex) }
 
 function Set-TerminalPalette {
     $p = $global:Palette
+    $fg = @{}
+    foreach ($k in 'mauve', 'blue', 'text', 'overlay0', 'overlay1', 'green', 'yellow', 'red', 'peach', 'teal', 'lavender', 'sky', 'flamingo') { $fg[$k] = $PSStyle.Foreground.FromRgb($p[$k]) }
     $global:TK = @{
         R = $PSStyle.Reset; B = $PSStyle.Bold; I = $PSStyle.Italic
-        title = _tkRgb $p.mauve; cmd = _tkRgb $p.blue; text = _tkRgb $p.text; dim = _tkRgb $p.overlay0
-        ok = _tkRgb $p.green; warn = _tkRgb $p.yellow; err = _tkRgb $p.red; accent = _tkRgb $p.peach
-        teal = _tkRgb $p.teal; lavender = _tkRgb $p.lavender
+        title = $fg.mauve; cmd = $fg.blue; text = $fg.text; dim = $fg.overlay0
+        ok = $fg.green; warn = $fg.yellow; err = $fg.red; accent = $fg.peach; teal = $fg.teal; lavender = $fg.lavender
     }
 
-    $PSStyle.FileInfo.Directory    = _tkRgb $p.blue
-    $PSStyle.FileInfo.SymbolicLink = _tkRgb $p.teal
-    $PSStyle.FileInfo.Executable   = _tkRgb $p.green
-    foreach ($ext in '.zip', '.7z', '.rar', '.tar', '.gz') { $PSStyle.FileInfo.Extension[$ext] = _tkRgb $p.peach }
-    foreach ($ext in '.ps1', '.psm1', '.sh', '.py', '.js', '.ts') { $PSStyle.FileInfo.Extension[$ext] = _tkRgb $p.green }
-    $PSStyle.Formatting.TableHeader  = (_tkRgb $p.mauve) + $PSStyle.Bold
-    $PSStyle.Formatting.FormatAccent = _tkRgb $p.mauve
-    $PSStyle.Formatting.Error        = _tkRgb $p.red
-    $PSStyle.Formatting.ErrorAccent  = _tkRgb $p.peach
-    $PSStyle.Formatting.Warning      = _tkRgb $p.yellow
-    $PSStyle.Formatting.Verbose      = _tkRgb $p.overlay1
-    $PSStyle.Formatting.Debug        = _tkRgb $p.overlay1
-    $PSStyle.Progress.Style          = _tkRgb $p.mauve
+    $PSStyle.FileInfo.Directory    = $fg.blue
+    $PSStyle.FileInfo.SymbolicLink = $fg.teal
+    $PSStyle.FileInfo.Executable   = $fg.green
+    foreach ($ext in '.zip', '.7z', '.rar', '.tar', '.gz') { $PSStyle.FileInfo.Extension[$ext] = $fg.peach }
+    foreach ($ext in '.ps1', '.psm1', '.sh', '.py', '.js', '.ts') { $PSStyle.FileInfo.Extension[$ext] = $fg.green }
+    $PSStyle.Formatting.TableHeader  = $fg.mauve + $PSStyle.Bold
+    $PSStyle.Formatting.FormatAccent = $fg.mauve
+    $PSStyle.Formatting.Error        = $fg.red
+    $PSStyle.Formatting.ErrorAccent  = $fg.peach
+    $PSStyle.Formatting.Warning      = $fg.yellow
+    $PSStyle.Formatting.Verbose      = $fg.overlay1
+    $PSStyle.Formatting.Debug        = $fg.overlay1
+    $PSStyle.Progress.Style          = $fg.mauve
 
     $hex = { param($c) '#{0:x6}' -f $c }
     $env:FZF_DEFAULT_OPTS = @(
@@ -1006,25 +969,25 @@ function Set-TerminalPalette {
 
     if ($global:isInteractive -and (Get-Module PSReadLine)) {
         Set-PSReadLineOption -Colors @{
-            Default                = _tkRgb $p.text
-            Command                = _tkRgb $p.blue
-            Parameter              = _tkRgb $p.teal
-            Operator               = _tkRgb $p.sky
-            Variable               = _tkRgb $p.flamingo
-            String                 = _tkRgb $p.green
-            Number                 = _tkRgb $p.peach
-            Type                   = _tkRgb $p.yellow
-            Member                 = _tkRgb $p.lavender
-            Keyword                = _tkRgb $p.mauve
-            Comment                = (_tkRgb $p.overlay0) + $PSStyle.Italic
-            Error                  = _tkRgb $p.red
-            Emphasis               = _tkRgb $p.yellow
-            Selection              = _tkBg $p.surface1
-            ContinuationPrompt     = _tkRgb $p.overlay0
-            InlinePrediction       = _tkRgb $p.overlay0
-            ListPrediction         = _tkRgb $p.mauve
-            ListPredictionSelected = _tkBg $p.surface0
-            ListPredictionTooltip  = _tkRgb $p.overlay1
+            Default                = $fg.text
+            Command                = $fg.blue
+            Parameter              = $fg.teal
+            Operator               = $fg.sky
+            Variable               = $fg.flamingo
+            String                 = $fg.green
+            Number                 = $fg.peach
+            Type                   = $fg.yellow
+            Member                 = $fg.lavender
+            Keyword                = $fg.mauve
+            Comment                = $fg.overlay0 + $PSStyle.Italic
+            Error                  = $fg.red
+            Emphasis               = $fg.yellow
+            Selection              = $PSStyle.Background.FromRgb($p.surface1)
+            ContinuationPrompt     = $fg.overlay0
+            InlinePrediction       = $fg.overlay0
+            ListPrediction         = $fg.mauve
+            ListPredictionSelected = $PSStyle.Background.FromRgb($p.surface0)
+            ListPredictionTooltip  = $fg.overlay1
         }
     }
 }
@@ -1591,7 +1554,7 @@ function global:Show-MyTools {
     $specs = [ordered]@{
         pwsh = '--version'; git = '--version'; gh = '--version'; lazygit = '--version'; node = '--version'; python = '--version'
         uv = '--version'; docker = '--version'; kubectl = 'version --client'; helm = 'version --short'; kind = 'version'
-        minikube = 'version --short'; code = '--version'; 'oh-my-posh' = 'version'; fzf = '--version'; zoxide = '--version'
+        minikube = 'version --short'; code = '--version'; fzf = '--version'; zoxide = '--version'
         eza = '--version'; bat = '--version'; rg = '--version'; fd = '--version'; delta = '--version'; tldr = '--version'
     }
     $rows = $specs.GetEnumerator() | ForEach-Object -ThrottleLimit 10 -Parallel {
@@ -1781,8 +1744,6 @@ function global:theme {
         $new = $raw -replace "(`"colorScheme`"\s*:\s*)`"($known)`"", "`$1`"$title`"" -replace "(`"theme`"\s*:\s*)`"($known)`"", "`$1`"$title`""
         if ($new -ne $raw) { [IO.File]::WriteAllText($path, $new, [Text.UTF8Encoding]::new($false)) }
     }
-    $omp = "$HOME\.config\ohmyposh\soft.omp.json"
-    if (Test-Path $omp) { [IO.File]::WriteAllText($omp, (Set-OmpPalettes ([IO.File]::ReadAllText($omp)) $Name), [Text.UTF8Encoding]::new($false)) }
     Write-Host ("  {0}✓ {1}{2}  {3}{4}{5}" -f $TK.ok, $title, $TK.R, $TK.dim, $TkStr.theme_done, $TK.R)
 }
 
@@ -1976,7 +1937,6 @@ function global:Get-ConfigLocations {
         bin         = Join-Path $global:ProfileDir 'bin'
         srvcustom   = Join-Path $global:ProfileDir 'server\custom'
         settings    = Join-Path $HOME '.config\terminal-setup'
-        omp         = Join-Path $HOME '.config\ohmyposh\soft.omp.json'
         completions = Join-Path $HOME '.cache\pwsh-completions'
         predictor   = Join-Path $HOME '.cache\pwsh-predictor'
         wt          = $(if ($wt) { $wt } else { Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json' })
@@ -2005,13 +1965,12 @@ function global:doctor {
     $state = @{ problems = 0 }
     $check = { param($ok, $label, $detail) if ($ok) { Write-Host "  $($TK.ok)✓$($TK.R) $label $($TK.dim)$detail$($TK.R)" } else { $state.problems++; Write-Host "  $($TK.err)✗$($TK.R) $label $($TK.dim)$detail$($TK.R)" } }
 
-    $tools = 'git', 'oh-my-posh', 'fzf', 'zoxide', 'eza', 'bat', 'rg', 'fd', 'delta', 'lazygit', 'tldr', 'gh'
-    $missing = @($tools | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) })
+    $tools = 'git', 'fzf', 'zoxide', 'eza', 'bat', 'rg', 'fd', 'delta', 'lazygit', 'tldr', 'gh'
+    $missing = @($tools | Where-Object { -not (Get-Command $_ -ErrorAction Ignore) })
     & $check (-not $missing) $TkStr.doctor_tools $(if ($missing) { $TkStr.doctor_missing -f ($missing -join ', ') } else { $tools -join ' ' })
 
-    $files = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\install.sh', 'server\inputrc'
+    $files = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\install.sh', 'server\inputrc'
     $lost = @($files | Where-Object { -not (Test-Path (Join-Path $global:ProfileDir $_)) })
-    if (-not (Test-Path "$HOME\.config\ohmyposh\soft.omp.json")) { $lost += 'soft.omp.json' }
     & $check (-not $lost) $TkStr.doctor_files $(if ($lost) { $TkStr.doctor_missing -f ($lost -join ', ') } else { $global:ProfileDir.Replace($HOME, '~') })
 
     & $check (Test-Path "$env:windir\Fonts\JetBrainsMonoNerdFont-Regular.ttf") $TkStr.doctor_font 'JetBrainsMono NF'
@@ -2075,6 +2034,167 @@ function global:Update-Completions {
             Write-Host "  ✓ $name" -ForegroundColor Green
         } elseif (Test-Path $file) {
             Remove-Item $file
+        }
+    }
+}
+'@
+$EmbeddedFiles['prompt'] = @'
+# The prompt is rendered in PowerShell itself (a few ms) instead of spawning oh-my-posh (~140 ms + git).
+# Branch comes from .git/HEAD, k8s context from kubeconfig; git status counts are fetched on PowerShell.OnIdle
+# and the prompt is redrawn in place, so a slow `git status` never delays the prompt.
+$global:TsGit = @{ Root = ''; Text = ''; Time = [datetime]::MinValue; Pending = '' }
+$global:TsGitRoots = @{}
+$global:TsVersions = @{}
+$global:TsKube = @{ Stamp = ''; Text = '' }
+$global:TsTransient = $false
+$global:TsLastHistoryId = 0
+
+function global:Get-TsGitRoot([string]$Dir) {
+    if ($global:TsGitRoots.ContainsKey($Dir)) { return $global:TsGitRoots[$Dir] }
+    $d = $Dir; $root = ''
+    while ($d) {
+        if (Test-Path -LiteralPath (Join-Path $d '.git')) { $root = $d; break }
+        $d = Split-Path $d -Parent
+    }
+    $global:TsGitRoots[$Dir] = $root
+    $root
+}
+
+function global:Get-TsGitBranch([string]$Root) {
+    $gitDir = Join-Path $Root '.git'
+    if (Test-Path -LiteralPath $gitDir -PathType Leaf) {
+        $line = Get-Content -LiteralPath $gitDir -First 1
+        if ($line -match '^gitdir:\s*(.+)$') { $gitDir = $Matches[1]; if (-not [IO.Path]::IsPathRooted($gitDir)) { $gitDir = Join-Path $Root $gitDir } }
+    }
+    $head = Join-Path $gitDir 'HEAD'
+    if (-not (Test-Path -LiteralPath $head)) { return '' }
+    $ref = Get-Content -LiteralPath $head -First 1
+    if ($ref -match '^ref: refs/heads/(.+)$') { return $Matches[1] }
+    if ($ref.Length -ge 7) { return $ref.Substring(0, 7) }
+    ''
+}
+
+# Runs git once; called from OnIdle, never from the prompt itself
+function global:Update-TsGitStatus([string]$Root) {
+    $lines = @(git -C $Root -c core.quotepath=false status --porcelain --branch 2>$null)
+    $staged = 0; $modified = 0; $untracked = 0; $ahead = 0; $behind = 0
+    foreach ($l in $lines) {
+        if ($l.StartsWith('## ')) {
+            if ($l -match 'ahead (\d+)') { $ahead = [int]$Matches[1] }
+            if ($l -match 'behind (\d+)') { $behind = [int]$Matches[1] }
+            continue
+        }
+        if ($l.Length -lt 2) { continue }
+        if ($l[0] -eq '?') { $untracked++; continue }
+        if ($l[0] -ne ' ') { $staged++ }
+        if ($l[1] -ne ' ') { $modified++ }
+    }
+    $stash = 0
+    $stashLog = Join-Path $Root '.git\logs\refs\stash'
+    if (Test-Path -LiteralPath $stashLog) { $stash = @(Get-Content -LiteralPath $stashLog).Count }
+    $c = $global:TK
+    $parts = @()
+    if ($staged) { $parts += "$($c.ok)+$staged" }
+    if ($modified) { $parts += "$($c.accent)~$modified" }
+    if ($untracked) { $parts += "$($c.accent)?$untracked" }
+    if ($ahead) { $parts += "$($c.teal)⇡$ahead" }
+    if ($behind) { $parts += "$($c.teal)⇣$behind" }
+    if ($stash) { $parts += "$($c.dim)≡$stash" }
+    $global:TsGit = @{ Root = $Root; Text = $(if ($parts) { ' ' + ($parts -join ' ') } else { '' }); Time = Get-Date; Pending = '' }
+}
+
+function global:Get-TsKubeText {
+    $file = if ($env:KUBECONFIG) { ($env:KUBECONFIG -split ';')[0] } else { Join-Path $HOME '.kube\config' }
+    if (-not (Test-Path -LiteralPath $file)) { return '' }
+    $stamp = "$file|$((Get-Item -LiteralPath $file).LastWriteTimeUtc.Ticks)"
+    if ($global:TsKube.Stamp -eq $stamp) { return $global:TsKube.Text }
+    $text = ''
+    $yaml = Get-Content -LiteralPath $file -Raw
+    if ($yaml -match '(?m)^current-context:\s*(\S+)') {
+        $ctx = $Matches[1]
+        $ns = ''
+        foreach ($block in ($yaml -split '(?m)^- context:')) {
+            if ($block -match "(?m)^\s*name:\s*$([regex]::Escape($ctx))\s*$" -and $block -match 'namespace:\s*([^\s,}]+)') { $ns = $Matches[1]; break }
+        }
+        $text = "󱃾 $ctx" + $(if ($ns -and $ns -ne 'default') { "/$ns" })
+    }
+    $global:TsKube = @{ Stamp = $stamp; Text = $text }
+    $text
+}
+
+function global:Get-TsToolVersion([string]$Tool) {
+    if ($global:TsVersions.ContainsKey($Tool)) { return $global:TsVersions[$Tool] }
+    $v = ''
+    if (Get-Command $Tool -ErrorAction SilentlyContinue) {
+        $out = switch ($Tool) { 'go' { go version 2>$null } 'rust' { rustc --version 2>$null } default { & $Tool --version 2>$null } }
+        if ("$out" -match '(\d+)\.(\d+)(\.\d+)?') { $v = if ($Tool -eq 'node') { $Matches[1] } else { "$($Matches[1]).$($Matches[2])" } }
+    }
+    $global:TsVersions[$Tool] = $v
+    $v
+}
+
+function global:Get-TsShortPath([string]$Dir) {
+    $p = if ($Dir.StartsWith($HOME, [StringComparison]::OrdinalIgnoreCase)) { '~' + $Dir.Substring($HOME.Length) } else { $Dir }
+    $parts = $p.TrimEnd('\') -split '\\'
+    if ($parts.Count -gt 4) { $parts = @($parts[0], '..') + $parts[-3..-1] }
+    $parts -join '\'
+}
+
+function global:Get-TsPrompt {
+    param([string]$Dir = $PWD.ProviderPath, [int]$Status = 0, [int]$Ms = 0, [int]$Width = 100, [switch]$Transient)
+    $c = $global:TK
+    $leaf = Split-Path $Dir -Leaf; if (-not $leaf) { $leaf = $Dir }
+    $title = "$([char]27)]0;$leaf$([char]7)"
+    if ($Transient) { return "$title$($c.dim)$leaf $($c.ok)❯$($c.R) " }
+
+    $left = "$($c.dim)╭─$($c.R) $($c.cmd) $(Get-TsShortPath $Dir)$($c.R)"
+    $root = Get-TsGitRoot $Dir
+    if ($root) {
+        $branch = Get-TsGitBranch $root
+        $gitText = ''
+        if ($global:TerminalSetup.GitStatus) {
+            if ($global:TsGit.Root -eq $root -and ((Get-Date) - $global:TsGit.Time).TotalSeconds -lt 2) { $gitText = $global:TsGit.Text }
+            else { $global:TsGit.Pending = $root }
+        }
+        $left += "  $($c.title) $branch$gitText$($c.R)"
+    }
+    if ($env:VIRTUAL_ENV -or (Test-Path -LiteralPath (Join-Path $Dir 'pyproject.toml')) -or (Test-Path -LiteralPath (Join-Path $Dir 'requirements.txt'))) {
+        $v = Get-TsToolVersion python
+        if ($v) { $left += "  $($c.warn) $v$(if ($env:VIRTUAL_ENV) { " ($(Split-Path $env:VIRTUAL_ENV -Leaf))" })$($c.R)" }
+    }
+    if (Test-Path -LiteralPath (Join-Path $Dir 'package.json')) { $v = Get-TsToolVersion node; if ($v) { $left += "  $($c.ok) $v$($c.R)" } }
+    if (Test-Path -LiteralPath (Join-Path $Dir 'go.mod')) { $v = Get-TsToolVersion go; if ($v) { $left += "  $($c.teal) $v$($c.R)" } }
+    if (Test-Path -LiteralPath (Join-Path $Dir 'Cargo.toml')) { $v = Get-TsToolVersion rust; if ($v) { $left += "  $($c.accent) $v$($c.R)" } }
+
+    $right = @()
+    $k = Get-TsKubeText; if ($k) { $right += "$($c.dim)$k$($c.R)" }
+    if ($Ms -ge 2000) { $right += "$($c.dim) $(if ($Ms -ge 60000) { '{0}m {1}s' -f [int][math]::Floor($Ms / 60000), [int](($Ms % 60000) / 1000) } else { ($Ms / 1000).ToString('0.#', [Globalization.CultureInfo]::InvariantCulture) + 's' })$($c.R)" }
+    if ($Status) { $right += "$($c.err)✘ $Status$($c.R)" }
+    $rightText = $right -join '  '
+    $pad = $Width - (($left + $rightText) -replace "`e\[[0-9;]*m", '' -replace "`e\][^`a]*`a", '').Length - 1
+    if ($pad -lt 2) { $pad = 2 }
+    $arrow = if ($Status) { $c.err } else { $c.ok }
+    "$title`n$left$(' ' * $pad)$rightText`n$($c.dim)╰─$arrow❯$($c.R) "
+}
+
+function global:prompt {
+    $ok = $?
+    $code = if ($ok) { 0 } elseif ($global:LASTEXITCODE) { $global:LASTEXITCODE } else { 1 }
+    $ms = 0
+    $last = Get-History -Count 1
+    if ($last -and $last.Id -ne $global:TsLastHistoryId) {
+        $global:TsLastHistoryId = $last.Id
+        $ms = [int]($last.EndExecutionTime - $last.StartExecutionTime).TotalMilliseconds
+    }
+    $transient = $global:TsTransient; $global:TsTransient = $false
+    Get-TsPrompt -Status $code -Ms $ms -Width $Host.UI.RawUI.WindowSize.Width -Transient:$transient
+}
+
+if ($global:isInteractive) {
+    $null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -SupportEvent -Action {
+        if ($global:TsGit.Pending) {
+            Update-TsGitStatus $global:TsGit.Pending
+            try { [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt() } catch {}
         }
     }
 }
@@ -2204,75 +2324,6 @@ public sealed class DeepHistoryPredictor : ICommandPredictor
     public void OnSuggestionAccepted(PredictionClient client, uint session, string acceptedSuggestion) { }
     public void OnCommandLineAccepted(PredictionClient client, IReadOnlyList<string> history) { }
     public void OnCommandLineExecuted(PredictionClient client, string commandLine, bool success) { }
-}
-'@
-$EmbeddedFiles['omp-theme'] = @'
-{
-  "$schema": "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/schema.json",
-  "version": 3,
-  "final_space": true,
-  "console_title_template": "{{ .Folder }}",
-  "palettes": {
-    "template": "{{ .Env.TERMINAL_THEME }}",
-    "list": {
-      "mocha":     { "text": "#CDD6F4", "subtext": "#A6ADC8", "overlay": "#7F849C", "dim": "#6C7086", "blue": "#89B4FA", "mauve": "#CBA6F7", "green": "#A6E3A1", "red": "#F38BA8", "peach": "#FAB387", "yellow": "#F9E2AF", "teal": "#94E2D5", "lavender": "#B4BEFE", "sapphire": "#74C7EC" },
-      "macchiato": { "text": "#CAD3F5", "subtext": "#A5ADCB", "overlay": "#8087A2", "dim": "#6E738D", "blue": "#8AADF4", "mauve": "#C6A0F6", "green": "#A6DA95", "red": "#ED8796", "peach": "#F5A97F", "yellow": "#EED49F", "teal": "#8BD5CA", "lavender": "#B7BDF8", "sapphire": "#7DC4E4" },
-      "frappe":    { "text": "#C6D0F5", "subtext": "#A5ADCE", "overlay": "#838BA7", "dim": "#737994", "blue": "#8CAAEE", "mauve": "#CA9EE6", "green": "#A6D189", "red": "#E78284", "peach": "#EF9F76", "yellow": "#E5C890", "teal": "#81C8BE", "lavender": "#BABBF1", "sapphire": "#85C1DC" },
-      "latte":     { "text": "#4C4F69", "subtext": "#6C6F85", "overlay": "#8C8FA1", "dim": "#9CA0B0", "blue": "#1E66F5", "mauve": "#8839EF", "green": "#40A02B", "red": "#D20F39", "peach": "#FE640B", "yellow": "#DF8E1D", "teal": "#179299", "lavender": "#7287FD", "sapphire": "#209FB5" }
-    }
-  },
-  "palette": { "text": "#CDD6F4", "subtext": "#A6ADC8", "overlay": "#7F849C", "dim": "#6C7086", "blue": "#89B4FA", "mauve": "#CBA6F7", "green": "#A6E3A1", "red": "#F38BA8", "peach": "#FAB387", "yellow": "#F9E2AF", "teal": "#94E2D5", "lavender": "#B4BEFE", "sapphire": "#74C7EC" },
-  "blocks": [
-    {
-      "type": "prompt",
-      "alignment": "left",
-      "newline": true,
-      "segments": [
-        { "type": "text", "style": "plain", "foreground": "p:dim", "template": "╭─" },
-        { "type": "root", "style": "plain", "foreground": "p:red", "template": "  admin" },
-        { "type": "session", "style": "plain", "foreground": "p:peach", "template": "{{ if .SSHSession }}  {{ .UserName }}@{{ .HostName }}{{ end }}" },
-        {
-          "type": "path", "style": "plain", "foreground": "p:blue",
-          "template": "  {{ .Path }}",
-          "options": { "style": "agnoster_short", "max_depth": 3, "home_icon": "~" }
-        },
-        {
-          "type": "git", "style": "plain", "foreground": "p:mauve",
-          "template": "   {{ .HEAD }}{{ if .Staging.Changed }} <p:green>{{ .Staging.String }}</>{{ end }}{{ if .Working.Changed }} <p:peach>{{ .Working.String }}</>{{ end }}{{ if gt .StashCount 0 }} <p:overlay>{{ .StashCount }}</>{{ end }}{{ if gt .Ahead 0 }} <p:teal>⇡{{ .Ahead }}</>{{ end }}{{ if gt .Behind 0 }} <p:teal>⇣{{ .Behind }}</>{{ end }}",
-          "options": { "fetch_status": true, "fetch_stash_count": true, "branch_icon": "" }
-        },
-        { "type": "python", "style": "plain", "foreground": "p:yellow", "template": "   {{ .Major }}.{{ .Minor }}{{ if .Venv }} ({{ .Venv }}){{ end }}", "options": { "display_mode": "files", "fetch_virtual_env": true } },
-        { "type": "node", "style": "plain", "foreground": "p:green", "template": "   {{ .Major }}", "options": { "display_mode": "files" } },
-        { "type": "go", "style": "plain", "foreground": "p:sapphire", "template": "   {{ .Major }}.{{ .Minor }}", "options": { "display_mode": "files" } },
-        { "type": "rust", "style": "plain", "foreground": "p:peach", "template": "   {{ .Major }}.{{ .Minor }}", "options": { "display_mode": "files" } }
-      ]
-    },
-    {
-      "type": "prompt",
-      "alignment": "right",
-      "segments": [
-        { "type": "kubectl", "style": "plain", "foreground": "p:overlay", "template": "󱃾 {{ .Context }}{{ if and .Namespace (ne .Namespace \"default\") }}/{{ .Namespace }}{{ end }}  ", "options": { "parse_kubeconfig": true } },
-        { "type": "executiontime", "style": "plain", "foreground": "p:overlay", "template": " {{ .FormattedMs }}  ", "options": { "threshold": 2000, "style": "austin" } },
-        { "type": "status", "style": "plain", "foreground": "p:red", "template": " {{ .Code}}" }
-      ]
-    },
-    {
-      "type": "prompt",
-      "alignment": "left",
-      "newline": true,
-      "segments": [
-        { "type": "text", "style": "plain", "foreground": "p:dim", "template": "╰─" },
-        {
-          "type": "status", "style": "plain", "foreground": "p:green",
-          "foreground_templates": [ "{{ if gt .Code 0 }}p:red{{ end }}" ],
-          "template": "❯",
-          "options": { "always_enabled": true }
-        }
-      ]
-    }
-  ],
-  "transient_prompt": { "foreground": "p:overlay", "template": "{{ .Folder }} <p:green>❯</> " },
-  "secondary_prompt": { "foreground": "p:dim", "template": "❯❯ " }
 }
 '@
 $EmbeddedFiles['srv-bashrc'] = @'
@@ -2920,7 +2971,6 @@ if (-not $SkipApps) {
         Install-WingetPackage 'Microsoft.WindowsTerminal' 'wt' 'Windows Terminal'
         $apps = @(
             @('Git.Git', 'git', 'git'),
-            @('JanDeDobbeleer.OhMyPosh', 'oh-my-posh', 'oh-my-posh'),
             @('junegunn.fzf', 'fzf', 'fzf'),
             @('ajeetdsouza.zoxide', 'zoxide', 'zoxide'),
             @('eza-community.eza', 'eza', 'eza'),
@@ -3009,7 +3059,6 @@ if ($Theme -and -not $Themes.Contains($Theme.ToLower())) { throw "-Theme: $($The
 if ($Theme) { New-Item -ItemType Directory -Force $ConfigDir | Out-Null; [IO.File]::WriteAllText($ThemeFile, "$($Theme.ToLower())`n") }
 $ThemeName = Get-ThemeName
 $ThemeTitle = $Themes[$ThemeName].title
-$EmbeddedFiles['omp-theme'] = Set-OmpPalettes $EmbeddedFiles['omp-theme'] $ThemeName
 
 $targets = [ordered]@{
     'profile'      = $PROFILE
@@ -3017,14 +3066,14 @@ $targets = [ordered]@{
     'lang'         = Join-Path $ProfileDir 'lang.ps1'
     'toolkit'      = Join-Path $ProfileDir 'toolkit.ps1'
     'toolkit-lazy' = Join-Path $ProfileDir 'toolkit-lazy.ps1'
+    'prompt'       = Join-Path $ProfileDir 'prompt.ps1'
     'predictor'    = Join-Path $ProfileDir 'DeepHistoryPredictor.cs'
-    'omp-theme'    = Join-Path $HOME '.config\ohmyposh\soft.omp.json'
     'srv-bashrc'   = Join-Path $ProfileDir 'server\bashrc.local'
     'srv-inputrc'  = Join-Path $ProfileDir 'server\inputrc'
     'srv-install'  = Join-Path $ProfileDir 'server\install.sh'
 }
 foreach ($key in $targets.Keys) { Write-ManagedFile $targets[$key] $EmbeddedFiles[$key] }
-Remove-Item "$HOME\.cache\terminal-setup\omp-init.txt" -ErrorAction SilentlyContinue
+Remove-Item "$HOME\.cache\terminal-setup\omp-init.txt", "$HOME\.config\ohmyposh\soft.omp.json" -ErrorAction SilentlyContinue
 
 $customFile = Join-Path $ProfileDir 'custom.ps1'
 if (Test-Path $customFile) { Ok "$(Short $customFile) - $($L.custom_yours)" }

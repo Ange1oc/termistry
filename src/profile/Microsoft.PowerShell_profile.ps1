@@ -9,6 +9,7 @@ $global:TerminalSetup = @{
     Abbreviations = $true
     LayoutFix     = $true
     Predictions   = 50
+    GitStatus     = $true
 }
 
 . (Join-Path $ProfileDir 'palette.ps1')
@@ -54,13 +55,16 @@ foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 
     Set-Item "Function:global:$n" -Value ([scriptblock]::Create("Complete-TerminalSetup; & '$n' @args"))
 }
 
-$before = @(Get-ChildItem Function: | Select-Object -ExpandProperty Name)
 $customFile = Join-Path $ProfileDir 'custom.ps1'
+$global:CustomFunctions = @()
 if (Test-Path $customFile) {
-    try { . $customFile } catch { Write-Warning "custom.ps1: $_" }
+    try {
+        . $customFile
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($customFile, [ref]$null, [ref]$null)
+        $global:CustomFunctions = @($ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false) | ForEach-Object Name)
+    } catch { Write-Warning "custom.ps1: $_" }
 }
-$global:CustomFunctions = @(Get-ChildItem Function: | Where-Object { $_.Name -notin $before -and $_.Name -notmatch ':' } | Select-Object -ExpandProperty Name)
-Remove-Variable before, customFile
+Remove-Variable customFile
 Register-BinCommands (Join-Path $ProfileDir 'bin')
 
 if ($isInteractive) {
@@ -127,34 +131,12 @@ if ($isInteractive) {
     }
 }
 
-# Prompt: oh-my-posh renders it, but its own `init` script costs ~0.4 s to evaluate on every start.
-# This is the same call it makes, without the module around it. Transient prompt: see the Enter handler.
-if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
-    $global:TsOmp = (Get-Command oh-my-posh).Source
-    $global:TsOmpConfig = "$HOME\.config\ohmyposh\soft.omp.json"
-    $env:POSH_THEME = $TsOmpConfig
-    $env:POSH_SHELL = 'pwsh'
-    $global:TsTransient = $false
-    $global:TsLastHistoryId = 0
-    [Console]::OutputEncoding = [Text.Encoding]::UTF8
-    function global:prompt {
-        $ok = $?
-        $code = if ($ok) { 0 } elseif ($global:LASTEXITCODE) { $global:LASTEXITCODE } else { 1 }
-        $ms = 0
-        $last = Get-History -Count 1
-        if ($last -and $last.Id -ne $global:TsLastHistoryId) {
-            $global:TsLastHistoryId = $last.Id
-            $ms = [int]($last.EndExecutionTime - $last.StartExecutionTime).TotalMilliseconds
-        }
-        $width = $Host.UI.RawUI.WindowSize.Width
-        $kind = if ($global:TsTransient) { $global:TsTransient = $false; 'transient' } else { 'primary' }
-        $out = & $global:TsOmp print $kind --shell pwsh --config $global:TsOmpConfig --pwd $PWD.ProviderPath --terminal-width $width --status $code --execution-time $ms
-        $out -join "`n"
-    }
-}
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+. (Join-Path $ProfileDir 'prompt.ps1')
+if ($isInteractive) { Set-PSReadLineOption -ContinuationPrompt '❯❯ ' }
 
 # Enter: layout fix + abbreviation, redraw the prompt in its transient form, then run
-if ($isInteractive -and ($TerminalSetup.LayoutFix -or $TerminalSetup.Abbreviations -or $global:TsOmp)) {
+if ($isInteractive) {
     Set-PSReadLineKeyHandler -Key Enter -BriefDescription 'TerminalSetupEnter' -ScriptBlock {
         $line = $null; $cursor = $null; $errors = $null
         [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
@@ -167,7 +149,7 @@ if ($isInteractive -and ($TerminalSetup.LayoutFix -or $TerminalSetup.Abbreviatio
             if ($exp) { [Microsoft.PowerShell.PSConsoleReadLine]::Replace($exp.Start, $exp.Length, $exp.Text) }
         }
         [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$null, [ref]$null, [ref]$errors, [ref]$null)
-        if ($global:TsOmp -and $errors.Count -eq 0) {
+        if ($errors.Count -eq 0) {
             $global:TsTransient = $true
             try { [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt() } catch { $global:TsTransient = $false }
         }
