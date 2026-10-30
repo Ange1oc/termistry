@@ -7,7 +7,7 @@ function global:Format-TkSize([double]$Bytes) {
 
 # docker/kubectl can hang for a long time when their daemon is down
 function global:Invoke-WithTimeout([string]$Command, [string[]]$Arguments, [int]$Milliseconds = 3000) {
-    $exe = (Get-Command $Command -ErrorAction SilentlyContinue).Source
+    $exe = (Get-Command $Command -ErrorAction Ignore).Source
     if (-not $exe) { return $null }
     $psi = [Diagnostics.ProcessStartInfo]::new($exe)
     foreach ($a in $Arguments) { $psi.ArgumentList.Add($a) }
@@ -57,7 +57,7 @@ function global:help {
     $hits = @(foreach ($s in $all) {
         foreach ($r in $s.Rows) { if (($r -join ' ').IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0) { , $r } }
     })
-    $isCmdlet = Get-Command $query -CommandType Cmdlet, Alias -ErrorAction SilentlyContinue
+    $isCmdlet = Get-Command $query -CommandType Cmdlet, Alias -ErrorAction Ignore
     if ($hits -and $args.Count -eq 1 -and -not $isCmdlet) {
         Write-Host ''
         Write-Host ("  {0}{1}{2}: {3}{4}" -f $TK.title, $TK.B, $TkStr.help_found, $query, $TK.R)
@@ -65,7 +65,7 @@ function global:help {
         Write-Host ''
         return
     }
-    Get-Help @args
+    try { Get-Help @args -ErrorAction Stop } catch { Write-Host "  $($TK.dim)$($TkStr.nothing_found)$($TK.R)" }
 }
 
 function global:Invoke-HelpPicker {
@@ -169,7 +169,7 @@ function global:srv {
 
     $read = { param($path) [IO.File]::ReadAllText($path) -replace "`r`n", "`n" }
     $b64 = { param($text) [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)) }
-    $custom = foreach ($f in Get-ChildItem (Join-Path $dir 'custom') -File -Filter *.sh -ErrorAction SilentlyContinue) {
+    $custom = foreach ($f in Get-ChildItem (Join-Path $dir 'custom') -File -Filter *.sh -ErrorAction Ignore) {
         "__put '.bashrc.d/$($f.Name)' '$(& $b64 (& $read $f.FullName))'"
     }
     $script = (& $read (Join-Path $dir 'install.sh')).Replace('__ACTION__', $Action).Replace('__ENV__', $Env).Replace('__LANG__', $Lang)
@@ -259,7 +259,7 @@ function global:Show-MySys {
         Write-Host ("  {0}{1,-26}{2} {3,9}{4}{5}" -f $TK.cmd, $t.Name, $TK.R, (Format-TkSize $t.Memory), $TK.dim, $(if ($t.Count -gt 1) { "  ×$($t.Count)" }), $TK.R)
     }
 
-    if (Get-Command docker -ErrorAction SilentlyContinue) {
+    if (Get-Command docker -ErrorAction Ignore) {
         Write-Host ''
         Write-Host ("  {0}{1}{2}" -f $TK.title, $TkStr.sys_containers, $TK.R)
         $rows = Invoke-WithTimeout docker @('ps', '-a', '--format', '{{.Names}}\t{{.Status}}')
@@ -275,7 +275,7 @@ function global:Show-MySys {
 }
 
 function global:Show-MyK8s {
-    if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
+    if (-not (Get-Command kubectl -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
     $rows = Invoke-WithTimeout kubectl @('config', 'get-contexts', '--no-headers') 5000
     Write-TkTitle 'Kubernetes' $TkStr.k8s_hint
     if (-not $rows) { Write-Host "  $($TK.dim)$($TkStr.k8s_none)$($TK.R)"; Write-Host ''; return }
@@ -295,7 +295,7 @@ function global:Show-MyK8s {
 }
 
 function global:Show-MyDocker {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Write-Host "  $($TK.dim)$($TkStr.docker_missing)$($TK.R)"; return }
+    if (-not (Get-Command docker -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.docker_missing)$($TK.R)"; return }
     $rows = Invoke-WithTimeout docker @('ps', '-a', '--format', '{{.Names}}\t{{.Status}}\t{{.Ports}}')
     Write-TkTitle 'Docker' $TkStr.docker_hint
     if ($null -eq $rows) { Write-Host "  $($TK.dim)$($TkStr.docker_down)$($TK.R)"; Write-Host ''; return }
@@ -341,13 +341,13 @@ function global:Show-MySsh([string]$Filter) {
 }
 
 function global:Show-MyIp([string]$Mode) {
-    $rows = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    $rows = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Ignore |
         Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
         Sort-Object InterfaceMetric |
         ForEach-Object { [pscustomobject]@{ Interface = $_.InterfaceAlias; Address = "$($_.IPAddress)/$($_.PrefixLength)" } }
     Write-TkTitle $TkStr.ip_title $TkStr.ip_hint
     Write-TkTable $rows @(@{ N = $TkStr.col_iface; P = 'Interface'; C = 'text' }, @{ N = $TkStr.col_address; P = 'Address'; C = 'cmd' })
-    $gw = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1
+    $gw = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Ignore | Sort-Object RouteMetric | Select-Object -First 1
     if ($gw) { Write-Host ("  {0}{1}{2}  {3} {4}({5}){6}" -f $TK.dim, $TkStr.ip_gateway, $TK.R, $gw.NextHop, $TK.dim, $gw.InterfaceAlias, $TK.R) }
     if ($Mode -eq 'public') {
         try { $ip = Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 5; Write-Host ("  {0}{1}{2}  {3}{4}{5}" -f $TK.dim, $TkStr.ip_public, $TK.R, $TK.accent, $ip, $TK.R) }
@@ -358,7 +358,7 @@ function global:Show-MyIp([string]$Mode) {
 
 function global:Show-MyPorts([string]$Filter) {
     $names = @{}; Get-Process | ForEach-Object { $names[$_.Id] = $_.ProcessName }
-    $all = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Group-Object LocalPort | ForEach-Object {
+    $all = Get-NetTCPConnection -State Listen -ErrorAction Ignore | Group-Object LocalPort | ForEach-Object {
         $c = $_.Group[0]
         [pscustomobject]@{
             Port = [int]$c.LocalPort
@@ -404,7 +404,7 @@ function global:Show-MyTools {
     }
     $rows = $specs.GetEnumerator() | ForEach-Object -ThrottleLimit 10 -Parallel {
         $name, $argLine = $_.Key, $_.Value
-        $cmd = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
+        $cmd = Get-Command $name -ErrorAction Ignore | Select-Object -First 1
         if (-not $cmd) { return }
         $out = (& $name ($argLine -split ' ') 2>&1 | Select-Object -First 3) -join ' '
         [pscustomobject]@{ Name = $name; Version = ([regex]::Match($out, '\d+\.\d+(\.\d+)?')).Value; Path = $cmd.Source }
@@ -534,7 +534,7 @@ function global:new {
     $name = [IO.Path]::GetFileNameWithoutExtension($FileName)
     if (-not $TkTemplates.ContainsKey($ext)) { Write-Host "  $($TK.err)$($TkStr.new_bad_ext -f $ext)$($TK.R)"; return }
     if ($name -notmatch '^[A-Za-z_][\w-]*$') { Write-Host "  $($TK.err)$($TkStr.new_bad_name)$($TK.R)"; return }
-    $taken = Get-Command $name -All -ErrorAction SilentlyContinue |
+    $taken = Get-Command $name -All -ErrorAction Ignore |
         Where-Object { $_.Source -notlike "$bin\*" -and $_.ScriptBlock -notlike '*UserCommand*' } | Select-Object -First 1
     if ($taken) { Write-Host "  $($TK.err)$($TkStr.new_taken -f $name, $taken.CommandType, $taken.Source)$($TK.R)"; return }
     New-Item -ItemType Directory -Force $bin | Out-Null
@@ -548,7 +548,7 @@ function global:new {
     $runner = Get-ScriptRunner $ext
     if ($runner) { Write-Host ("  {0}{1}{2}{3}{4} {5}{6}  {7}{8}{9}" -f $TK.dim, $TkStr.new_ready, $TK.cmd, $name, $TK.R, $TK.dim, $TkStr.new_args, $TK.dim, ($TkStr.new_via -f $runner), $TK.R) }
     else { Write-Host ("  {0}{1}{2}" -f $TK.warn, ($TkStr.new_norunner -f ($global:ScriptRunners[$ext] -join ' / ')), $TK.R) }
-    if (Get-Command code -ErrorAction SilentlyContinue) { code $path }
+    if ($global:isInteractive -and (Get-Command code -ErrorAction Ignore)) { code $path }
 }
 
 # ── theme / lang ─────────────────────────────────────────────────────────────
@@ -637,13 +637,13 @@ function global:Get-TsPreview {
 }
 
 function global:Open-TsFile([string]$Path) {
-    if (Get-Command code -ErrorAction SilentlyContinue) { code $Path } else { Invoke-Item $Path }
+    if (Get-Command code -ErrorAction Ignore) { code $Path } else { Invoke-Item $Path }
 }
 
 # ── nav: folders (and files with Ctrl+E) as a tree on fzf ────────────────────
 function global:nav {
     param([string]$Start = (Get-Location).Path)
-    if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) { return }
+    if (-not (Get-Command fzf -ErrorAction Ignore)) { return }
     $dir = (Resolve-Path -LiteralPath $Start).Path
     $preview = "$(Get-TsPreview) {2}"
     $files = $false; $hidden = $false
@@ -651,7 +651,7 @@ function global:nav {
         $parent = Split-Path $dir -Parent
         $entries = @()
         if ($parent) { $entries += "..`t$parent`td" }
-        $items = @(Get-ChildItem -LiteralPath $dir -Force:$hidden -ErrorAction SilentlyContinue | Where-Object { $files -or $_.PSIsContainer })
+        $items = @(Get-ChildItem -LiteralPath $dir -Force:$hidden -ErrorAction Ignore | Where-Object { $files -or $_.PSIsContainer })
         $entries += $items | Sort-Object { -not $_.PSIsContainer }, Name | ForEach-Object {
             if ($_.PSIsContainer) { "$($_.Name)`t$($_.FullName)`td" } else { "  $($_.Name)`t$($_.FullName)`tf" }
         }
@@ -714,7 +714,7 @@ function global:rgi {
         $file, $line = ($out[1] -split ':', 3)[0, 1]
         $full = (Resolve-Path -LiteralPath $file).Path
         if ($out[0] -eq 'ctrl-y') { Set-Clipboard "${full}:$line"; Write-Host "  $($TK.dim)${full}:$line$($TK.R)"; return }
-        if (Get-Command code -ErrorAction SilentlyContinue) { code -g "${full}:$line" }
+        if (Get-Command code -ErrorAction Ignore) { code -g "${full}:$line" }
         else { bat --color=always --style=numbers --highlight-line $line --paging=never $full }
     } finally { Pop-Location }
 }
@@ -893,7 +893,7 @@ function global:Update-Completions {
     New-Item -ItemType Directory -Force $dir | Out-Null
     foreach ($name in $global:CompletionGenerators.Keys) {
         $file = Join-Path $dir "$name.ps1"
-        if (Get-Command $name -ErrorAction SilentlyContinue) {
+        if (Get-Command $name -ErrorAction Ignore) {
             $text = (& $global:CompletionGenerators[$name] | Out-String)
             $text = [regex]::Replace($text, '(?m)^(\s*)(function|filter)\s+(?!global:)(\S+)', '$1$2 global:$3')
             Set-Content $file ("# global`n" + $text) -Encoding utf8

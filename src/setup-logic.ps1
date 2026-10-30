@@ -20,6 +20,8 @@
   Only configs - no programs, no font.
 .PARAMETER Uninstall
   Remove the managed profile files and caches. custom.ps1, bin\, installed programs and *.bak files stay.
+.PARAMETER ProfileDir
+  Put the profile files somewhere other than the $PROFILE folder (used by the tests).
 #>
 param(
     [ValidateSet('', 'ru', 'en')][string]$Lang = '',
@@ -27,7 +29,8 @@ param(
     [string]$StartingDirectory,
     [string[]]$SshTabs = @(),
     [switch]$SkipApps,
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    [string]$ProfileDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -159,7 +162,9 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     if ($StartingDirectory) { $argList += @('-StartingDirectory', $StartingDirectory) }
     if ($SshTabs) { $argList += @('-SshTabs', ($SshTabs -join ',')) }
     if ($Theme) { $argList += @('-Theme', $Theme) }
+    if ($ProfileDir) { $argList += @('-ProfileDir', $ProfileDir) }
     if ($SkipApps) { $argList += '-SkipApps' }
+    if ($Uninstall) { $argList += '-Uninstall' }
     & $pwsh @argList
     exit $LASTEXITCODE
 }
@@ -169,7 +174,8 @@ Write-Host "  $($L.title) $SetupVersion" -ForegroundColor Magenta
 Info "PowerShell $($PSVersionTable.PSVersion) · $([Environment]::OSVersion.VersionString)"
 if (Test-Admin) { Info $L.admin_note }
 
-$ProfileDir = Split-Path $PROFILE
+if (-not $ProfileDir) { $ProfileDir = Split-Path $PROFILE }
+$ProfileFile = Join-Path $ProfileDir 'Microsoft.PowerShell_profile.ps1'
 
 if ($Uninstall) {
     Step $L.s_uninstall
@@ -289,7 +295,7 @@ $ThemeName = Get-ThemeName
 $ThemeTitle = $Themes[$ThemeName].title
 
 $targets = [ordered]@{
-    'profile'      = $PROFILE
+    'profile'      = $ProfileFile
     'palette'      = Join-Path $ProfileDir 'palette.ps1'
     'lang'         = Join-Path $ProfileDir 'lang.ps1'
     'toolkit'      = Join-Path $ProfileDir 'toolkit.ps1'
@@ -461,7 +467,7 @@ else {
 }
 
 Step $L.s_check
-$check = & (Get-Pwsh) -NoLogo -NoProfile -Command "`$Error.Clear(); . '$PROFILE' *> `$null; `$Error.Count; foreach (`$e in `$Error) { `$e.ToString() }" 2>&1
+$check = & (Get-Pwsh) -NoLogo -NoProfile -Command "`$Error.Clear(); . '$ProfileFile' *> `$null; `$Error.Count; foreach (`$e in `$Error) { `$e.ToString() }" 2>&1
 $errCount = [int]($check | Select-Object -First 1)
 if ($errCount -eq 0) { Ok $L.profile_ok }
 else { Warn ($L.profile_errors -f $errCount); $check | Select-Object -Skip 1 -First 5 | ForEach-Object { Info "$_" } }

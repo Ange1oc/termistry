@@ -161,6 +161,7 @@ src/
   profile/            профиль, prompt.ps1 (промпт), palette.ps1 (темы), lang.ps1 (строки ru/en), toolkit.ps1 и toolkit-lazy.ps1 (команды), плагин подсказок
   server/             bashrc.local, inputrc и установщик для srv
 tools/                make-screenshots.ps1: картинки в docs/ из настоящего вывода команд
+tests/                .\tests\run.ps1: профиль, промпт, инсталлятор и серверный bash, всё в песочнице
 ```
 
 Поменять под себя: правьте файлы в папке профиля (`ep`), затем `.\build.ps1 -FromProfile`, коммит и пуш. Следующая установка возьмёт новую версию.

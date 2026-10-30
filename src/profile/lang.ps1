@@ -274,6 +274,7 @@ $global:Strings = @{
                 , ('start typing', 'up to 50 suggestions from history, ↑/↓ to scroll, Esc to hide')
                 , ('g␣ k␣ d␣ dc␣', 'abbreviations expand on space: g → git', 'abbr - all')
                 , ('abbr gcm ''git commit -m "%"''', 'your own abbreviation, % - where the cursor goes')
+                , ('вщслук зы ⏎', 'typed in the russian layout - fixed and run as docker ps')
                 , ('h / h docker', 'last 50 commands, 10 per page · filtered')
             ) }
             @{ Key = 'git'; Title = 'Git'; Rows = @(

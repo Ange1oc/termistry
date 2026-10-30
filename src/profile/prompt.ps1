@@ -7,6 +7,7 @@ $global:TsVersions = @{}
 $global:TsKube = @{ Stamp = ''; Text = ''; Prod = $false }
 $global:TsRedraw = $false
 $global:TsLast = @{ Status = 0; Ms = 0 }
+$global:TsLastExit = 0
 $global:TsLastHistoryId = 0
 
 function global:Get-TsGitRoot([string]$Dir) {
@@ -34,9 +35,11 @@ function global:Get-TsGitBranch([string]$Root) {
     ''
 }
 
-# Runs git once; called from OnIdle, never from the prompt itself
+# Runs git once; called from OnIdle, never from the prompt itself. $LASTEXITCODE belongs to the user's last command.
 function global:Update-TsGitStatus([string]$Root) {
+    $exit = $global:LASTEXITCODE
     $lines = @(git -C $Root -c core.quotepath=false status --porcelain --branch 2>$null)
+    $global:LASTEXITCODE = $exit
     $staged = 0; $modified = 0; $untracked = 0; $ahead = 0; $behind = 0
     foreach ($l in $lines) {
         if ($l.StartsWith('## ')) {
@@ -74,8 +77,11 @@ function global:Get-TsKubeText {
     if ($yaml -match '(?m)^current-context:\s*(\S+)') {
         $ctx = $Matches[1]
         $ns = ''
-        foreach ($block in ($yaml -split '(?m)^- context:')) {
-            if ($block -match "(?m)^\s*name:\s*$([regex]::Escape($ctx))\s*$" -and $block -match 'namespace:\s*([^\s,}]+)') { $ns = $Matches[1]; break }
+        # only the contexts: list; clusters and users have "name:" entries too
+        if ($yaml -match '(?ms)^contexts:[^\n]*\n(.*?)(?=^[A-Za-z]|\z)') {
+            foreach ($item in ($Matches[1] -split '(?m)^- ')) {
+                if ($item -match "(?m)^\s*name:\s*$([regex]::Escape($ctx))\s*$" -and $item -match 'namespace:\s*([^\s,}]+)') { $ns = $Matches[1]; break }
+            }
         }
         $text = "󱃾 $ctx" + $(if ($ns -and $ns -ne 'default') { "/$ns" })
     }
@@ -94,8 +100,11 @@ function global:Test-TsKubeDir([string]$Dir) {
 function global:Get-TsToolVersion([string]$Tool) {
     if ($global:TsVersions.ContainsKey($Tool)) { return $global:TsVersions[$Tool] }
     $v = ''
-    if (Get-Command $Tool -ErrorAction SilentlyContinue) {
-        $out = switch ($Tool) { 'go' { go version 2>$null } 'rust' { rustc --version 2>$null } default { & $Tool --version 2>$null } }
+    $exe = if ($Tool -eq 'rust') { 'rustc' } else { $Tool }
+    if (Get-Command $exe -ErrorAction Ignore) {
+        $exit = $global:LASTEXITCODE
+        $out = switch ($Tool) { 'go' { go version 2>$null } default { & $exe --version 2>$null } }
+        $global:LASTEXITCODE = $exit
         if ("$out" -match '(\d+)\.(\d+)(\.\d+)?') { $v = if ($Tool -eq 'node') { $Matches[1] } else { "$($Matches[1]).$($Matches[2])" } }
     }
     $global:TsVersions[$Tool] = $v
@@ -115,7 +124,7 @@ function global:Get-TsPrompt {
     $leaf = Split-Path $Dir -Leaf; if (-not $leaf) { $leaf = $Dir }
     $title = "$([char]27)]0;$leaf$([char]7)"
 
-    $left = "$($c.dim)╭─$($c.R) $($c.cmd) $(Get-TsShortPath $Dir)$($c.R)"
+    $left = "$($c.dim)╭─$($c.R) $($c.cmd)$([char]0xF07B) $(Get-TsShortPath $Dir)$($c.R)"
     $root = Get-TsGitRoot $Dir
     if ($root) {
         $branch = Get-TsGitBranch $root
@@ -127,15 +136,15 @@ function global:Get-TsPrompt {
             if ($g.Root -ne $root -or ([datetime]::Now - $g.Time).TotalSeconds -ge 2) { $g.Pending = $root }
             $g.Shown = $gitText
         }
-        $left += "  $($c.title) $branch$gitText$($c.R)"
+        $left += "  $($c.title)$([char]0xE0A0) $branch$gitText$($c.R)"
     }
     if ($env:VIRTUAL_ENV -or [IO.File]::Exists("$Dir\pyproject.toml") -or [IO.File]::Exists("$Dir\requirements.txt")) {
         $v = Get-TsToolVersion python
-        if ($v) { $left += "  $($c.warn) $v$(if ($env:VIRTUAL_ENV) { " ($(Split-Path $env:VIRTUAL_ENV -Leaf))" })$($c.R)" }
+        if ($v) { $left += "  $($c.warn)$([char]0xE73C) $v$(if ($env:VIRTUAL_ENV) { " ($(Split-Path $env:VIRTUAL_ENV -Leaf))" })$($c.R)" }
     }
-    if ([IO.File]::Exists("$Dir\package.json")) { $v = Get-TsToolVersion node; if ($v) { $left += "  $($c.ok) $v$($c.R)" } }
-    if ([IO.File]::Exists("$Dir\go.mod")) { $v = Get-TsToolVersion go; if ($v) { $left += "  $($c.teal) $v$($c.R)" } }
-    if ([IO.File]::Exists("$Dir\Cargo.toml")) { $v = Get-TsToolVersion rust; if ($v) { $left += "  $($c.accent) $v$($c.R)" } }
+    if ([IO.File]::Exists("$Dir\package.json")) { $v = Get-TsToolVersion node; if ($v) { $left += "  $($c.ok)$([char]0xE718) $v$($c.R)" } }
+    if ([IO.File]::Exists("$Dir\go.mod")) { $v = Get-TsToolVersion go; if ($v) { $left += "  $($c.teal)$([char]0xE627) $v$($c.R)" } }
+    if ([IO.File]::Exists("$Dir\Cargo.toml")) { $v = Get-TsToolVersion rust; if ($v) { $left += "  $($c.accent)$([char]0xE7A8) $v$($c.R)" } }
 
     $right = @()
     $kube = "$($global:TerminalSetup.Kube)"
@@ -145,7 +154,7 @@ function global:Get-TsPrompt {
             $right += "$(if ($global:TsKube.Prod) { $c.err } else { $c.dim })$k$($c.R)"
         }
     }
-    if ($Ms -ge 2000) { $right += "$($c.dim) $(if ($Ms -ge 60000) { '{0}m {1}s' -f [int][math]::Floor($Ms / 60000), [int](($Ms % 60000) / 1000) } else { ($Ms / 1000).ToString('0.#', [Globalization.CultureInfo]::InvariantCulture) + 's' })$($c.R)" }
+    if ($Ms -ge 2000) { $right += "$($c.dim)$([char]0xF017) $(if ($Ms -ge 60000) { '{0}m {1}s' -f [int][math]::Floor($Ms / 60000), [int](($Ms % 60000) / 1000) } else { ($Ms / 1000).ToString('0.#', [Globalization.CultureInfo]::InvariantCulture) + 's' })$($c.R)" }
     if ($Status) { $right += "$($c.err)✘ $Status$($c.R)" }
     $rightText = $right -join '  '
     $pad = $Width - (($left + $rightText) -replace "`e\[[0-9;]*m", '' -replace "`e\][^`a]*`a", '').Length - 1
@@ -159,13 +168,25 @@ function global:prompt {
     $width = $Host.UI.RawUI.WindowSize.Width
     # Redraw from OnIdle: $? and history belong to the handler, so reuse what the real prompt saw
     if ($global:TsRedraw) { $global:TsRedraw = $false; return Get-TsPrompt -Status $global:TsLast.Status -Ms $global:TsLast.Ms -Width $width }
-    $code = if ($ok) { 0 } elseif ($global:LASTEXITCODE) { $global:LASTEXITCODE } else { 1 }
     $ms = 0
     $last = Get-History -Count 1
     if ($last -and $last.Id -ne $global:TsLastHistoryId) {
         $global:TsLastHistoryId = $last.Id
         $ms = [int]($last.EndExecutionTime - $last.StartExecutionTime).TotalMilliseconds
     }
+    # $LASTEXITCODE outlives the native command that set it; after a cmdlet error it would be stale,
+    # so it is trusted only when it changed since the last prompt or the command that ran was an executable
+    $code = 0
+    if (-not $ok) {
+        $exit = $global:LASTEXITCODE
+        $native = $false
+        if ($exit -and $exit -eq $global:TsLastExit -and $last) {
+            $first = ($last.CommandLine.TrimStart() -split '[\s|;(]', 2)[0]
+            $native = (Get-Command $first -ErrorAction Ignore).CommandType -eq 'Application'
+        }
+        $code = if ($exit -and ($exit -ne $global:TsLastExit -or $native)) { $exit } else { 1 }
+    }
+    $global:TsLastExit = $global:LASTEXITCODE
     $global:TsLast = @{ Status = $code; Ms = $ms }
     Get-TsPrompt -Status $code -Ms $ms -Width $width
 }

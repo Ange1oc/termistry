@@ -167,10 +167,10 @@ function Convert-Layout([string]$Text) {
 function Repair-CommandLayout([string]$Line) {
     if ($Line -notmatch '^\s*[А-Яа-яЁё]') { return }
     $first = ($Line.Trim() -split '\s+', 2)[0]
-    if (Get-Command $first -ErrorAction SilentlyContinue) { return }
+    if (Get-Command $first -ErrorAction Ignore) { return }
     $fixed = Convert-Layout $first
     if ($fixed -eq $first) { return }
-    if (-not (Get-Command $fixed -ErrorAction SilentlyContinue) -and -not $global:Abbreviations.ContainsKey($fixed)) { return }
+    if (-not (Get-Command $fixed -ErrorAction Ignore) -and -not $global:Abbreviations.ContainsKey($fixed)) { return }
     Convert-Layout $Line
 }
 
@@ -198,13 +198,14 @@ function Get-ScriptRunner([string]$Extension) {
 function Register-BinCommands([string]$Dir) {
     $global:UserCommands = @()
     if (-not (Test-Path $Dir)) { return }
-    if (($env:PATH -split ';') -notcontains $Dir) { $env:PATH = "$Dir;$env:PATH" }
+    # last on PATH: a file in bin never hides a real program of the same name
+    if (($env:PATH -split ';') -notcontains $Dir) { $env:PATH = "$env:PATH;$Dir" }
     foreach ($f in Get-ChildItem $Dir -File | Sort-Object Name) {
         $name = $f.BaseName
         $ext = $f.Extension.ToLower()
         if (-not $global:ScriptRunners.Contains($ext) -or $name -notmatch '^[A-Za-z_][\w-]*$') { continue }
         # never shadow a real command; bin itself is on PATH, so ignore matches from there
-        $taken = Get-Command $name -All -ErrorAction SilentlyContinue |
+        $taken = Get-Command $name -All -ErrorAction Ignore |
             Where-Object { $_.Source -notlike "$Dir\*" -and $_.ScriptBlock -notlike '*UserCommand*' } | Select-Object -First 1
         if ($taken) { continue }
         $help = (Get-Content $f.FullName -First 15 | Select-String -Pattern '^\s*(#|//|;;|--)\s*help:\s*(.+)$' | Select-Object -First 1)

@@ -1,6 +1,6 @@
 $global:TerminalSetupVersion = '2.3.0'
 $global:TerminalSetupLoaded = $false
-$global:ProfileDir = Split-Path $PROFILE
+$global:ProfileDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $PROFILE }
 $env:XDG_CONFIG_HOME = "$HOME\.config"
 $global:isInteractive = -not [Console]::IsOutputRedirected -and $Host.Name -eq 'ConsoleHost'
 $cacheDir = "$HOME\.cache\terminal-setup"
@@ -31,7 +31,7 @@ function global:Complete-TerminalSetup {
     . (Join-Path $global:ProfileDir 'lang.ps1')
     $global:TkStr = $global:Strings[$global:LangName]
     . (Join-Path $global:ProfileDir 'toolkit-lazy.ps1')
-    if (Get-Command zoxide -ErrorAction SilentlyContinue) {
+    if (Get-Command zoxide -ErrorAction Ignore) {
         $zoxideInit = "$HOME\.cache\terminal-setup\zoxide-init.ps1"
         $zoxideExe = (Get-Command zoxide).Source
         if (-not (Test-Path $zoxideInit) -or (Get-Item $zoxideInit).LastWriteTime -lt (Get-Item $zoxideExe).LastWriteTime) {
@@ -41,10 +41,10 @@ function global:Complete-TerminalSetup {
         try { . $zoxideInit } catch { Write-Warning "zoxide: $_" }
     }
     $completions = "$HOME\.cache\pwsh-completions"
-    $files = @(Get-ChildItem $completions -Filter *.ps1 -ErrorAction SilentlyContinue)
+    $files = @(Get-ChildItem $completions -Filter *.ps1 -ErrorAction Ignore)
     if (-not (Test-Path $completions) -or ($files | Where-Object { (Get-Content $_.FullName -First 1) -ne '# global' })) {
         Update-Completions | Out-Null
-        $files = @(Get-ChildItem $completions -Filter *.ps1 -ErrorAction SilentlyContinue)
+        $files = @(Get-ChildItem $completions -Filter *.ps1 -ErrorAction Ignore)
     }
     foreach ($file in $files) {
         try { . $file.FullName } catch { Write-Warning "$($file.Name): $_" }
@@ -157,7 +157,13 @@ if ($isInteractive) {
 $env:FZF_DEFAULT_COMMAND = 'fd --type f --hidden --exclude .git'
 $env:FZF_CTRL_R_OPTS = '--height=14'
 $env:FZF_CTRL_T_OPTS = "--height=70% --preview=`"$cacheDir\preview.cmd {}`" --preview-window=right:55%"
-if ($isInteractive -and (Get-Command fzf -ErrorAction SilentlyContinue)) {
+# bat and delta page through less; the busybox less.exe some winget packages put on PATH does not know their flags
+if (-not $env:BAT_PAGER) {
+    $gitLess = Join-Path $env:ProgramFiles 'Git\usr\bin\less.exe'
+    if ([IO.File]::Exists($gitLess)) { $env:BAT_PAGER = "`"$gitLess`" -RF" }
+}
+
+if ($isInteractive -and (Get-Command fzf -ErrorAction Ignore)) {
     # PSFzf auto-loads on first use; importing it eagerly costs ~0.3 s at startup
     Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock { Invoke-FzfPsReadlineHandlerHistory }
     Set-PSReadLineKeyHandler -Key Ctrl+t -ScriptBlock { Invoke-FzfPsReadlineHandlerProvider }

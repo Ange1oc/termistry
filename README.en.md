@@ -161,6 +161,7 @@ src/
   profile/            profile, prompt.ps1 (prompt), palette.ps1 (themes), lang.ps1 (ru/en strings), toolkit.ps1 and toolkit-lazy.ps1 (commands), suggestions plugin
   server/             bashrc.local, inputrc and the installer behind srv
 tools/                make-screenshots.ps1: the images in docs/ come from real command output
+tests/                .\tests\run.ps1: profile, prompt, installer and the server bash, all in a sandbox
 ```
 
 Make it yours: edit the files in the profile folder (`ep`), then `.\build.ps1 -FromProfile`, commit and push. The next install picks up the new version.

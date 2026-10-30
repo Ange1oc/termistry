@@ -20,6 +20,8 @@
   Only configs - no programs, no font.
 .PARAMETER Uninstall
   Remove the managed profile files and caches. custom.ps1, bin\, installed programs and *.bak files stay.
+.PARAMETER ProfileDir
+  Put the profile files somewhere other than the $PROFILE folder (used by the tests).
 #>
 param(
     [ValidateSet('', 'ru', 'en')][string]$Lang = '',
@@ -27,7 +29,8 @@ param(
     [string]$StartingDirectory,
     [string[]]$SshTabs = @(),
     [switch]$SkipApps,
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    [string]$ProfileDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -159,7 +162,9 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     if ($StartingDirectory) { $argList += @('-StartingDirectory', $StartingDirectory) }
     if ($SshTabs) { $argList += @('-SshTabs', ($SshTabs -join ',')) }
     if ($Theme) { $argList += @('-Theme', $Theme) }
+    if ($ProfileDir) { $argList += @('-ProfileDir', $ProfileDir) }
     if ($SkipApps) { $argList += '-SkipApps' }
+    if ($Uninstall) { $argList += '-Uninstall' }
     & $pwsh @argList
     exit $LASTEXITCODE
 }
@@ -169,7 +174,8 @@ Write-Host "  $($L.title) $SetupVersion" -ForegroundColor Magenta
 Info "PowerShell $($PSVersionTable.PSVersion) · $([Environment]::OSVersion.VersionString)"
 if (Test-Admin) { Info $L.admin_note }
 
-$ProfileDir = Split-Path $PROFILE
+if (-not $ProfileDir) { $ProfileDir = Split-Path $PROFILE }
+$ProfileFile = Join-Path $ProfileDir 'Microsoft.PowerShell_profile.ps1'
 
 if ($Uninstall) {
     Step $L.s_uninstall
@@ -194,7 +200,7 @@ $EmbeddedFiles = [ordered]@{}
 $EmbeddedFiles['profile'] = @'
 $global:TerminalSetupVersion = '2.3.0'
 $global:TerminalSetupLoaded = $false
-$global:ProfileDir = Split-Path $PROFILE
+$global:ProfileDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $PROFILE }
 $env:XDG_CONFIG_HOME = "$HOME\.config"
 $global:isInteractive = -not [Console]::IsOutputRedirected -and $Host.Name -eq 'ConsoleHost'
 $cacheDir = "$HOME\.cache\terminal-setup"
@@ -225,7 +231,7 @@ function global:Complete-TerminalSetup {
     . (Join-Path $global:ProfileDir 'lang.ps1')
     $global:TkStr = $global:Strings[$global:LangName]
     . (Join-Path $global:ProfileDir 'toolkit-lazy.ps1')
-    if (Get-Command zoxide -ErrorAction SilentlyContinue) {
+    if (Get-Command zoxide -ErrorAction Ignore) {
         $zoxideInit = "$HOME\.cache\terminal-setup\zoxide-init.ps1"
         $zoxideExe = (Get-Command zoxide).Source
         if (-not (Test-Path $zoxideInit) -or (Get-Item $zoxideInit).LastWriteTime -lt (Get-Item $zoxideExe).LastWriteTime) {
@@ -235,10 +241,10 @@ function global:Complete-TerminalSetup {
         try { . $zoxideInit } catch { Write-Warning "zoxide: $_" }
     }
     $completions = "$HOME\.cache\pwsh-completions"
-    $files = @(Get-ChildItem $completions -Filter *.ps1 -ErrorAction SilentlyContinue)
+    $files = @(Get-ChildItem $completions -Filter *.ps1 -ErrorAction Ignore)
     if (-not (Test-Path $completions) -or ($files | Where-Object { (Get-Content $_.FullName -First 1) -ne '# global' })) {
         Update-Completions | Out-Null
-        $files = @(Get-ChildItem $completions -Filter *.ps1 -ErrorAction SilentlyContinue)
+        $files = @(Get-ChildItem $completions -Filter *.ps1 -ErrorAction Ignore)
     }
     foreach ($file in $files) {
         try { . $file.FullName } catch { Write-Warning "$($file.Name): $_" }
@@ -351,7 +357,13 @@ if ($isInteractive) {
 $env:FZF_DEFAULT_COMMAND = 'fd --type f --hidden --exclude .git'
 $env:FZF_CTRL_R_OPTS = '--height=14'
 $env:FZF_CTRL_T_OPTS = "--height=70% --preview=`"$cacheDir\preview.cmd {}`" --preview-window=right:55%"
-if ($isInteractive -and (Get-Command fzf -ErrorAction SilentlyContinue)) {
+# bat and delta page through less; the busybox less.exe some winget packages put on PATH does not know their flags
+if (-not $env:BAT_PAGER) {
+    $gitLess = Join-Path $env:ProgramFiles 'Git\usr\bin\less.exe'
+    if ([IO.File]::Exists($gitLess)) { $env:BAT_PAGER = "`"$gitLess`" -RF" }
+}
+
+if ($isInteractive -and (Get-Command fzf -ErrorAction Ignore)) {
     # PSFzf auto-loads on first use; importing it eagerly costs ~0.3 s at startup
     Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock { Invoke-FzfPsReadlineHandlerHistory }
     Set-PSReadLineKeyHandler -Key Ctrl+t -ScriptBlock { Invoke-FzfPsReadlineHandlerProvider }
@@ -776,6 +788,7 @@ $global:Strings = @{
                 , ('start typing', 'up to 50 suggestions from history, ↑/↓ to scroll, Esc to hide')
                 , ('g␣ k␣ d␣ dc␣', 'abbreviations expand on space: g → git', 'abbr - all')
                 , ('abbr gcm ''git commit -m "%"''', 'your own abbreviation, % - where the cursor goes')
+                , ('вщслук зы ⏎', 'typed in the russian layout - fixed and run as docker ps')
                 , ('h / h docker', 'last 50 commands, 10 per page · filtered')
             ) }
             @{ Key = 'git'; Title = 'Git'; Rows = @(
@@ -1099,10 +1112,10 @@ function Convert-Layout([string]$Text) {
 function Repair-CommandLayout([string]$Line) {
     if ($Line -notmatch '^\s*[А-Яа-яЁё]') { return }
     $first = ($Line.Trim() -split '\s+', 2)[0]
-    if (Get-Command $first -ErrorAction SilentlyContinue) { return }
+    if (Get-Command $first -ErrorAction Ignore) { return }
     $fixed = Convert-Layout $first
     if ($fixed -eq $first) { return }
-    if (-not (Get-Command $fixed -ErrorAction SilentlyContinue) -and -not $global:Abbreviations.ContainsKey($fixed)) { return }
+    if (-not (Get-Command $fixed -ErrorAction Ignore) -and -not $global:Abbreviations.ContainsKey($fixed)) { return }
     Convert-Layout $Line
 }
 
@@ -1130,13 +1143,14 @@ function Get-ScriptRunner([string]$Extension) {
 function Register-BinCommands([string]$Dir) {
     $global:UserCommands = @()
     if (-not (Test-Path $Dir)) { return }
-    if (($env:PATH -split ';') -notcontains $Dir) { $env:PATH = "$Dir;$env:PATH" }
+    # last on PATH: a file in bin never hides a real program of the same name
+    if (($env:PATH -split ';') -notcontains $Dir) { $env:PATH = "$env:PATH;$Dir" }
     foreach ($f in Get-ChildItem $Dir -File | Sort-Object Name) {
         $name = $f.BaseName
         $ext = $f.Extension.ToLower()
         if (-not $global:ScriptRunners.Contains($ext) -or $name -notmatch '^[A-Za-z_][\w-]*$') { continue }
         # never shadow a real command; bin itself is on PATH, so ignore matches from there
-        $taken = Get-Command $name -All -ErrorAction SilentlyContinue |
+        $taken = Get-Command $name -All -ErrorAction Ignore |
             Where-Object { $_.Source -notlike "$Dir\*" -and $_.ScriptBlock -notlike '*UserCommand*' } | Select-Object -First 1
         if ($taken) { continue }
         $help = (Get-Content $f.FullName -First 15 | Select-String -Pattern '^\s*(#|//|;;|--)\s*help:\s*(.+)$' | Select-Object -First 1)
@@ -1163,7 +1177,7 @@ function global:Format-TkSize([double]$Bytes) {
 
 # docker/kubectl can hang for a long time when their daemon is down
 function global:Invoke-WithTimeout([string]$Command, [string[]]$Arguments, [int]$Milliseconds = 3000) {
-    $exe = (Get-Command $Command -ErrorAction SilentlyContinue).Source
+    $exe = (Get-Command $Command -ErrorAction Ignore).Source
     if (-not $exe) { return $null }
     $psi = [Diagnostics.ProcessStartInfo]::new($exe)
     foreach ($a in $Arguments) { $psi.ArgumentList.Add($a) }
@@ -1213,7 +1227,7 @@ function global:help {
     $hits = @(foreach ($s in $all) {
         foreach ($r in $s.Rows) { if (($r -join ' ').IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0) { , $r } }
     })
-    $isCmdlet = Get-Command $query -CommandType Cmdlet, Alias -ErrorAction SilentlyContinue
+    $isCmdlet = Get-Command $query -CommandType Cmdlet, Alias -ErrorAction Ignore
     if ($hits -and $args.Count -eq 1 -and -not $isCmdlet) {
         Write-Host ''
         Write-Host ("  {0}{1}{2}: {3}{4}" -f $TK.title, $TK.B, $TkStr.help_found, $query, $TK.R)
@@ -1221,7 +1235,7 @@ function global:help {
         Write-Host ''
         return
     }
-    Get-Help @args
+    try { Get-Help @args -ErrorAction Stop } catch { Write-Host "  $($TK.dim)$($TkStr.nothing_found)$($TK.R)" }
 }
 
 function global:Invoke-HelpPicker {
@@ -1325,7 +1339,7 @@ function global:srv {
 
     $read = { param($path) [IO.File]::ReadAllText($path) -replace "`r`n", "`n" }
     $b64 = { param($text) [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)) }
-    $custom = foreach ($f in Get-ChildItem (Join-Path $dir 'custom') -File -Filter *.sh -ErrorAction SilentlyContinue) {
+    $custom = foreach ($f in Get-ChildItem (Join-Path $dir 'custom') -File -Filter *.sh -ErrorAction Ignore) {
         "__put '.bashrc.d/$($f.Name)' '$(& $b64 (& $read $f.FullName))'"
     }
     $script = (& $read (Join-Path $dir 'install.sh')).Replace('__ACTION__', $Action).Replace('__ENV__', $Env).Replace('__LANG__', $Lang)
@@ -1415,7 +1429,7 @@ function global:Show-MySys {
         Write-Host ("  {0}{1,-26}{2} {3,9}{4}{5}" -f $TK.cmd, $t.Name, $TK.R, (Format-TkSize $t.Memory), $TK.dim, $(if ($t.Count -gt 1) { "  ×$($t.Count)" }), $TK.R)
     }
 
-    if (Get-Command docker -ErrorAction SilentlyContinue) {
+    if (Get-Command docker -ErrorAction Ignore) {
         Write-Host ''
         Write-Host ("  {0}{1}{2}" -f $TK.title, $TkStr.sys_containers, $TK.R)
         $rows = Invoke-WithTimeout docker @('ps', '-a', '--format', '{{.Names}}\t{{.Status}}')
@@ -1431,7 +1445,7 @@ function global:Show-MySys {
 }
 
 function global:Show-MyK8s {
-    if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
+    if (-not (Get-Command kubectl -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
     $rows = Invoke-WithTimeout kubectl @('config', 'get-contexts', '--no-headers') 5000
     Write-TkTitle 'Kubernetes' $TkStr.k8s_hint
     if (-not $rows) { Write-Host "  $($TK.dim)$($TkStr.k8s_none)$($TK.R)"; Write-Host ''; return }
@@ -1451,7 +1465,7 @@ function global:Show-MyK8s {
 }
 
 function global:Show-MyDocker {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Write-Host "  $($TK.dim)$($TkStr.docker_missing)$($TK.R)"; return }
+    if (-not (Get-Command docker -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.docker_missing)$($TK.R)"; return }
     $rows = Invoke-WithTimeout docker @('ps', '-a', '--format', '{{.Names}}\t{{.Status}}\t{{.Ports}}')
     Write-TkTitle 'Docker' $TkStr.docker_hint
     if ($null -eq $rows) { Write-Host "  $($TK.dim)$($TkStr.docker_down)$($TK.R)"; Write-Host ''; return }
@@ -1497,13 +1511,13 @@ function global:Show-MySsh([string]$Filter) {
 }
 
 function global:Show-MyIp([string]$Mode) {
-    $rows = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    $rows = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Ignore |
         Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
         Sort-Object InterfaceMetric |
         ForEach-Object { [pscustomobject]@{ Interface = $_.InterfaceAlias; Address = "$($_.IPAddress)/$($_.PrefixLength)" } }
     Write-TkTitle $TkStr.ip_title $TkStr.ip_hint
     Write-TkTable $rows @(@{ N = $TkStr.col_iface; P = 'Interface'; C = 'text' }, @{ N = $TkStr.col_address; P = 'Address'; C = 'cmd' })
-    $gw = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1
+    $gw = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Ignore | Sort-Object RouteMetric | Select-Object -First 1
     if ($gw) { Write-Host ("  {0}{1}{2}  {3} {4}({5}){6}" -f $TK.dim, $TkStr.ip_gateway, $TK.R, $gw.NextHop, $TK.dim, $gw.InterfaceAlias, $TK.R) }
     if ($Mode -eq 'public') {
         try { $ip = Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 5; Write-Host ("  {0}{1}{2}  {3}{4}{5}" -f $TK.dim, $TkStr.ip_public, $TK.R, $TK.accent, $ip, $TK.R) }
@@ -1514,7 +1528,7 @@ function global:Show-MyIp([string]$Mode) {
 
 function global:Show-MyPorts([string]$Filter) {
     $names = @{}; Get-Process | ForEach-Object { $names[$_.Id] = $_.ProcessName }
-    $all = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Group-Object LocalPort | ForEach-Object {
+    $all = Get-NetTCPConnection -State Listen -ErrorAction Ignore | Group-Object LocalPort | ForEach-Object {
         $c = $_.Group[0]
         [pscustomobject]@{
             Port = [int]$c.LocalPort
@@ -1560,7 +1574,7 @@ function global:Show-MyTools {
     }
     $rows = $specs.GetEnumerator() | ForEach-Object -ThrottleLimit 10 -Parallel {
         $name, $argLine = $_.Key, $_.Value
-        $cmd = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
+        $cmd = Get-Command $name -ErrorAction Ignore | Select-Object -First 1
         if (-not $cmd) { return }
         $out = (& $name ($argLine -split ' ') 2>&1 | Select-Object -First 3) -join ' '
         [pscustomobject]@{ Name = $name; Version = ([regex]::Match($out, '\d+\.\d+(\.\d+)?')).Value; Path = $cmd.Source }
@@ -1690,7 +1704,7 @@ function global:new {
     $name = [IO.Path]::GetFileNameWithoutExtension($FileName)
     if (-not $TkTemplates.ContainsKey($ext)) { Write-Host "  $($TK.err)$($TkStr.new_bad_ext -f $ext)$($TK.R)"; return }
     if ($name -notmatch '^[A-Za-z_][\w-]*$') { Write-Host "  $($TK.err)$($TkStr.new_bad_name)$($TK.R)"; return }
-    $taken = Get-Command $name -All -ErrorAction SilentlyContinue |
+    $taken = Get-Command $name -All -ErrorAction Ignore |
         Where-Object { $_.Source -notlike "$bin\*" -and $_.ScriptBlock -notlike '*UserCommand*' } | Select-Object -First 1
     if ($taken) { Write-Host "  $($TK.err)$($TkStr.new_taken -f $name, $taken.CommandType, $taken.Source)$($TK.R)"; return }
     New-Item -ItemType Directory -Force $bin | Out-Null
@@ -1704,7 +1718,7 @@ function global:new {
     $runner = Get-ScriptRunner $ext
     if ($runner) { Write-Host ("  {0}{1}{2}{3}{4} {5}{6}  {7}{8}{9}" -f $TK.dim, $TkStr.new_ready, $TK.cmd, $name, $TK.R, $TK.dim, $TkStr.new_args, $TK.dim, ($TkStr.new_via -f $runner), $TK.R) }
     else { Write-Host ("  {0}{1}{2}" -f $TK.warn, ($TkStr.new_norunner -f ($global:ScriptRunners[$ext] -join ' / ')), $TK.R) }
-    if (Get-Command code -ErrorAction SilentlyContinue) { code $path }
+    if ($global:isInteractive -and (Get-Command code -ErrorAction Ignore)) { code $path }
 }
 
 # ── theme / lang ─────────────────────────────────────────────────────────────
@@ -1793,13 +1807,13 @@ function global:Get-TsPreview {
 }
 
 function global:Open-TsFile([string]$Path) {
-    if (Get-Command code -ErrorAction SilentlyContinue) { code $Path } else { Invoke-Item $Path }
+    if (Get-Command code -ErrorAction Ignore) { code $Path } else { Invoke-Item $Path }
 }
 
 # ── nav: folders (and files with Ctrl+E) as a tree on fzf ────────────────────
 function global:nav {
     param([string]$Start = (Get-Location).Path)
-    if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) { return }
+    if (-not (Get-Command fzf -ErrorAction Ignore)) { return }
     $dir = (Resolve-Path -LiteralPath $Start).Path
     $preview = "$(Get-TsPreview) {2}"
     $files = $false; $hidden = $false
@@ -1807,7 +1821,7 @@ function global:nav {
         $parent = Split-Path $dir -Parent
         $entries = @()
         if ($parent) { $entries += "..`t$parent`td" }
-        $items = @(Get-ChildItem -LiteralPath $dir -Force:$hidden -ErrorAction SilentlyContinue | Where-Object { $files -or $_.PSIsContainer })
+        $items = @(Get-ChildItem -LiteralPath $dir -Force:$hidden -ErrorAction Ignore | Where-Object { $files -or $_.PSIsContainer })
         $entries += $items | Sort-Object { -not $_.PSIsContainer }, Name | ForEach-Object {
             if ($_.PSIsContainer) { "$($_.Name)`t$($_.FullName)`td" } else { "  $($_.Name)`t$($_.FullName)`tf" }
         }
@@ -1870,7 +1884,7 @@ function global:rgi {
         $file, $line = ($out[1] -split ':', 3)[0, 1]
         $full = (Resolve-Path -LiteralPath $file).Path
         if ($out[0] -eq 'ctrl-y') { Set-Clipboard "${full}:$line"; Write-Host "  $($TK.dim)${full}:$line$($TK.R)"; return }
-        if (Get-Command code -ErrorAction SilentlyContinue) { code -g "${full}:$line" }
+        if (Get-Command code -ErrorAction Ignore) { code -g "${full}:$line" }
         else { bat --color=always --style=numbers --highlight-line $line --paging=never $full }
     } finally { Pop-Location }
 }
@@ -2049,7 +2063,7 @@ function global:Update-Completions {
     New-Item -ItemType Directory -Force $dir | Out-Null
     foreach ($name in $global:CompletionGenerators.Keys) {
         $file = Join-Path $dir "$name.ps1"
-        if (Get-Command $name -ErrorAction SilentlyContinue) {
+        if (Get-Command $name -ErrorAction Ignore) {
             $text = (& $global:CompletionGenerators[$name] | Out-String)
             $text = [regex]::Replace($text, '(?m)^(\s*)(function|filter)\s+(?!global:)(\S+)', '$1$2 global:$3')
             Set-Content $file ("# global`n" + $text) -Encoding utf8
@@ -2070,6 +2084,7 @@ $global:TsVersions = @{}
 $global:TsKube = @{ Stamp = ''; Text = ''; Prod = $false }
 $global:TsRedraw = $false
 $global:TsLast = @{ Status = 0; Ms = 0 }
+$global:TsLastExit = 0
 $global:TsLastHistoryId = 0
 
 function global:Get-TsGitRoot([string]$Dir) {
@@ -2097,9 +2112,11 @@ function global:Get-TsGitBranch([string]$Root) {
     ''
 }
 
-# Runs git once; called from OnIdle, never from the prompt itself
+# Runs git once; called from OnIdle, never from the prompt itself. $LASTEXITCODE belongs to the user's last command.
 function global:Update-TsGitStatus([string]$Root) {
+    $exit = $global:LASTEXITCODE
     $lines = @(git -C $Root -c core.quotepath=false status --porcelain --branch 2>$null)
+    $global:LASTEXITCODE = $exit
     $staged = 0; $modified = 0; $untracked = 0; $ahead = 0; $behind = 0
     foreach ($l in $lines) {
         if ($l.StartsWith('## ')) {
@@ -2137,8 +2154,11 @@ function global:Get-TsKubeText {
     if ($yaml -match '(?m)^current-context:\s*(\S+)') {
         $ctx = $Matches[1]
         $ns = ''
-        foreach ($block in ($yaml -split '(?m)^- context:')) {
-            if ($block -match "(?m)^\s*name:\s*$([regex]::Escape($ctx))\s*$" -and $block -match 'namespace:\s*([^\s,}]+)') { $ns = $Matches[1]; break }
+        # only the contexts: list; clusters and users have "name:" entries too
+        if ($yaml -match '(?ms)^contexts:[^\n]*\n(.*?)(?=^[A-Za-z]|\z)') {
+            foreach ($item in ($Matches[1] -split '(?m)^- ')) {
+                if ($item -match "(?m)^\s*name:\s*$([regex]::Escape($ctx))\s*$" -and $item -match 'namespace:\s*([^\s,}]+)') { $ns = $Matches[1]; break }
+            }
         }
         $text = "󱃾 $ctx" + $(if ($ns -and $ns -ne 'default') { "/$ns" })
     }
@@ -2157,8 +2177,11 @@ function global:Test-TsKubeDir([string]$Dir) {
 function global:Get-TsToolVersion([string]$Tool) {
     if ($global:TsVersions.ContainsKey($Tool)) { return $global:TsVersions[$Tool] }
     $v = ''
-    if (Get-Command $Tool -ErrorAction SilentlyContinue) {
-        $out = switch ($Tool) { 'go' { go version 2>$null } 'rust' { rustc --version 2>$null } default { & $Tool --version 2>$null } }
+    $exe = if ($Tool -eq 'rust') { 'rustc' } else { $Tool }
+    if (Get-Command $exe -ErrorAction Ignore) {
+        $exit = $global:LASTEXITCODE
+        $out = switch ($Tool) { 'go' { go version 2>$null } default { & $exe --version 2>$null } }
+        $global:LASTEXITCODE = $exit
         if ("$out" -match '(\d+)\.(\d+)(\.\d+)?') { $v = if ($Tool -eq 'node') { $Matches[1] } else { "$($Matches[1]).$($Matches[2])" } }
     }
     $global:TsVersions[$Tool] = $v
@@ -2178,7 +2201,7 @@ function global:Get-TsPrompt {
     $leaf = Split-Path $Dir -Leaf; if (-not $leaf) { $leaf = $Dir }
     $title = "$([char]27)]0;$leaf$([char]7)"
 
-    $left = "$($c.dim)╭─$($c.R) $($c.cmd) $(Get-TsShortPath $Dir)$($c.R)"
+    $left = "$($c.dim)╭─$($c.R) $($c.cmd)$([char]0xF07B) $(Get-TsShortPath $Dir)$($c.R)"
     $root = Get-TsGitRoot $Dir
     if ($root) {
         $branch = Get-TsGitBranch $root
@@ -2190,15 +2213,15 @@ function global:Get-TsPrompt {
             if ($g.Root -ne $root -or ([datetime]::Now - $g.Time).TotalSeconds -ge 2) { $g.Pending = $root }
             $g.Shown = $gitText
         }
-        $left += "  $($c.title) $branch$gitText$($c.R)"
+        $left += "  $($c.title)$([char]0xE0A0) $branch$gitText$($c.R)"
     }
     if ($env:VIRTUAL_ENV -or [IO.File]::Exists("$Dir\pyproject.toml") -or [IO.File]::Exists("$Dir\requirements.txt")) {
         $v = Get-TsToolVersion python
-        if ($v) { $left += "  $($c.warn) $v$(if ($env:VIRTUAL_ENV) { " ($(Split-Path $env:VIRTUAL_ENV -Leaf))" })$($c.R)" }
+        if ($v) { $left += "  $($c.warn)$([char]0xE73C) $v$(if ($env:VIRTUAL_ENV) { " ($(Split-Path $env:VIRTUAL_ENV -Leaf))" })$($c.R)" }
     }
-    if ([IO.File]::Exists("$Dir\package.json")) { $v = Get-TsToolVersion node; if ($v) { $left += "  $($c.ok) $v$($c.R)" } }
-    if ([IO.File]::Exists("$Dir\go.mod")) { $v = Get-TsToolVersion go; if ($v) { $left += "  $($c.teal) $v$($c.R)" } }
-    if ([IO.File]::Exists("$Dir\Cargo.toml")) { $v = Get-TsToolVersion rust; if ($v) { $left += "  $($c.accent) $v$($c.R)" } }
+    if ([IO.File]::Exists("$Dir\package.json")) { $v = Get-TsToolVersion node; if ($v) { $left += "  $($c.ok)$([char]0xE718) $v$($c.R)" } }
+    if ([IO.File]::Exists("$Dir\go.mod")) { $v = Get-TsToolVersion go; if ($v) { $left += "  $($c.teal)$([char]0xE627) $v$($c.R)" } }
+    if ([IO.File]::Exists("$Dir\Cargo.toml")) { $v = Get-TsToolVersion rust; if ($v) { $left += "  $($c.accent)$([char]0xE7A8) $v$($c.R)" } }
 
     $right = @()
     $kube = "$($global:TerminalSetup.Kube)"
@@ -2208,7 +2231,7 @@ function global:Get-TsPrompt {
             $right += "$(if ($global:TsKube.Prod) { $c.err } else { $c.dim })$k$($c.R)"
         }
     }
-    if ($Ms -ge 2000) { $right += "$($c.dim) $(if ($Ms -ge 60000) { '{0}m {1}s' -f [int][math]::Floor($Ms / 60000), [int](($Ms % 60000) / 1000) } else { ($Ms / 1000).ToString('0.#', [Globalization.CultureInfo]::InvariantCulture) + 's' })$($c.R)" }
+    if ($Ms -ge 2000) { $right += "$($c.dim)$([char]0xF017) $(if ($Ms -ge 60000) { '{0}m {1}s' -f [int][math]::Floor($Ms / 60000), [int](($Ms % 60000) / 1000) } else { ($Ms / 1000).ToString('0.#', [Globalization.CultureInfo]::InvariantCulture) + 's' })$($c.R)" }
     if ($Status) { $right += "$($c.err)✘ $Status$($c.R)" }
     $rightText = $right -join '  '
     $pad = $Width - (($left + $rightText) -replace "`e\[[0-9;]*m", '' -replace "`e\][^`a]*`a", '').Length - 1
@@ -2222,13 +2245,25 @@ function global:prompt {
     $width = $Host.UI.RawUI.WindowSize.Width
     # Redraw from OnIdle: $? and history belong to the handler, so reuse what the real prompt saw
     if ($global:TsRedraw) { $global:TsRedraw = $false; return Get-TsPrompt -Status $global:TsLast.Status -Ms $global:TsLast.Ms -Width $width }
-    $code = if ($ok) { 0 } elseif ($global:LASTEXITCODE) { $global:LASTEXITCODE } else { 1 }
     $ms = 0
     $last = Get-History -Count 1
     if ($last -and $last.Id -ne $global:TsLastHistoryId) {
         $global:TsLastHistoryId = $last.Id
         $ms = [int]($last.EndExecutionTime - $last.StartExecutionTime).TotalMilliseconds
     }
+    # $LASTEXITCODE outlives the native command that set it; after a cmdlet error it would be stale,
+    # so it is trusted only when it changed since the last prompt or the command that ran was an executable
+    $code = 0
+    if (-not $ok) {
+        $exit = $global:LASTEXITCODE
+        $native = $false
+        if ($exit -and $exit -eq $global:TsLastExit -and $last) {
+            $first = ($last.CommandLine.TrimStart() -split '[\s|;(]', 2)[0]
+            $native = (Get-Command $first -ErrorAction Ignore).CommandType -eq 'Application'
+        }
+        $code = if ($exit -and ($exit -ne $global:TsLastExit -or $native)) { $exit } else { 1 }
+    }
+    $global:TsLastExit = $global:LASTEXITCODE
     $global:TsLast = @{ Status = $code; Ms = $ms }
     Get-TsPrompt -Status $code -Ms $ms -Width $width
 }
@@ -3108,7 +3143,7 @@ $ThemeName = Get-ThemeName
 $ThemeTitle = $Themes[$ThemeName].title
 
 $targets = [ordered]@{
-    'profile'      = $PROFILE
+    'profile'      = $ProfileFile
     'palette'      = Join-Path $ProfileDir 'palette.ps1'
     'lang'         = Join-Path $ProfileDir 'lang.ps1'
     'toolkit'      = Join-Path $ProfileDir 'toolkit.ps1'
@@ -3280,7 +3315,7 @@ else {
 }
 
 Step $L.s_check
-$check = & (Get-Pwsh) -NoLogo -NoProfile -Command "`$Error.Clear(); . '$PROFILE' *> `$null; `$Error.Count; foreach (`$e in `$Error) { `$e.ToString() }" 2>&1
+$check = & (Get-Pwsh) -NoLogo -NoProfile -Command "`$Error.Clear(); . '$ProfileFile' *> `$null; `$Error.Count; foreach (`$e in `$Error) { `$e.ToString() }" 2>&1
 $errCount = [int]($check | Select-Object -First 1)
 if ($errCount -eq 0) { Ok $L.profile_ok }
 else { Warn ($L.profile_errors -f $errCount); $check | Select-Object -Skip 1 -First 5 | ForEach-Object { Info "$_" } }
