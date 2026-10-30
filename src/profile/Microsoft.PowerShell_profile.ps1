@@ -10,6 +10,7 @@ $global:TerminalSetup = @{
     LayoutFix     = $true
     Predictions   = 50
     GitStatus     = $true
+    Kube          = 'auto'
 }
 
 . (Join-Path $ProfileDir 'palette.ps1')
@@ -51,7 +52,7 @@ function global:Complete-TerminalSetup {
     $null = Get-TsPreview
 }
 # Until then these names forward to the real functions on first use
-foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions', 'Get-TsPreview') {
+foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'kctx', 'kns', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions', 'Get-TsPreview') {
     Set-Item "Function:global:$n" -Value ([scriptblock]::Create("Complete-TerminalSetup; & '$n' @args"))
 }
 

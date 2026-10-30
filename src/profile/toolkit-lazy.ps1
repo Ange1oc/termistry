@@ -280,7 +280,7 @@ function global:Show-MyK8s {
     Write-TkTitle 'Kubernetes' $TkStr.k8s_hint
     if (-not $rows) { Write-Host "  $($TK.dim)$($TkStr.k8s_none)$($TK.R)"; Write-Host ''; return }
     $list = foreach ($r in $rows) {
-        $f = $r -split '\s+'
+        $f = $r.Trim() -split '\s+'
         $cur = $f[0] -eq '*'
         if ($cur) { $f = $f[1..($f.Count - 1)] }
         [pscustomobject]@{ Mark = $(if ($cur) { '●' } else { ' ' }); Name = $f[0]; Cluster = $f[1]; Namespace = $(if ($f.Count -gt 3) { $f[3] } else { 'default' }) }
@@ -738,6 +738,27 @@ function global:gbr {
 }
 
 function global:o { param([string]$Path = '.') Invoke-Item -LiteralPath $Path }
+
+# ── kubernetes: switch context / namespace, the prompt picks it up by itself ─
+function global:kctx([string]$Name) {
+    if (-not (Get-Command kubectl -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
+    if (-not $Name) {
+        $list = @(Invoke-WithTimeout kubectl @('config', 'get-contexts', '-o', 'name') 5000 | Where-Object { $_ })
+        if (-not $list) { Write-Host "  $($TK.dim)$($TkStr.k8s_none)$($TK.R)"; return }
+        $Name = Invoke-Fzf $list @('--height=40%', "--header=$($TkStr.kctx_header)", '--prompt=context ❯ ', '--preview=kubectl config get-contexts {}', '--preview-window=down:3:wrap')
+    }
+    if ($Name) { kubectl config use-context $Name }
+}
+
+function global:kns([string]$Name) {
+    if (-not (Get-Command kubectl -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
+    if (-not $Name) {
+        $list = @(Invoke-WithTimeout kubectl @('get', 'namespaces', '-o', 'name') 8000 | ForEach-Object { $_ -replace '^namespace/', '' } | Where-Object { $_ })
+        if (-not $list) { Write-Host "  $($TK.dim)$($TkStr.kns_none)$($TK.R)"; return }
+        $Name = Invoke-Fzf $list @('--height=40%', "--header=$($TkStr.kns_header)", '--prompt=namespace ❯ ')
+    }
+    if ($Name) { kubectl config set-context --current --namespace $Name }
+}
 
 # ── small helpers, same names as on the server ───────────────────────────────
 function global:ex([string]$Archive) {

@@ -4,7 +4,7 @@
 $global:TsGit = @{ Root = ''; Text = ''; Time = [datetime]::MinValue; Pending = '' }
 $global:TsGitRoots = @{}
 $global:TsVersions = @{}
-$global:TsKube = @{ Stamp = ''; Text = '' }
+$global:TsKube = @{ Stamp = ''; Text = ''; Prod = $false }
 $global:TsTransient = $false
 $global:TsLastHistoryId = 0
 
@@ -67,7 +67,7 @@ function global:Get-TsKubeText {
     if (-not (Test-Path -LiteralPath $file)) { return '' }
     $stamp = "$file|$((Get-Item -LiteralPath $file).LastWriteTimeUtc.Ticks)"
     if ($global:TsKube.Stamp -eq $stamp) { return $global:TsKube.Text }
-    $text = ''
+    $text = ''; $ctx = ''
     $yaml = Get-Content -LiteralPath $file -Raw
     if ($yaml -match '(?m)^current-context:\s*(\S+)') {
         $ctx = $Matches[1]
@@ -77,8 +77,16 @@ function global:Get-TsKubeText {
         }
         $text = "󱃾 $ctx" + $(if ($ns -and $ns -ne 'default') { "/$ns" })
     }
-    $global:TsKube = @{ Stamp = $stamp; Text = $text }
+    $global:TsKube = @{ Stamp = $stamp; Text = $text; Prod = [bool]($ctx -match '(?i)(^|[^a-z])(prod|production|live)([^a-z]|$)') }
     $text
+}
+
+# The kube segment is shown only inside a k8s project (charts, manifests) or, in red, when the context looks like prod
+function global:Test-TsKubeDir([string]$Dir) {
+    foreach ($m in 'Chart.yaml', 'values.yaml', 'kustomization.yaml', 'skaffold.yaml', 'Tiltfile', 'k8s', 'kubernetes', 'helm', 'charts', 'manifests') {
+        if ([IO.File]::Exists("$Dir\$m") -or [IO.Directory]::Exists("$Dir\$m")) { return $true }
+    }
+    $false
 }
 
 function global:Get-TsToolVersion([string]$Tool) {
@@ -117,16 +125,22 @@ function global:Get-TsPrompt {
         }
         $left += "  $($c.title) $branch$gitText$($c.R)"
     }
-    if ($env:VIRTUAL_ENV -or (Test-Path -LiteralPath (Join-Path $Dir 'pyproject.toml')) -or (Test-Path -LiteralPath (Join-Path $Dir 'requirements.txt'))) {
+    if ($env:VIRTUAL_ENV -or [IO.File]::Exists("$Dir\pyproject.toml") -or [IO.File]::Exists("$Dir\requirements.txt")) {
         $v = Get-TsToolVersion python
         if ($v) { $left += "  $($c.warn) $v$(if ($env:VIRTUAL_ENV) { " ($(Split-Path $env:VIRTUAL_ENV -Leaf))" })$($c.R)" }
     }
-    if (Test-Path -LiteralPath (Join-Path $Dir 'package.json')) { $v = Get-TsToolVersion node; if ($v) { $left += "  $($c.ok) $v$($c.R)" } }
-    if (Test-Path -LiteralPath (Join-Path $Dir 'go.mod')) { $v = Get-TsToolVersion go; if ($v) { $left += "  $($c.teal) $v$($c.R)" } }
-    if (Test-Path -LiteralPath (Join-Path $Dir 'Cargo.toml')) { $v = Get-TsToolVersion rust; if ($v) { $left += "  $($c.accent) $v$($c.R)" } }
+    if ([IO.File]::Exists("$Dir\package.json")) { $v = Get-TsToolVersion node; if ($v) { $left += "  $($c.ok) $v$($c.R)" } }
+    if ([IO.File]::Exists("$Dir\go.mod")) { $v = Get-TsToolVersion go; if ($v) { $left += "  $($c.teal) $v$($c.R)" } }
+    if ([IO.File]::Exists("$Dir\Cargo.toml")) { $v = Get-TsToolVersion rust; if ($v) { $left += "  $($c.accent) $v$($c.R)" } }
 
     $right = @()
-    $k = Get-TsKubeText; if ($k) { $right += "$($c.dim)$k$($c.R)" }
+    $kube = "$($global:TerminalSetup.Kube)"
+    if ($kube -and $kube -ne 'off' -and $kube -ne 'False') {
+        $k = Get-TsKubeText
+        if ($k -and ($kube -eq 'always' -or $global:TsKube.Prod -or (Test-TsKubeDir $Dir) -or ($root -and $root -ne $Dir -and (Test-TsKubeDir $root)))) {
+            $right += "$(if ($global:TsKube.Prod) { $c.err } else { $c.dim })$k$($c.R)"
+        }
+    }
     if ($Ms -ge 2000) { $right += "$($c.dim) $(if ($Ms -ge 60000) { '{0}m {1}s' -f [int][math]::Floor($Ms / 60000), [int](($Ms % 60000) / 1000) } else { ($Ms / 1000).ToString('0.#', [Globalization.CultureInfo]::InvariantCulture) + 's' })$($c.R)" }
     if ($Status) { $right += "$($c.err)✘ $Status$($c.R)" }
     $rightText = $right -join '  '

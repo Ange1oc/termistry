@@ -14,7 +14,7 @@ One command installs and configures everything. One more gives your server the s
 A fresh PowerShell looks like it was designed for a printer. Doing it by hand takes a while: font, color scheme, prompt, highlighting, completions, a dozen tools, and you always forget something. terminal-setup does it for you and hands you a cheat sheet for everything it installed. You open the terminal and get to work.
 
 - One palette for everything: Windows Terminal, prompt, input highlighting, `ls`, fzf, git diffs. Ten themes, switched live.
-- The prompt shows what matters: folder, git branch with changes, node or python version inside a project, kubernetes context, duration of long commands, exit code.
+- The prompt shows what matters: folder, git branch with changes, node or python version inside a project, duration of long commands, exit code. The kubernetes context appears only in folders with charts or manifests, and in red everywhere when kubectl points at prod.
 - `help` and `F1` remember the commands for you. Abbreviations `g␣` → `git`, up to 50 history suggestions, keyboard-layout fix.
 - Your own commands in any language: a file in `bin\` becomes a command, Python or Rust alike.
 - Your server gets the same prompt, cheat sheet and a guard against `docker compose down -v`. Nothing installed, nothing running in the background.
@@ -57,7 +57,7 @@ Offline: download [`setup-terminal.ps1`](setup-terminal.ps1) and run `powershell
 | | |
 |---|---|
 | Programs | PowerShell 7, Windows Terminal, git, fzf, zoxide, eza, bat, ripgrep, fd, delta, lazygit, tldr, gh. Installed via winget, only the missing ones |
-| Prompt | rendered by PowerShell itself in a few milliseconds, no external programs: the branch is read from `.git/HEAD`, the kubernetes context from kubeconfig, and git status counts are fetched in the background and drawn in once they are ready |
+| Prompt | rendered by PowerShell itself in a few milliseconds, no external programs: the branch is read from `.git/HEAD`, the kubernetes context from kubeconfig and only where it belongs (`$TerminalSetup.Kube = 'always'` or `'off'` in `custom.ps1`), and git status counts are fetched in the background and drawn in once they are ready |
 | Font | JetBrainsMono Nerd Font, with icons, for all users |
 | Windows Terminal | PowerShell 7 by default, theme, font, padding, `Win+\`` drops the terminal over any window |
 | Input | syntax highlighting, history suggestions, abbreviations, layout fix, `↑`/`↓` by prefix |
@@ -83,6 +83,7 @@ The profile starts in about half a second: only the core loads up front, while t
 | `Alt+C` · `nav` | folders as a tree with a preview pane: `→` enter, `←` up, Enter go, `Ctrl+E` show files too, `Ctrl+H` hidden, `Ctrl+F` fuzzy search through every folder below, `Ctrl+O` open in Explorer |
 | `pv` · `rgi TODO` | files with a preview pane (Enter opens, `Ctrl+P` prints here) · live grep: type and the list updates, Enter opens the file at that line |
 | `pk node` · `gbr` · `o file` | pick a process and kill it · git branches with their log, Enter switches · open with the default app |
+| `kctx` · `kns` | switch the kubectl context or namespace from a list, the prompt picks it up at once |
 | `h` · `h docker` | last 50 commands, 10 per page, optionally filtered |
 | `Ctrl+Backspace` · `Ctrl+Z` · `Shift+Enter` | delete word, undo, new line without running |
 

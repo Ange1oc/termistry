@@ -87,6 +87,7 @@ $global:Strings = @{
             @{ Key = 'dev'; Title = 'Инструменты'; Rows = @(
                 , ('docker / kubectl / helm', 'Tab-дополнения подкоманд и флагов')
                 , ('my k8s', 'текущий контекст и namespace kubectl, все контексты')
+                , ('kctx [имя] · kns [имя]', 'сменить контекст / namespace kubectl, без имени - выбрать из списка', 'kctx prod')
                 , ('my docker', 'контейнеры и compose-проекты')
                 , ('my sys', 'процессор, память, диски, топ процессов')
                 , ('my ports [порт]', 'кто слушает порты', 'my ports 5432')
@@ -156,8 +157,9 @@ $global:Strings = @{
         docker_down = 'docker не отвечает - Docker Desktop выключен?'; docker_none = 'контейнеров нет'; docker_missing = 'docker не установлен'
         docker_hint = 'логи: docker logs -f <имя> · внутрь: docker exec -it <имя> sh'; docker_projects = 'compose-проекты'
         col_container = 'Контейнер'; col_status = 'Статус'; col_ports = 'Порты'
-        k8s_missing = 'kubectl не установлен'; k8s_hint = 'сменить: kubectl config use-context <имя> · namespace: kubectl config set-context --current --namespace <ns>'
+        k8s_missing = 'kubectl не установлен'; k8s_hint = 'kctx - сменить контекст · kns - сменить namespace · в промпте виден в k8s-папках, prod красным везде'
         k8s_none = 'контекстов нет (kubeconfig пуст)'; col_context = 'Контекст'; col_cluster = 'Кластер'
+        kctx_header = 'Enter - переключить контекст'; kns_header = 'Enter - переключить namespace'; kns_none = 'namespace не получены (кластер недоступен?)'
         ssh_title = 'SSH-хосты'; ssh_hint = 'подключиться: ssh <имя> · jump - выбрать из списка · ssh <Tab>'; ssh_empty = '~/.ssh/config пуст'
         ssh_dup = '⚠ {0} описан в config несколько раз - ssh берёт значения из первого блока (User {1})'
         col_name = 'Имя'; col_address = 'Адрес'; col_user = 'Пользователь'; col_port = 'Порт'; col_key = 'Ключ'
@@ -294,6 +296,7 @@ $global:Strings = @{
             @{ Key = 'dev'; Title = 'Tools'; Rows = @(
                 , ('docker / kubectl / helm', 'Tab completion of subcommands and flags')
                 , ('my k8s', 'current kubectl context and namespace, all contexts')
+                , ('kctx [name] · kns [name]', 'switch kubectl context / namespace, no name - pick from a list', 'kctx prod')
                 , ('my docker', 'containers and compose projects')
                 , ('my sys', 'cpu, memory, disks, top processes')
                 , ('my ports [port]', 'who listens on which port', 'my ports 5432')
@@ -363,8 +366,9 @@ $global:Strings = @{
         docker_down = 'docker is not responding - is Docker Desktop off?'; docker_none = 'no containers'; docker_missing = 'docker is not installed'
         docker_hint = 'logs: docker logs -f <name> · shell: docker exec -it <name> sh'; docker_projects = 'compose projects'
         col_container = 'Container'; col_status = 'Status'; col_ports = 'Ports'
-        k8s_missing = 'kubectl is not installed'; k8s_hint = 'switch: kubectl config use-context <name> · namespace: kubectl config set-context --current --namespace <ns>'
+        k8s_missing = 'kubectl is not installed'; k8s_hint = 'kctx - switch context · kns - switch namespace · shown in the prompt inside k8s folders, prod in red everywhere'
         k8s_none = 'no contexts (empty kubeconfig)'; col_context = 'Context'; col_cluster = 'Cluster'
+        kctx_header = 'Enter - switch context'; kns_header = 'Enter - switch namespace'; kns_none = 'no namespaces (is the cluster reachable?)'
         ssh_title = 'SSH hosts'; ssh_hint = 'connect: ssh <name> · jump - pick from a list · ssh <Tab>'; ssh_empty = '~/.ssh/config is empty'
         ssh_dup = '⚠ {0} appears in config more than once - ssh uses the first block (User {1})'
         col_name = 'Name'; col_address = 'Address'; col_user = 'User'; col_port = 'Port'; col_key = 'Key'

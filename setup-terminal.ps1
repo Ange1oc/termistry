@@ -204,6 +204,7 @@ $global:TerminalSetup = @{
     LayoutFix     = $true
     Predictions   = 50
     GitStatus     = $true
+    Kube          = 'auto'
 }
 
 . (Join-Path $ProfileDir 'palette.ps1')
@@ -245,7 +246,7 @@ function global:Complete-TerminalSetup {
     $null = Get-TsPreview
 }
 # Until then these names forward to the real functions on first use
-foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions', 'Get-TsPreview') {
+foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'kctx', 'kns', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions', 'Get-TsPreview') {
     Set-Item "Function:global:$n" -Value ([scriptblock]::Create("Complete-TerminalSetup; & '$n' @args"))
 }
 
@@ -592,6 +593,7 @@ $global:Strings = @{
             @{ Key = 'dev'; Title = 'Инструменты'; Rows = @(
                 , ('docker / kubectl / helm', 'Tab-дополнения подкоманд и флагов')
                 , ('my k8s', 'текущий контекст и namespace kubectl, все контексты')
+                , ('kctx [имя] · kns [имя]', 'сменить контекст / namespace kubectl, без имени - выбрать из списка', 'kctx prod')
                 , ('my docker', 'контейнеры и compose-проекты')
                 , ('my sys', 'процессор, память, диски, топ процессов')
                 , ('my ports [порт]', 'кто слушает порты', 'my ports 5432')
@@ -661,8 +663,9 @@ $global:Strings = @{
         docker_down = 'docker не отвечает - Docker Desktop выключен?'; docker_none = 'контейнеров нет'; docker_missing = 'docker не установлен'
         docker_hint = 'логи: docker logs -f <имя> · внутрь: docker exec -it <имя> sh'; docker_projects = 'compose-проекты'
         col_container = 'Контейнер'; col_status = 'Статус'; col_ports = 'Порты'
-        k8s_missing = 'kubectl не установлен'; k8s_hint = 'сменить: kubectl config use-context <имя> · namespace: kubectl config set-context --current --namespace <ns>'
+        k8s_missing = 'kubectl не установлен'; k8s_hint = 'kctx - сменить контекст · kns - сменить namespace · в промпте виден в k8s-папках, prod красным везде'
         k8s_none = 'контекстов нет (kubeconfig пуст)'; col_context = 'Контекст'; col_cluster = 'Кластер'
+        kctx_header = 'Enter - переключить контекст'; kns_header = 'Enter - переключить namespace'; kns_none = 'namespace не получены (кластер недоступен?)'
         ssh_title = 'SSH-хосты'; ssh_hint = 'подключиться: ssh <имя> · jump - выбрать из списка · ssh <Tab>'; ssh_empty = '~/.ssh/config пуст'
         ssh_dup = '⚠ {0} описан в config несколько раз - ssh берёт значения из первого блока (User {1})'
         col_name = 'Имя'; col_address = 'Адрес'; col_user = 'Пользователь'; col_port = 'Порт'; col_key = 'Ключ'
@@ -799,6 +802,7 @@ $global:Strings = @{
             @{ Key = 'dev'; Title = 'Tools'; Rows = @(
                 , ('docker / kubectl / helm', 'Tab completion of subcommands and flags')
                 , ('my k8s', 'current kubectl context and namespace, all contexts')
+                , ('kctx [name] · kns [name]', 'switch kubectl context / namespace, no name - pick from a list', 'kctx prod')
                 , ('my docker', 'containers and compose projects')
                 , ('my sys', 'cpu, memory, disks, top processes')
                 , ('my ports [port]', 'who listens on which port', 'my ports 5432')
@@ -868,8 +872,9 @@ $global:Strings = @{
         docker_down = 'docker is not responding - is Docker Desktop off?'; docker_none = 'no containers'; docker_missing = 'docker is not installed'
         docker_hint = 'logs: docker logs -f <name> · shell: docker exec -it <name> sh'; docker_projects = 'compose projects'
         col_container = 'Container'; col_status = 'Status'; col_ports = 'Ports'
-        k8s_missing = 'kubectl is not installed'; k8s_hint = 'switch: kubectl config use-context <name> · namespace: kubectl config set-context --current --namespace <ns>'
+        k8s_missing = 'kubectl is not installed'; k8s_hint = 'kctx - switch context · kns - switch namespace · shown in the prompt inside k8s folders, prod in red everywhere'
         k8s_none = 'no contexts (empty kubeconfig)'; col_context = 'Context'; col_cluster = 'Cluster'
+        kctx_header = 'Enter - switch context'; kns_header = 'Enter - switch namespace'; kns_none = 'no namespaces (is the cluster reachable?)'
         ssh_title = 'SSH hosts'; ssh_hint = 'connect: ssh <name> · jump - pick from a list · ssh <Tab>'; ssh_empty = '~/.ssh/config is empty'
         ssh_dup = '⚠ {0} appears in config more than once - ssh uses the first block (User {1})'
         col_name = 'Name'; col_address = 'Address'; col_user = 'User'; col_port = 'Port'; col_key = 'Key'
@@ -1435,7 +1440,7 @@ function global:Show-MyK8s {
     Write-TkTitle 'Kubernetes' $TkStr.k8s_hint
     if (-not $rows) { Write-Host "  $($TK.dim)$($TkStr.k8s_none)$($TK.R)"; Write-Host ''; return }
     $list = foreach ($r in $rows) {
-        $f = $r -split '\s+'
+        $f = $r.Trim() -split '\s+'
         $cur = $f[0] -eq '*'
         if ($cur) { $f = $f[1..($f.Count - 1)] }
         [pscustomobject]@{ Mark = $(if ($cur) { '●' } else { ' ' }); Name = $f[0]; Cluster = $f[1]; Namespace = $(if ($f.Count -gt 3) { $f[3] } else { 'default' }) }
@@ -1894,6 +1899,27 @@ function global:gbr {
 
 function global:o { param([string]$Path = '.') Invoke-Item -LiteralPath $Path }
 
+# ── kubernetes: switch context / namespace, the prompt picks it up by itself ─
+function global:kctx([string]$Name) {
+    if (-not (Get-Command kubectl -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
+    if (-not $Name) {
+        $list = @(Invoke-WithTimeout kubectl @('config', 'get-contexts', '-o', 'name') 5000 | Where-Object { $_ })
+        if (-not $list) { Write-Host "  $($TK.dim)$($TkStr.k8s_none)$($TK.R)"; return }
+        $Name = Invoke-Fzf $list @('--height=40%', "--header=$($TkStr.kctx_header)", '--prompt=context ❯ ', '--preview=kubectl config get-contexts {}', '--preview-window=down:3:wrap')
+    }
+    if ($Name) { kubectl config use-context $Name }
+}
+
+function global:kns([string]$Name) {
+    if (-not (Get-Command kubectl -ErrorAction Ignore)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
+    if (-not $Name) {
+        $list = @(Invoke-WithTimeout kubectl @('get', 'namespaces', '-o', 'name') 8000 | ForEach-Object { $_ -replace '^namespace/', '' } | Where-Object { $_ })
+        if (-not $list) { Write-Host "  $($TK.dim)$($TkStr.kns_none)$($TK.R)"; return }
+        $Name = Invoke-Fzf $list @('--height=40%', "--header=$($TkStr.kns_header)", '--prompt=namespace ❯ ')
+    }
+    if ($Name) { kubectl config set-context --current --namespace $Name }
+}
+
 # ── small helpers, same names as on the server ───────────────────────────────
 function global:ex([string]$Archive) {
     if (-not (Test-Path -LiteralPath $Archive)) { Write-Host "  $($TK.err)$($TkStr.ex_nofile -f $Archive)$($TK.R)"; return }
@@ -2045,7 +2071,7 @@ $EmbeddedFiles['prompt'] = @'
 $global:TsGit = @{ Root = ''; Text = ''; Time = [datetime]::MinValue; Pending = '' }
 $global:TsGitRoots = @{}
 $global:TsVersions = @{}
-$global:TsKube = @{ Stamp = ''; Text = '' }
+$global:TsKube = @{ Stamp = ''; Text = ''; Prod = $false }
 $global:TsTransient = $false
 $global:TsLastHistoryId = 0
 
@@ -2108,7 +2134,7 @@ function global:Get-TsKubeText {
     if (-not (Test-Path -LiteralPath $file)) { return '' }
     $stamp = "$file|$((Get-Item -LiteralPath $file).LastWriteTimeUtc.Ticks)"
     if ($global:TsKube.Stamp -eq $stamp) { return $global:TsKube.Text }
-    $text = ''
+    $text = ''; $ctx = ''
     $yaml = Get-Content -LiteralPath $file -Raw
     if ($yaml -match '(?m)^current-context:\s*(\S+)') {
         $ctx = $Matches[1]
@@ -2118,8 +2144,16 @@ function global:Get-TsKubeText {
         }
         $text = "󱃾 $ctx" + $(if ($ns -and $ns -ne 'default') { "/$ns" })
     }
-    $global:TsKube = @{ Stamp = $stamp; Text = $text }
+    $global:TsKube = @{ Stamp = $stamp; Text = $text; Prod = [bool]($ctx -match '(?i)(^|[^a-z])(prod|production|live)([^a-z]|$)') }
     $text
+}
+
+# The kube segment is shown only inside a k8s project (charts, manifests) or, in red, when the context looks like prod
+function global:Test-TsKubeDir([string]$Dir) {
+    foreach ($m in 'Chart.yaml', 'values.yaml', 'kustomization.yaml', 'skaffold.yaml', 'Tiltfile', 'k8s', 'kubernetes', 'helm', 'charts', 'manifests') {
+        if ([IO.File]::Exists("$Dir\$m") -or [IO.Directory]::Exists("$Dir\$m")) { return $true }
+    }
+    $false
 }
 
 function global:Get-TsToolVersion([string]$Tool) {
@@ -2158,16 +2192,22 @@ function global:Get-TsPrompt {
         }
         $left += "  $($c.title) $branch$gitText$($c.R)"
     }
-    if ($env:VIRTUAL_ENV -or (Test-Path -LiteralPath (Join-Path $Dir 'pyproject.toml')) -or (Test-Path -LiteralPath (Join-Path $Dir 'requirements.txt'))) {
+    if ($env:VIRTUAL_ENV -or [IO.File]::Exists("$Dir\pyproject.toml") -or [IO.File]::Exists("$Dir\requirements.txt")) {
         $v = Get-TsToolVersion python
         if ($v) { $left += "  $($c.warn) $v$(if ($env:VIRTUAL_ENV) { " ($(Split-Path $env:VIRTUAL_ENV -Leaf))" })$($c.R)" }
     }
-    if (Test-Path -LiteralPath (Join-Path $Dir 'package.json')) { $v = Get-TsToolVersion node; if ($v) { $left += "  $($c.ok) $v$($c.R)" } }
-    if (Test-Path -LiteralPath (Join-Path $Dir 'go.mod')) { $v = Get-TsToolVersion go; if ($v) { $left += "  $($c.teal) $v$($c.R)" } }
-    if (Test-Path -LiteralPath (Join-Path $Dir 'Cargo.toml')) { $v = Get-TsToolVersion rust; if ($v) { $left += "  $($c.accent) $v$($c.R)" } }
+    if ([IO.File]::Exists("$Dir\package.json")) { $v = Get-TsToolVersion node; if ($v) { $left += "  $($c.ok) $v$($c.R)" } }
+    if ([IO.File]::Exists("$Dir\go.mod")) { $v = Get-TsToolVersion go; if ($v) { $left += "  $($c.teal) $v$($c.R)" } }
+    if ([IO.File]::Exists("$Dir\Cargo.toml")) { $v = Get-TsToolVersion rust; if ($v) { $left += "  $($c.accent) $v$($c.R)" } }
 
     $right = @()
-    $k = Get-TsKubeText; if ($k) { $right += "$($c.dim)$k$($c.R)" }
+    $kube = "$($global:TerminalSetup.Kube)"
+    if ($kube -and $kube -ne 'off' -and $kube -ne 'False') {
+        $k = Get-TsKubeText
+        if ($k -and ($kube -eq 'always' -or $global:TsKube.Prod -or (Test-TsKubeDir $Dir) -or ($root -and $root -ne $Dir -and (Test-TsKubeDir $root)))) {
+            $right += "$(if ($global:TsKube.Prod) { $c.err } else { $c.dim })$k$($c.R)"
+        }
+    }
     if ($Ms -ge 2000) { $right += "$($c.dim) $(if ($Ms -ge 60000) { '{0}m {1}s' -f [int][math]::Floor($Ms / 60000), [int](($Ms % 60000) / 1000) } else { ($Ms / 1000).ToString('0.#', [Globalization.CultureInfo]::InvariantCulture) + 's' })$($c.R)" }
     if ($Status) { $right += "$($c.err)✘ $Status$($c.R)" }
     $rightText = $right -join '  '
@@ -2205,6 +2245,7 @@ $EmbeddedFiles['custom'] = @'
 #   $TerminalSetup.Abbreviations = $false     # g␣ → git␣
 #   $TerminalSetup.LayoutFix     = $false     # Russian layout fix on Enter
 #   $TerminalSetup.Predictions   = 20         # history suggestions (0 - PSReadLine default 10)
+#   $TerminalSetup.Kube          = 'always'   # kubernetes context in the prompt: auto (k8s folders and prod only), always, off
 #
 #   abbr gcm 'git commit -m "%"'              # % - cursor position
 #   abbr -Remove d

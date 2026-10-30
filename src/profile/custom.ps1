@@ -3,6 +3,7 @@
 #   $TerminalSetup.Abbreviations = $false     # g␣ → git␣
 #   $TerminalSetup.LayoutFix     = $false     # Russian layout fix on Enter
 #   $TerminalSetup.Predictions   = 20         # history suggestions (0 - PSReadLine default 10)
+#   $TerminalSetup.Kube          = 'always'   # kubernetes context in the prompt: auto (k8s folders and prod only), always, off
 #
 #   abbr gcm 'git commit -m "%"'              # % - cursor position
 #   abbr -Remove d
