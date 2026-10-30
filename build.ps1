@@ -12,12 +12,13 @@ $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $profileDir = Split-Path $PROFILE
 
-# ключ во встроенных файлах → файл в src/ → где он живёт на машине
+# key in $EmbeddedFiles → file in src/ → live location on this machine
 $files = [ordered]@{
     'profile'     = @('src\profile\Microsoft.PowerShell_profile.ps1', $PROFILE)
     'palette'     = @('src\profile\palette.ps1', (Join-Path $profileDir 'palette.ps1'))
+    'lang'        = @('src\profile\lang.ps1', (Join-Path $profileDir 'lang.ps1'))
     'toolkit'     = @('src\profile\toolkit.ps1', (Join-Path $profileDir 'toolkit.ps1'))
-    'custom'      = @('src\profile\custom.ps1', $null)     # шаблон: ставится один раз, с машины не забирается
+    'custom'      = @('src\profile\custom.ps1', $null)     # template, installed once, never pulled back
     'predictor'   = @('src\profile\DeepHistoryPredictor.cs', (Join-Path $profileDir 'DeepHistoryPredictor.cs'))
     'omp-theme'   = @('src\ohmyposh\soft.omp.json', (Join-Path $HOME '.config\ohmyposh\soft.omp.json'))
     'srv-bashrc'  = @('src\server\bashrc.local', (Join-Path $profileDir 'server\bashrc.local'))
@@ -51,7 +52,7 @@ $embedded = $sb.ToString().TrimEnd() -replace "`r`n", "`n"
 $result = $logic.Replace('#@@EMBEDDED_FILES@@', $embedded)
 
 $out = Join-Path $root 'setup-terminal.ps1'
-# UTF-8 с BOM: иначе Windows PowerShell 5.1 прочитает кириллицу как cp1251 и сломается
+# UTF-8 with BOM: Windows PowerShell 5.1 reads a BOM-less file as cp1251 and breaks on Cyrillic
 [IO.File]::WriteAllText($out, $result, [Text.UTF8Encoding]::new($true))
 
 $errors = $null

@@ -1,50 +1,29 @@
 ﻿<#
 .SYNOPSIS
-  Красивый и удобный терминал на Windows 11 одной командой. Повторный запуск ничего не ломает.
-
-.DESCRIPTION
-  Ставит (если ещё нет):
-    PowerShell 7, Windows Terminal, git, oh-my-posh, fzf, zoxide, eza, bat, ripgrep, fd, delta,
-    шрифт JetBrainsMono Nerd Font — для всех пользователей (иначе Windows Terminal его не видит),
-    модуль PSFzf.
-  Настраивает:
-    профиль PowerShell 7: цвета Catppuccin Mocha, промпт, подсказки до 50 из истории, Tab-дополнения,
-      команды help, my, h, jump, srv, l/ll/lt, z;
-    Windows Terminal: PowerShell 7 по умолчанию, схема и тема Catppuccin Mocha, шрифт, отступы;
-    терминал VS Code: шрифт с иконками;
-    git: красивые диффы через delta;
-    шаблоны для серверов: srv install <хост> ставит такой же bash на Linux-сервер.
-
-  Безопасно запускать повторно: каждый шаг сначала проверяет, что уже сделано.
-  Файл с другим содержимым перед заменой сохраняется рядом как *.bak-<дата-время>.
-
-  Репозиторий: https://github.com/Ange1oc/terminal-setup
+  A good-looking, convenient terminal on Windows 11 in one command. Safe to run again.
+  Repository: https://github.com/Ange1oc/terminal-setup
 
 .EXAMPLE
   irm https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1 | iex
-
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File .\setup-terminal.ps1
+  .\setup-terminal.ps1 -Lang en -Theme latte -StartingDirectory D:\code -SshTabs prod,staging
 
-.EXAMPLE
-  .\setup-terminal.ps1 -StartingDirectory D:\code -SshTabs myserver,staging
-
-.PARAMETER StartingDirectory
-  Папка, в которой открывается новая вкладка PowerShell 7. Не указана — не трогаем.
-
-.PARAMETER SshTabs
-  Хосты из ~/.ssh/config, для которых добавить вкладку в меню Windows Terminal (через запятую).
-
+.PARAMETER Lang
+  UI language: ru or en. Asked interactively when omitted. Later: lang en
 .PARAMETER Theme
-  Вариант Catppuccin: mocha (по умолчанию), macchiato, frappe или latte (светлая). Потом: theme latte
-
+  Catppuccin flavor: mocha (default), macchiato, frappe or latte. Later: theme latte
+.PARAMETER StartingDirectory
+  Folder a new PowerShell 7 tab opens in.
+.PARAMETER SshTabs
+  Hosts from ~/.ssh/config that get a tab in the Windows Terminal menu.
 .PARAMETER SkipApps
-  Не ставить программы и шрифт — только конфиги.
+  Only configs — no programs, no font.
 #>
 param(
+    [ValidateSet('', 'ru', 'en')][string]$Lang = '',
+    [ValidateSet('', 'mocha', 'macchiato', 'frappe', 'latte')][string]$Theme = '',
     [string]$StartingDirectory,
     [string[]]$SshTabs = @(),
-    [ValidateSet('', 'mocha', 'macchiato', 'frappe', 'latte')][string]$Theme = '',
     [switch]$SkipApps
 )
 
@@ -53,16 +32,78 @@ $ProgressPreference = 'SilentlyContinue'
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 $SshTabs = @($SshTabs | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+$ConfigDir = Join-Path $HOME '.config\terminal-setup'
 
-# ── Вывод ────────────────────────────────────────────────────────────────────
+function Test-Command([string]$Name) { [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
+
+if (-not $Lang) {
+    $saved = Join-Path $ConfigDir 'lang'
+    if (Test-Path $saved) { $Lang = (Get-Content $saved -First 1).Trim() }
+}
+if ($Lang -notin 'ru', 'en') {
+    $default = if ((Get-Culture).TwoLetterISOLanguageName -eq 'ru') { 'ru' } else { 'en' }
+    $Lang = $default
+    if (-not [Console]::IsInputRedirected) {
+        $answer = Read-Host "  Language / Язык  [ru/en] ($default)"
+        if ($answer.Trim().ToLower() -in 'ru', 'en') { $Lang = $answer.Trim().ToLower() }
+    }
+}
+
+$L = @{
+    ru = @{
+        title = '✦ Настройка терминала'; admin_note = 'запущено от администратора — лучше от обычного пользователя, права попрошу сам, где нужно'
+        continue7 = 'продолжаю в PowerShell 7…'; no_winget = 'Нет winget. Установи «Установщик приложений» (App Installer) из Microsoft Store и запусти скрипт снова.'
+        no_pwsh = 'PowerShell 7 не установился — поставь вручную: winget install Microsoft.PowerShell'
+        present = 'уже есть'; installing = 'устанавливаю…'; installed = 'установлен'; winget_code = 'winget вернул {0}'
+        s_apps = 'Программы'; skip_apps = 'нет winget — программы пропускаю (App Installer из Microsoft Store)'
+        s_font = 'Шрифт JetBrainsMono Nerd Font'; font_present = 'уже установлен для всех пользователей'; font_downloaded = 'скачано: {0}'
+        font_uac = 'нужны права администратора — подтверди запрос Windows (UAC)'; font_failed = 'не установились: {0}'; font_done = 'установлен для всех пользователей'
+        font_error = 'шрифт не установлен: {0}'; font_notfont = 'скачался не шрифт: {0}'; font_fallback = 'Nerd Font нет — в терминале будет Cascadia Mono (иконки не покажутся)'
+        s_psfzf = 'Модуль PSFzf'; psfzf_failed = 'не установился: {0}'
+        s_profile = 'Профиль PowerShell и шаблоны'; unchanged = 'без изменений'; updated = 'обновлён'; old = 'старый'; created = 'создан'
+        custom_yours = 'твой, не трогаю'; custom_created = 'создан (для своих настроек и команд)'; dir_created = 'создана'
+        theme_set = 'тема: {0} · сменить: theme latte'; lang_set = 'язык: {0} · сменить: lang en'
+        s_wt = 'Windows Terminal'; wt_badjson = 'не разобрал JSON, пропускаю: {0}'; wt_never = 'Windows Terminal ещё ни разу не запускался — открой его один раз и запусти скрипт снова'
+        s_vscode = 'Терминал VS Code'; vscode_none = 'VS Code не найден — пропускаю'; vscode_font = 'шрифт терминала: {0}'
+        s_git = 'git: диффы через delta'; git_none = 'git не найден — пропускаю'; delta_none = 'delta не найден — пропускаю'; git_changed = '~/.gitconfig — изменено настроек: {0}'; git_same = '~/.gitconfig — без изменений'
+        s_check = 'Проверка профиля'; profile_ok = 'профиль загружается без ошибок'; profile_errors = 'ошибок при загрузке профиля: {0}'
+        done_warn = 'Готово, предупреждений: {0} (см. выше, жёлтым).'; done = 'Готово.'
+        next1 = 'Закрой все окна Windows Terminal и открой заново, затем набери: help  (или F1)'
+        next2 = 'Своё: custom.ps1 и bin\ рядом с профилем (ep) · new имя.py — команда на любом языке · theme latte · lang en'
+        next3 = 'Серверы: srv install <хост> -Env prod  — такой же удобный bash на Linux.'
+        next4 = 'Скрипт можно запускать повторно — он доустановит недостающее и обновит конфиги.'
+    }
+    en = @{
+        title = '✦ Terminal setup'; admin_note = 'running as administrator — better as a regular user; elevation is requested only where needed'
+        continue7 = 'continuing in PowerShell 7…'; no_winget = 'No winget. Install "App Installer" from the Microsoft Store and run the script again.'
+        no_pwsh = 'PowerShell 7 did not install — install it manually: winget install Microsoft.PowerShell'
+        present = 'already installed'; installing = 'installing…'; installed = 'installed'; winget_code = 'winget returned {0}'
+        s_apps = 'Programs'; skip_apps = 'no winget — skipping programs (App Installer from the Microsoft Store)'
+        s_font = 'JetBrainsMono Nerd Font'; font_present = 'already installed for all users'; font_downloaded = 'downloaded: {0}'
+        font_uac = 'administrator rights needed — confirm the Windows prompt (UAC)'; font_failed = 'not installed: {0}'; font_done = 'installed for all users'
+        font_error = 'font not installed: {0}'; font_notfont = 'downloaded file is not a font: {0}'; font_fallback = 'no Nerd Font — the terminal will use Cascadia Mono (no icons)'
+        s_psfzf = 'PSFzf module'; psfzf_failed = 'failed to install: {0}'
+        s_profile = 'PowerShell profile and templates'; unchanged = 'unchanged'; updated = 'updated'; old = 'old'; created = 'created'
+        custom_yours = 'yours, left alone'; custom_created = 'created (for your own settings and commands)'; dir_created = 'created'
+        theme_set = 'theme: {0} · change: theme latte'; lang_set = 'language: {0} · change: lang ru'
+        s_wt = 'Windows Terminal'; wt_badjson = 'could not parse JSON, skipping: {0}'; wt_never = 'Windows Terminal has never been started — open it once and run the script again'
+        s_vscode = 'VS Code terminal'; vscode_none = 'VS Code not found — skipping'; vscode_font = 'terminal font: {0}'
+        s_git = 'git: diffs via delta'; git_none = 'git not found — skipping'; delta_none = 'delta not found — skipping'; git_changed = '~/.gitconfig — settings changed: {0}'; git_same = '~/.gitconfig — unchanged'
+        s_check = 'Profile check'; profile_ok = 'profile loads without errors'; profile_errors = 'errors while loading the profile: {0}'
+        done_warn = 'Done, warnings: {0} (see above, in yellow).'; done = 'Done.'
+        next1 = 'Close all Windows Terminal windows, open it again and type: help  (or F1)'
+        next2 = 'Yours: custom.ps1 and bin\ next to the profile (ep) · new name.py — a command in any language · theme latte · lang ru'
+        next3 = 'Servers: srv install <host> -Env prod  — the same bash on Linux.'
+        next4 = 'Safe to run again — it installs what is missing and updates the configs.'
+    }
+}[$Lang]
+
 function Step([string]$Title) { Write-Host ''; Write-Host "▸ $Title" -ForegroundColor Magenta }
 function Ok([string]$Text) { Write-Host "  ✓ $Text" -ForegroundColor Green }
 function Info([string]$Text) { Write-Host "  · $Text" -ForegroundColor DarkGray }
 function Warn([string]$Text) { Write-Host "  ! $Text" -ForegroundColor Yellow; $script:Warnings++ }
 function Short([string]$Path) { $Path.Replace($HOME, '~') }
 $Warnings = 0
-
-function Test-Command([string]$Name) { [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
 
 function Update-SessionPath {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
@@ -84,34 +125,31 @@ function Get-Pwsh {
 
 function Install-WingetPackage([string]$Id, [string]$Command, [string]$Title) {
     if (-not $Title) { $Title = $Id }
-    if ($Command -and (Test-Command $Command)) { Ok "$Title — уже есть"; return }
-    Info "$Title — устанавливаю…"
+    if ($Command -and (Test-Command $Command)) { Ok "$Title — $($L.present)"; return }
+    Info "$Title — $($L.installing)"
     $out = winget install --id $Id -e --source winget --accept-package-agreements --accept-source-agreements --silent --disable-interactivity 2>&1
     $code = $LASTEXITCODE
     Update-SessionPath
-    # 0x8A15002B — «уже установлено»
-    if ($code -eq 0 -or $code -eq -1978335189 -or ($Command -and (Test-Command $Command))) { Ok "$Title — установлен" }
-    else { Warn "$Title — winget вернул $code"; $out | Select-Object -Last 5 | ForEach-Object { Info "$_" } }
+    # 0x8A15002B = already installed
+    if ($code -eq 0 -or $code -eq -1978335189 -or ($Command -and (Test-Command $Command))) { Ok "$Title — $($L.installed)" }
+    else { Warn "$Title — $($L.winget_code -f $code)"; $out | Select-Object -Last 5 | ForEach-Object { Info "$_" } }
 }
 
-# ── 0. Windows PowerShell 5.1 → ставим PowerShell 7 и продолжаем в нём ───────
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     Write-Host ''
-    Write-Host '  ✦ Настройка терминала' -ForegroundColor Magenta
+    Write-Host "  $($L.title)" -ForegroundColor Magenta
     Step 'PowerShell 7'
     $pwsh = Get-Pwsh
     if (-not $pwsh) {
-        if (-not (Test-Command winget)) {
-            throw 'Нет winget. Установи «Установщик приложений» (App Installer) из Microsoft Store и запусти скрипт снова.'
-        }
+        if (-not (Test-Command winget)) { throw $L.no_winget }
         Install-WingetPackage 'Microsoft.PowerShell' '' 'PowerShell 7'
         $pwsh = Get-Pwsh
-        if (-not $pwsh) { throw 'PowerShell 7 не установился — поставь вручную: winget install Microsoft.PowerShell' }
+        if (-not $pwsh) { throw $L.no_pwsh }
     } else {
-        Ok 'PowerShell 7 — уже есть'
+        Ok "PowerShell 7 — $($L.present)"
     }
-    Info 'продолжаю в PowerShell 7…'
-    $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
+    Info $L.continue7
+    $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Lang', $Lang)
     if ($StartingDirectory) { $argList += @('-StartingDirectory', $StartingDirectory) }
     if ($SshTabs) { $argList += @('-SshTabs', ($SshTabs -join ',')) }
     if ($Theme) { $argList += @('-Theme', $Theme) }
@@ -120,14 +158,14 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     exit $LASTEXITCODE
 }
 
-# ── Дальше — PowerShell 7 ────────────────────────────────────────────────────
 Write-Host ''
-Write-Host '  ✦ Настройка терминала' -ForegroundColor Magenta
+Write-Host "  $($L.title)" -ForegroundColor Magenta
 Info "PowerShell $($PSVersionTable.PSVersion) · $([Environment]::OSVersion.VersionString)"
-if (Test-Admin) { Info 'запущено от администратора — лучше от обычного пользователя, права попрошу сам, где нужно' }
+if (Test-Admin) { Info $L.admin_note }
 
 $ProfileDir = Split-Path $PROFILE
-$ThemeFile = Join-Path $HOME '.config\terminal-setup\theme'
+$ThemeFile = Join-Path $ConfigDir 'theme'
+$LangFile = Join-Path $ConfigDir 'lang'
 $FontFace = 'JetBrainsMono NF'
 $FontStyles = [ordered]@{ Regular = 'Regular'; Bold = 'Bold'; Italic = 'Italic'; BoldItalic = 'Bold Italic' }
 $FontBaseUrl = 'https://github.com/ryanoasis/nerd-fonts/raw/v3.4.0/patched-fonts/JetBrainsMono/Ligatures'
@@ -135,34 +173,27 @@ $FontBaseUrl = 'https://github.com/ryanoasis/nerd-fonts/raw/v3.4.0/patched-fonts
 # ── Встроенные файлы (собраны build.ps1 из src/) ────────────────────────────
 $EmbeddedFiles = [ordered]@{}
 $EmbeddedFiles['profile'] = @'
-# ─────────────────────────────────────────────────────────────────────────────
-#  PowerShell 7 profile · terminal-setup
-#  Одна палитра на всё (Catppuccin, theme — переключить), промпт oh-my-posh,
-#  подсказки из истории, сокращения, шпаргалка help, свои команды в bin\.
-#  Свои настройки — в custom.ps1 рядом (никогда не перезаписывается).
-#  Обновляется скриптом setup-terminal.ps1 (старые версии — *.bak-<дата>).
-# ─────────────────────────────────────────────────────────────────────────────
-
 $global:ProfileDir = Split-Path $PROFILE
 $env:XDG_CONFIG_HOME = "$HOME\.config"
 $global:isInteractive = -not [Console]::IsOutputRedirected -and $Host.Name -eq 'ConsoleHost'
 
-# Переключатели — можно поменять в custom.ps1
 $global:TerminalSetup = @{
-    Abbreviations = $true    # g␣ → git␣ (abbr — список)
-    LayoutFix     = $true    # «вщслук зы» + Enter → docker ps
-    Predictions   = 50       # подсказок из истории (0 — встроенные 10 от PSReadLine)
+    Abbreviations = $true
+    LayoutFix     = $true
+    Predictions   = 50
 }
 
 . (Join-Path $ProfileDir 'palette.ps1')
+. (Join-Path $ProfileDir 'lang.ps1')
 $global:ThemeName = Get-ThemeName
 $global:Palette = $CatppuccinFlavors[$ThemeName]
 $env:TERMINAL_THEME = $ThemeName
+$global:LangName = Get-LangName
+$global:T = $Strings[$LangName]
 
 . (Join-Path $ProfileDir 'toolkit.ps1')
 Set-TerminalPalette
 
-# ── Своё: custom.ps1 и bin\ ──────────────────────────────────────────────────
 $before = @(Get-ChildItem Function: | Select-Object -ExpandProperty Name)
 $customFile = Join-Path $ProfileDir 'custom.ps1'
 if (Test-Path $customFile) {
@@ -172,7 +203,6 @@ $global:CustomFunctions = @(Get-ChildItem Function: | Where-Object { $_.Name -no
 Remove-Variable before, customFile
 Register-BinCommands (Join-Path $ProfileDir 'bin')
 
-# ── PSReadLine: редактирование, история, подсказки ───────────────────────────
 if ($isInteractive) {
     Set-PSReadLineOption -EditMode Emacs `
         -HistoryNoDuplicates `
@@ -181,23 +211,23 @@ if ($isInteractive) {
         -BellStyle None `
         -PredictionSource History `
         -PredictionViewStyle ListView
-    Set-TerminalPalette    # цвета подсказок — теперь, когда PSReadLine загружен
+    Set-TerminalPalette
 
-    Set-PSReadLineKeyHandler -Key Tab            -Function MenuComplete
-    Set-PSReadLineKeyHandler -Key Ctrl+c         -Function CancelLine
-    Set-PSReadLineKeyHandler -Key UpArrow        -Function HistorySearchBackward   # набрал "git" + ↑ — листаешь только git-команды
-    Set-PSReadLineKeyHandler -Key DownArrow      -Function HistorySearchForward
-    Set-PSReadLineKeyHandler -Key F2             -Function SwitchPredictionView    # список подсказок ⇄ серая подсказка в строке
-    Set-PSReadLineKeyHandler -Key Ctrl+RightArrow -Function ForwardWord            # принять подсказку по словам
-    Set-PSReadLineKeyHandler -Key Ctrl+Backspace -Function BackwardKillWord
-    Set-PSReadLineKeyHandler -Key Ctrl+Delete    -Function KillWord
-    Set-PSReadLineKeyHandler -Key Ctrl+z         -Function Undo
-    Set-PSReadLineKeyHandler -Key Ctrl+y         -Function Redo
-    Set-PSReadLineKeyHandler -Key Shift+Enter    -Function AddLine
-    Set-PSReadLineKeyHandler -Key F1 -BriefDescription 'CheatSheet' -Description 'Шпаргалка с поиском, Enter вставляет команду' -ScriptBlock { Invoke-HelpPicker }
+    Set-PSReadLineKeyHandler -Key Tab             -Function MenuComplete
+    Set-PSReadLineKeyHandler -Key Ctrl+c          -Function CancelLine
+    Set-PSReadLineKeyHandler -Key UpArrow         -Function HistorySearchBackward
+    Set-PSReadLineKeyHandler -Key DownArrow       -Function HistorySearchForward
+    Set-PSReadLineKeyHandler -Key F2              -Function SwitchPredictionView
+    Set-PSReadLineKeyHandler -Key Ctrl+RightArrow -Function ForwardWord
+    Set-PSReadLineKeyHandler -Key Ctrl+Backspace  -Function BackwardKillWord
+    Set-PSReadLineKeyHandler -Key Ctrl+Delete     -Function KillWord
+    Set-PSReadLineKeyHandler -Key Ctrl+z          -Function Undo
+    Set-PSReadLineKeyHandler -Key Ctrl+y          -Function Redo
+    Set-PSReadLineKeyHandler -Key Shift+Enter     -Function AddLine
+    Set-PSReadLineKeyHandler -Key F1 -BriefDescription 'CheatSheet' -ScriptBlock { Invoke-HelpPicker }
 
     if ($TerminalSetup.Abbreviations) {
-        Set-PSReadLineKeyHandler -Key Spacebar -BriefDescription 'ExpandAbbreviation' -Description 'g␣ → git␣' -ScriptBlock {
+        Set-PSReadLineKeyHandler -Key Spacebar -BriefDescription 'ExpandAbbreviation' -ScriptBlock {
             $line = $null; $cursor = $null
             [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
             $exp = Expand-Abbreviation $line $cursor
@@ -209,9 +239,8 @@ if ($isInteractive) {
         }
     }
 
-    # Подсказки из истории: до 50 вместо встроенных 10 (окно 10 строк, листается ↑/↓).
-    # Плагин — DeepHistoryPredictor.cs рядом с профилем. DLL кэшируется под хэшем исходника:
-    # правка .cs даёт новую DLL, а старая может оставаться занятой в открытых вкладках.
+    # History predictor plugin: PSReadLine caps built-in history suggestions at 10, plugins get 50.
+    # The DLL is cached by source hash because a loaded DLL stays locked by open sessions.
     $predictorSrc = Join-Path $ProfileDir 'DeepHistoryPredictor.cs'
     if ($TerminalSetup.Predictions -gt 0 -and (Test-Path $predictorSrc)) {
         try {
@@ -231,19 +260,19 @@ if ($isInteractive) {
             }
             Set-PSReadLineOption -PredictionSource Plugin
         } catch {
-            Write-Warning "Подсказки из истории (DeepHistoryPredictor): $_"
+            Write-Warning "DeepHistoryPredictor: $_"
         }
     }
 }
 
-# ── Промпт ───────────────────────────────────────────────────────────────────
 if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
     oh-my-posh init pwsh --config "$HOME\.config\ohmyposh\soft.omp.json" | Invoke-Expression
 }
 
-# Enter: исправить раскладку, раскрыть сокращение, затем как обычно (с transient-промптом oh-my-posh)
+# Enter: layout fix + abbreviation, then oh-my-posh's transient prompt (its handler is not chainable,
+# so Set-TransientPrompt is called from the module scope) and AcceptLine.
 if ($isInteractive -and ($TerminalSetup.LayoutFix -or $TerminalSetup.Abbreviations)) {
-    Set-PSReadLineKeyHandler -Key Enter -BriefDescription 'TerminalSetupEnter' -Description 'Раскладка и сокращения, затем выполнить' -ScriptBlock {
+    Set-PSReadLineKeyHandler -Key Enter -BriefDescription 'TerminalSetupEnter' -ScriptBlock {
         $line = $null; $cursor = $null; $errors = $null
         [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
         if ($TerminalSetup.LayoutFix -and $line) {
@@ -262,26 +291,22 @@ if ($isInteractive -and ($TerminalSetup.LayoutFix -or $TerminalSetup.Abbreviatio
     }
 }
 
-# ── fzf: Ctrl+R — история, Ctrl+T — файлы, Alt+C — перейти в папку ───────────
 $env:FZF_DEFAULT_COMMAND = 'fd --type f --hidden --exclude .git'
-$env:FZF_CTRL_R_OPTS = '--height=14 --header="Enter — вставить в строку · PgUp/PgDn — листать по 10 · Esc — отмена"'
+$env:FZF_CTRL_R_OPTS = '--height=14'
 if ($isInteractive -and (Get-Command fzf -ErrorAction SilentlyContinue)) {
-    # модуль PSFzf подгрузится сам при первом нажатии — старт быстрее на ~0.3 с
+    # PSFzf auto-loads on first use; importing it eagerly costs ~0.3 s at startup
     Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock { Invoke-FzfPsReadlineHandlerHistory }
     Set-PSReadLineKeyHandler -Key Ctrl+t -ScriptBlock { Invoke-FzfPsReadlineHandlerProvider }
     Set-PSReadLineKeyHandler -Key Alt+c  -ScriptBlock { Invoke-FzfPsReadlineHandlerSetLocation }
 }
 
-# ── zoxide: z <кусок имени> — прыжок в часто используемую папку, zi — с выбором
 if (Get-Command zoxide -ErrorAction SilentlyContinue) {
     Invoke-Expression (& { (zoxide init powershell | Out-String) })
 }
 
-# ── bat / delta ──────────────────────────────────────────────────────────────
-$env:BAT_THEME = 'ansi'          # берёт цвета из схемы терминала
+$env:BAT_THEME = 'ansi'
 $env:BAT_STYLE = 'numbers,changes,header-filename'
 
-# ── Автодополнения CLI (кэшируются; обновить: Update-Completions) ────────────
 $completionCache = "$HOME\.cache\pwsh-completions"
 $completionGenerators = [ordered]@{
     kubectl  = { kubectl completion powershell }
@@ -307,7 +332,6 @@ function Update-Completions {
 if (-not (Test-Path $completionCache)) { Update-Completions | Out-Null }
 foreach ($file in Get-ChildItem $completionCache -Filter *.ps1) { . $file.FullName }
 
-# ── Команды ──────────────────────────────────────────────────────────────────
 $ezaArgs = '--icons=auto', '--group-directories-first', '--color=always'
 function l   { eza @ezaArgs @args }
 function ll  { eza @ezaArgs -la --git --time-style=relative --no-user @args }
@@ -322,12 +346,6 @@ function gst { git status -sb @args }
 function reload { . $PROFILE }
 '@
 $EmbeddedFiles['palette'] = @'
-# ─────────────────────────────────────────────────────────────────────────────
-#  Палитры Catppuccin — четыре варианта одной темы: mocha (тёмная, по умолчанию),
-#  macchiato, frappe (тёмные помягче) и latte (светлая). Переключение: theme latte
-#  Отсюда берут цвета профиль, подсветка ввода, fzf, шпаргалка и промпт oh-my-posh.
-# ─────────────────────────────────────────────────────────────────────────────
-
 $CatppuccinFlavors = [ordered]@{
     mocha = @{
         rosewater = 0xF5E0DC; flamingo = 0xF2CDCD; pink = 0xF5C2E7; mauve = 0xCBA6F7; red = 0xF38BA8; maroon = 0xEBA0AC
@@ -368,7 +386,6 @@ function Get-ThemeName {
 
 function ConvertTo-Hex([int]$Rgb) { '#{0:X6}' -f $Rgb }
 
-# Схема Windows Terminal для варианта (как в официальном репозитории Catppuccin)
 function Get-TerminalScheme([string]$Flavor) {
     $p = $CatppuccinFlavors[$Flavor]
     [ordered]@{
@@ -382,7 +399,6 @@ function Get-TerminalScheme([string]$Flavor) {
     }
 }
 
-# Оформление окна Windows Terminal (вкладки, заголовок) под вариант
 function Get-TerminalTheme([string]$Flavor) {
     $p = $CatppuccinFlavors[$Flavor]
     [ordered]@{
@@ -393,24 +409,362 @@ function Get-TerminalTheme([string]$Flavor) {
     }
 }
 '@
-$EmbeddedFiles['toolkit'] = @'
-# ─────────────────────────────────────────────────────────────────────────────
-#  Команды терминала. Подключается из профиля после palette.ps1.
-#    help [тема|текст]   шпаргалка (help <командлет> — обычная справка PowerShell)
-#    my [тема]           мои данные: sys, ssh, ports, ip, k8s, docker, tools, path, git, cmds
-#    h [текст]           последние 50 команд, листаются по 10
-#    jump [имя]          выбрать SSH-сервер и подключиться
-#    srv install [хост]  поставить такой же bash на Linux-сервер
-#    theme [вариант]     mocha · macchiato · frappe · latte
-#    abbr [имя текст]    сокращения: g␣ → git␣
-#    new имя.py          своя команда на любом языке (папка bin рядом с профилем)
-#  Свои настройки и команды — в custom.ps1 рядом с профилем (ep открывает папку).
-# ─────────────────────────────────────────────────────────────────────────────
+$EmbeddedFiles['lang'] = @'
+$LangFile = Join-Path $HOME '.config\terminal-setup\lang'
 
+function Get-LangName {
+    $name = if (Test-Path $LangFile) { (Get-Content $LangFile -First 1).Trim().ToLower() }
+    if ($name -in 'ru', 'en') { return $name }
+    if ((Get-Culture).TwoLetterISOLanguageName -eq 'ru') { 'ru' } else { 'en' }
+}
+
+$Strings = @{
+    ru = @{
+        help_title    = '✦ Что умеет мой терминал'
+        help_theme    = 'тема'
+        help_hint     = 'F1 — то же с поиском · help <тема> — раздел · help <текст> — поиск · my — мои данные'
+        help_found    = 'Нашлось в шпаргалке'
+        help_user     = 'Моё'
+        help_custom   = 'функция из custom.ps1'
+        help_more     = '… ещё {0}'
+        help_abbr_all = 'abbr — все'
+        picker_header = 'Enter — вставить команду в строку · Esc'
+        sections = @(
+            @{ Key = 'nav'; Title = 'Навигация'; Rows = @(
+                , ('z <часть имени>', 'перейти в папку, где часто бываешь', 'z coding')
+                , ('zi', 'то же, но выбрать из списка')
+                , ('Alt+C', 'выбрать папку через fzf и перейти')
+                , ('.. / ...', 'на уровень / два вверх')
+                , ('mkcd <папка>', 'создать папку и сразу зайти в неё', 'mkcd new-app')
+                , ('ii .', 'открыть текущую папку в Проводнике')
+                , ('code .', 'открыть папку в VS Code')
+            ) }
+            @{ Key = 'files'; Title = 'Файлы'; Rows = @(
+                , ('l / ll / lt', 'список · подробно с git-статусом · деревом')
+                , ('bat <файл>', 'просмотр с подсветкой и номерами строк', 'bat .env')
+                , ('touch <файл>', 'создать пустой файл / обновить дату')
+                , ('which <команда>', 'где лежит программа', 'which python')
+                , ('tldr <команда>', 'короткая шпаргалка с примерами', 'tldr tar')
+            ) }
+            @{ Key = 'search'; Title = 'Поиск'; Rows = @(
+                , ('rg <текст>', 'найти текст во всех файлах папки', 'rg TODO -t py')
+                , ('fd <имя>', 'найти файл по имени', 'fd docker-compose')
+                , ('Ctrl+T', 'выбрать файл через fzf и вставить путь в строку')
+            ) }
+            @{ Key = 'keys'; Title = 'Клавиши'; Rows = @(
+                , ('F1', 'эта шпаргалка с поиском — Enter вставляет команду')
+                , ('Ctrl+R', 'поиск по всей истории: 10 строк, PgUp/PgDn листать')
+                , ('↑ / ↓', 'история по уже набранному началу', 'набрал git → ↑')
+                , ('→ / Ctrl+→', 'принять подсказку целиком / по словам')
+                , ('F2', 'подсказки: список ⇄ серый текст в строке')
+                , ('Tab', 'меню дополнений (команды, пути, ssh-хосты)')
+                , ('Ctrl+Backspace / Ctrl+Del', 'удалить слово слева / справа')
+                , ('Ctrl+Z / Ctrl+Y', 'отменить / вернуть правку строки')
+                , ('Shift+Enter', 'новая строка без запуска')
+                , ('Ctrl+C', 'отменить строку · копировать, если выделено')
+                , ('Ctrl+Shift+F', 'поиск по выводу в окне терминала')
+                , ('Alt+Shift+D', 'разделить окно на две панели')
+                , ('Win+`', 'терминал выпадает сверху поверх всего (quake)')
+            ) }
+            @{ Key = 'input'; Title = 'Ввод'; Rows = @(
+                , ('начни печатать', 'до 50 подсказок из истории, ↑/↓ листать, Esc — скрыть')
+                , ('g␣ k␣ d␣ dc␣', 'сокращения раскрываются сами: g → git', 'abbr — все')
+                , ('abbr gcm ''git commit -m "%"''', 'своё сокращение, % — где оставить курсор')
+                , ('вщслук зы ⏎', 'набрал в русской раскладке — исправится само')
+                , ('h / h docker', 'последние 50 команд по 10 · с фильтром')
+            ) }
+            @{ Key = 'git'; Title = 'Git'; Rows = @(
+                , ('gst', 'короткий статус')
+                , ('lg', 'красивый лог, 30 коммитов', 'lg -n 100')
+                , ('lazygit', 'git в полноэкранном интерфейсе: стейдж, коммиты, ветки')
+                , ('git diff', 'дифф с подсветкой (delta), n/N — к след./пред. файлу')
+                , ('gh pr create', 'пулл-реквест из терминала (gh — GitHub CLI)')
+                , ('my git', 'имя, почта, remotes текущего репо')
+            ) }
+            @{ Key = 'ssh'; Title = 'Серверы'; Rows = @(
+                , ('my ssh [фильтр]', 'все SSH-хосты из ~/.ssh/config', 'my ssh prod')
+                , ('jump [имя]', 'выбрать сервер из списка и подключиться', 'jump prod')
+                , ('ssh <Tab>', 'дополнение имён хостов (и для scp)')
+                , ('srv install [хост]', 'поставить/обновить такой же bash на сервере', 'srv install myserver -Env prod')
+                , ('srv remove [хост]', 'откатить bashrc на сервере')
+                , ('srv', 'подробно: что получает сервер, свои файлы для серверов')
+            ) }
+            @{ Key = 'dev'; Title = 'Инструменты'; Rows = @(
+                , ('docker / kubectl / helm', 'Tab-дополнения подкоманд и флагов')
+                , ('my k8s', 'текущий контекст и namespace kubectl, все контексты')
+                , ('my docker', 'контейнеры и compose-проекты')
+                , ('my sys', 'процессор, память, диски, топ процессов')
+                , ('my ports [порт]', 'кто слушает порты', 'my ports 5432')
+                , ('my ip', 'IP-адреса и шлюз · my ip public — внешний IP')
+                , ('my tools', 'версии всех установленных инструментов')
+            ) }
+            @{ Key = 'mine'; Title = 'Своё'; Rows = @(
+                , ('new имя.py', 'своя команда: py · ps1 · js · ts · sh · go · rs · clj', 'new weather.py')
+                , ('my cmds', 'мои команды, функции и сокращения')
+                , ('ep', 'открыть папку профиля в VS Code: custom.ps1, bin\')
+                , ('theme [вариант]', 'mocha · macchiato · frappe · latte — на лету', 'theme latte')
+                , ('lang [ru|en]', 'язык терминала и серверов')
+                , ('reload', 'перечитать профиль после правок')
+                , ('Update-Completions', 'обновить Tab-дополнения после обновления CLI')
+            ) }
+        )
+        no_insert = '^(Ctrl|Alt|Shift|Win|Tab|F\d|↑|→|начни|набрал|вщслук|g␣)'
+
+        my_topics = [ordered]@{
+            sys    = 'процессор, память, диски, топ процессов, контейнеры'
+            ssh    = 'SSH-хосты из ~/.ssh/config                     my ssh prod'
+            ports  = 'кто слушает порты                              my ports 8080'
+            ip     = 'IP-адреса, шлюз · внешний IP                   my ip public'
+            k8s    = 'контекст и namespace kubectl, все контексты'
+            docker = 'контейнеры и compose-проекты'
+            tools  = 'версии установленных инструментов'
+            path   = 'PATH: что есть, чего нет, дубли'
+            git    = 'имя, почта, remotes, алиасы git'
+            cmds   = 'мои команды из bin, функции из custom.ps1, сокращения'
+            keys   = 'горячие клавиши'
+        }
+        my_title = 'my <тема>'; my_hint = 'Tab дополняет тему'
+        units = 'Б', 'КБ', 'МБ', 'ГБ', 'ТБ', 'ПБ'
+
+        sys_uptime = 'работает {0} д {1} ч {2} мин'; sys_cpu = 'процессор'; sys_mem = 'память'; sys_disk = 'диск'
+        sys_cores = 'ядер'; of = 'из'; sys_bymem = 'по памяти'; sys_containers = 'контейнеры'
+        docker_down = 'docker не отвечает — Docker Desktop выключен?'; docker_none = 'контейнеров нет'; docker_missing = 'docker не установлен'
+        docker_hint = 'логи: docker logs -f <имя> · внутрь: docker exec -it <имя> sh'; docker_projects = 'compose-проекты'
+        col_container = 'Контейнер'; col_status = 'Статус'; col_ports = 'Порты'
+        k8s_missing = 'kubectl не установлен'; k8s_hint = 'сменить: kubectl config use-context <имя> · namespace: kubectl config set-context --current --namespace <ns>'
+        k8s_none = 'контекстов нет (kubeconfig пуст)'; col_context = 'Контекст'; col_cluster = 'Кластер'
+        ssh_title = 'SSH-хосты'; ssh_hint = 'подключиться: ssh <имя> · jump — выбрать из списка · ssh <Tab>'; ssh_empty = '~/.ssh/config пуст'
+        ssh_dup = '⚠ {0} описан в config несколько раз — ssh берёт значения из первого блока (User {1})'
+        col_name = 'Имя'; col_address = 'Адрес'; col_user = 'Пользователь'; col_port = 'Порт'; col_key = 'Ключ'
+        nothing_found = 'ничего не найдено'
+        jump_header = 'Enter — подключиться · Esc — отмена'
+        ip_title = 'IP-адреса'; ip_hint = 'my ip public — внешний IP'; col_iface = 'Интерфейс'; ip_gateway = 'шлюз'; ip_public = 'внешний'; ip_public_fail = 'не удалось узнать внешний IP'
+        ports_title = 'Слушающие порты'; ports_hint = 'my ports <порт|процесс> · my ports all — вместе с системными 49152+'; col_process = 'Процесс'
+        path_title = 'PATH'; path_hint = 'порядок важен: побеждает папка выше'; col_folder = 'Папка'; path_dup = 'дубль'; path_missing = 'нет папки'
+        tools_title = 'Инструменты'; tools_hint = 'обновить всё: winget upgrade --all'; col_program = 'Программа'; col_version = 'Версия'; col_where = 'Где'
+        git_name = 'имя'; git_email = 'почта'; git_repo = 'репозиторий'; git_branch = 'ветка'; git_none = 'сейчас не в git-репозитории'
+        cmds_title = 'Мои команды'; cmds_hint = 'new имя.py — создать · ep — открыть папку · {0}'
+        cmds_empty = 'bin\ пуста — new weather.py ''погода'' создаст первую команду'; cmds_abbr = 'сокращения'; cmds_abbr_hint = 'abbr имя ''текст'' — добавить · abbr -Remove имя'
+
+        hist_title = 'История'; hist_filtered = 'История: «{0}»'; hist_hint = 'новые сверху · Ctrl+R — поиск с вставкой в строку'
+        hist_more = '… +{0} стр.'; hist_page = '── {0}/{1} · Enter или Пробел — ещё · Q/Esc — хватит ──'
+
+        abbr_title = 'Сокращения'; abbr_hint = 'раскрываются по пробелу · abbr имя ''текст'' — добавить · abbr -Remove имя'
+        abbr_usage = 'abbr имя ''во что раскрыть'''; abbr_saved = 'записано в custom.ps1: {0}'
+
+        new_title = 'new имя.расширение [описание]'; new_hint = 'создаёт команду в {0}'; new_run = 'запуск: {0}'; new_need = 'нужен {0}'
+        new_missing = 'не установлен'; new_bad_ext = 'не знаю расширение {0} — new без аргументов покажет список'
+        new_bad_name = 'имя: латиница, цифры, - и _'; new_taken = 'имя {0} уже занято ({1} {2})'
+        new_ready = 'команда готова: '; new_args = '[аргументы]'; new_via = 'запуск через {0}'; new_norunner = 'чтобы запускать, нужен {0}'
+        new_default = 'моя команда'; bin_norunner = 'нечем запустить {0}: нужен {1}'
+
+        theme_title = 'Тема'; theme_hint = 'theme <вариант> — переключить всё сразу: терминал, промпт, подсветку'
+        theme_dark = 'тёмная'; theme_light = 'светлая'; theme_only = 'есть только: {0}'; theme_done = 'Windows Terminal переключится сам, новые вкладки — тоже'
+
+        lang_title = 'Язык'; lang_hint = 'lang ru · lang en — и перечитать профиль'; lang_ru = 'русский'; lang_en = 'английский'
+        lang_only = 'есть только: ru, en'; lang_done = 'язык: {0} — reload или новая вкладка; серверы: srv install <хост>'
+
+        srv_missing = 'нет {0} — запусти setup-terminal.ps1'; srv_env = '-Env: только буквы, цифры, - и _ (none — убрать метку)'
+        srv_pick = 'srv {0} — выбери сервер · Esc — отмена'; srv_removed = 'откачено'; srv_restore = '— вернуть: srv install {0}'
+        srv_done = 'готово'; srv_relogin = '— перезайди: ssh {0}, затем help'; srv_error = 'ошибка (код {0}) — на сервере ничего не менялось после этой точки'
+        srv_title = 'srv — такой же bash на серверах'; srv_templates = 'шаблоны: {0}'
+        srv_rows = @(
+            , ('srv install [хост…]', 'поставить или обновить (без хоста — выбор из списка)', 'srv install myserver')
+            , ('srv install <хост> -Env prod', 'то же + метка в промпте: prod / staging / dev / none')
+            , ('srv install <хост> -Lang en', 'язык на сервере (по умолчанию — как здесь)')
+            , ('srv remove [хост]', 'откатить: убрать подключение, файлы → *.off')
+        )
+        srv_gets = 'Что получает сервер'
+        srv_gets_rows = @(
+            'промпт как здесь (метка окружения, ветка, время долгой команды), большая история, ↑/↓ по началу, help, sys'
+            'проекты находятся сами (docker compose ls): <имя> · <имя> logs web · <имя> sh web · proj · app'
+            'защита: docker down -v / volume rm / prune просят yes; rm, cp, mv — подтверждение'
+            'ничего в фоне и ничего не ставится — только файлы в домашней папке'
+        )
+        srv_custom = 'Свои команды для серверов'
+        srv_custom_rows = @(
+            '{0}\custom\*.sh — уезжают на каждый сервер в ~/.bashrc.d/ при srv install'
+            'строка # help: имя — описание в файле попадает в help на сервере'
+            'на самом сервере: ~/.bashrc.d/*.sh и ~/bin/* — остаются при обновлении'
+        )
+        srv_note = 'Каждый запуск: бэкап, проверка до изменений, одно ssh-подключение. Повторный запуск ничего не ломает.'
+    }
+
+    en = @{
+        help_title    = '✦ What my terminal can do'
+        help_theme    = 'theme'
+        help_hint     = 'F1 — same with search · help <topic> — one section · help <text> — search · my — my data'
+        help_found    = 'Found in the cheat sheet'
+        help_user     = 'Mine'
+        help_custom   = 'function from custom.ps1'
+        help_more     = '… {0} more'
+        help_abbr_all = 'abbr — all'
+        picker_header = 'Enter — insert the command · Esc'
+        sections = @(
+            @{ Key = 'nav'; Title = 'Navigation'; Rows = @(
+                , ('z <part of name>', 'jump to a folder you use often', 'z coding')
+                , ('zi', 'same, but pick from a list')
+                , ('Alt+C', 'pick a folder with fzf and go there')
+                , ('.. / ...', 'one / two levels up')
+                , ('mkcd <folder>', 'create a folder and enter it', 'mkcd new-app')
+                , ('ii .', 'open the current folder in Explorer')
+                , ('code .', 'open the folder in VS Code')
+            ) }
+            @{ Key = 'files'; Title = 'Files'; Rows = @(
+                , ('l / ll / lt', 'list · details with git status · tree')
+                , ('bat <file>', 'view with highlighting and line numbers', 'bat .env')
+                , ('touch <file>', 'create an empty file / update its date')
+                , ('which <command>', 'where a program lives', 'which python')
+                , ('tldr <command>', 'short cheat sheet with examples', 'tldr tar')
+            ) }
+            @{ Key = 'search'; Title = 'Search'; Rows = @(
+                , ('rg <text>', 'find text in all files of the folder', 'rg TODO -t py')
+                , ('fd <name>', 'find a file by name', 'fd docker-compose')
+                , ('Ctrl+T', 'pick a file with fzf and insert its path')
+            ) }
+            @{ Key = 'keys'; Title = 'Keys'; Rows = @(
+                , ('F1', 'this cheat sheet with search — Enter inserts the command')
+                , ('Ctrl+R', 'search the whole history: 10 rows, PgUp/PgDn to scroll')
+                , ('↑ / ↓', 'history filtered by what you typed', 'type git → ↑')
+                , ('→ / Ctrl+→', 'accept the suggestion fully / word by word')
+                , ('F2', 'suggestions: list ⇄ grey inline text')
+                , ('Tab', 'completion menu (commands, paths, ssh hosts)')
+                , ('Ctrl+Backspace / Ctrl+Del', 'delete the word left / right')
+                , ('Ctrl+Z / Ctrl+Y', 'undo / redo the edit')
+                , ('Shift+Enter', 'new line without running')
+                , ('Ctrl+C', 'cancel the line · copy when text is selected')
+                , ('Ctrl+Shift+F', 'search the terminal output')
+                , ('Alt+Shift+D', 'split the window into two panes')
+                , ('Win+`', 'terminal drops down over everything (quake)')
+            ) }
+            @{ Key = 'input'; Title = 'Input'; Rows = @(
+                , ('start typing', 'up to 50 suggestions from history, ↑/↓ to scroll, Esc to hide')
+                , ('g␣ k␣ d␣ dc␣', 'abbreviations expand on space: g → git', 'abbr — all')
+                , ('abbr gcm ''git commit -m "%"''', 'your own abbreviation, % — where the cursor goes')
+                , ('h / h docker', 'last 50 commands, 10 per page · filtered')
+            ) }
+            @{ Key = 'git'; Title = 'Git'; Rows = @(
+                , ('gst', 'short status')
+                , ('lg', 'pretty log, 30 commits', 'lg -n 100')
+                , ('lazygit', 'full-screen git: stage, commit, branches')
+                , ('git diff', 'diff with highlighting (delta), n/N — next/previous file')
+                , ('gh pr create', 'pull request from the terminal (gh — GitHub CLI)')
+                , ('my git', 'name, email, remotes of the current repo')
+            ) }
+            @{ Key = 'ssh'; Title = 'Servers'; Rows = @(
+                , ('my ssh [filter]', 'all SSH hosts from ~/.ssh/config', 'my ssh prod')
+                , ('jump [name]', 'pick a server from the list and connect', 'jump prod')
+                , ('ssh <Tab>', 'host name completion (also for scp)')
+                , ('srv install [host]', 'install/update the same bash on a server', 'srv install myserver -Env prod')
+                , ('srv remove [host]', 'roll back the server bashrc')
+                , ('srv', 'details: what the server gets, your own files for servers')
+            ) }
+            @{ Key = 'dev'; Title = 'Tools'; Rows = @(
+                , ('docker / kubectl / helm', 'Tab completion of subcommands and flags')
+                , ('my k8s', 'current kubectl context and namespace, all contexts')
+                , ('my docker', 'containers and compose projects')
+                , ('my sys', 'cpu, memory, disks, top processes')
+                , ('my ports [port]', 'who listens on which port', 'my ports 5432')
+                , ('my ip', 'IP addresses and gateway · my ip public — external IP')
+                , ('my tools', 'versions of all installed tools')
+            ) }
+            @{ Key = 'mine'; Title = 'Mine'; Rows = @(
+                , ('new name.py', 'your own command: py · ps1 · js · ts · sh · go · rs · clj', 'new weather.py')
+                , ('my cmds', 'my commands, functions and abbreviations')
+                , ('ep', 'open the profile folder in VS Code: custom.ps1, bin\')
+                , ('theme [variant]', 'mocha · macchiato · frappe · latte — live', 'theme latte')
+                , ('lang [ru|en]', 'language of the terminal and servers')
+                , ('reload', 're-read the profile after edits')
+                , ('Update-Completions', 'refresh Tab completions after updating a CLI')
+            ) }
+        )
+        no_insert = '^(Ctrl|Alt|Shift|Win|Tab|F\d|↑|→|start|type|g␣)'
+
+        my_topics = [ordered]@{
+            sys    = 'cpu, memory, disks, top processes, containers'
+            ssh    = 'SSH hosts from ~/.ssh/config                   my ssh prod'
+            ports  = 'who listens on which port                     my ports 8080'
+            ip     = 'IP addresses, gateway · external IP           my ip public'
+            k8s    = 'kubectl context and namespace, all contexts'
+            docker = 'containers and compose projects'
+            tools  = 'versions of installed tools'
+            path   = 'PATH: present, missing, duplicates'
+            git    = 'name, email, remotes, git aliases'
+            cmds   = 'my commands from bin, functions from custom.ps1, abbreviations'
+            keys   = 'keyboard shortcuts'
+        }
+        my_title = 'my <topic>'; my_hint = 'Tab completes the topic'
+        units = 'B', 'KB', 'MB', 'GB', 'TB', 'PB'
+
+        sys_uptime = 'up {0} d {1} h {2} min'; sys_cpu = 'cpu'; sys_mem = 'memory'; sys_disk = 'disk'
+        sys_cores = 'cores'; of = 'of'; sys_bymem = 'by memory'; sys_containers = 'containers'
+        docker_down = 'docker is not responding — is Docker Desktop off?'; docker_none = 'no containers'; docker_missing = 'docker is not installed'
+        docker_hint = 'logs: docker logs -f <name> · shell: docker exec -it <name> sh'; docker_projects = 'compose projects'
+        col_container = 'Container'; col_status = 'Status'; col_ports = 'Ports'
+        k8s_missing = 'kubectl is not installed'; k8s_hint = 'switch: kubectl config use-context <name> · namespace: kubectl config set-context --current --namespace <ns>'
+        k8s_none = 'no contexts (empty kubeconfig)'; col_context = 'Context'; col_cluster = 'Cluster'
+        ssh_title = 'SSH hosts'; ssh_hint = 'connect: ssh <name> · jump — pick from a list · ssh <Tab>'; ssh_empty = '~/.ssh/config is empty'
+        ssh_dup = '⚠ {0} appears in config more than once — ssh uses the first block (User {1})'
+        col_name = 'Name'; col_address = 'Address'; col_user = 'User'; col_port = 'Port'; col_key = 'Key'
+        nothing_found = 'nothing found'
+        jump_header = 'Enter — connect · Esc — cancel'
+        ip_title = 'IP addresses'; ip_hint = 'my ip public — external IP'; col_iface = 'Interface'; ip_gateway = 'gateway'; ip_public = 'external'; ip_public_fail = 'could not get the external IP'
+        ports_title = 'Listening ports'; ports_hint = 'my ports <port|process> · my ports all — including system 49152+'; col_process = 'Process'
+        path_title = 'PATH'; path_hint = 'order matters: the folder above wins'; col_folder = 'Folder'; path_dup = 'duplicate'; path_missing = 'missing'
+        tools_title = 'Tools'; tools_hint = 'update everything: winget upgrade --all'; col_program = 'Program'; col_version = 'Version'; col_where = 'Where'
+        git_name = 'name'; git_email = 'email'; git_repo = 'repository'; git_branch = 'branch'; git_none = 'not in a git repository'
+        cmds_title = 'My commands'; cmds_hint = 'new name.py — create · ep — open the folder · {0}'
+        cmds_empty = 'bin\ is empty — new weather.py ''weather'' creates the first command'; cmds_abbr = 'abbreviations'; cmds_abbr_hint = 'abbr name ''text'' — add · abbr -Remove name'
+
+        hist_title = 'History'; hist_filtered = 'History: "{0}"'; hist_hint = 'newest first · Ctrl+R — search and insert'
+        hist_more = '… +{0} lines'; hist_page = '── {0}/{1} · Enter or Space — more · Q/Esc — stop ──'
+
+        abbr_title = 'Abbreviations'; abbr_hint = 'expand on space · abbr name ''text'' — add · abbr -Remove name'
+        abbr_usage = 'abbr name ''expansion'''; abbr_saved = 'saved to custom.ps1: {0}'
+
+        new_title = 'new name.extension [description]'; new_hint = 'creates a command in {0}'; new_run = 'runs with: {0}'; new_need = 'needs {0}'
+        new_missing = 'not installed'; new_bad_ext = 'unknown extension {0} — new without arguments shows the list'
+        new_bad_name = 'name: latin letters, digits, - and _'; new_taken = 'name {0} is already taken ({1} {2})'
+        new_ready = 'command ready: '; new_args = '[arguments]'; new_via = 'runs with {0}'; new_norunner = 'to run it you need {0}'
+        new_default = 'my command'; bin_norunner = 'nothing to run {0} with: needs {1}'
+
+        theme_title = 'Theme'; theme_hint = 'theme <variant> — switch everything at once: terminal, prompt, highlighting'
+        theme_dark = 'dark'; theme_light = 'light'; theme_only = 'available: {0}'; theme_done = 'Windows Terminal switches by itself, new tabs too'
+
+        lang_title = 'Language'; lang_hint = 'lang ru · lang en — then reload the profile'; lang_ru = 'Russian'; lang_en = 'English'
+        lang_only = 'available: ru, en'; lang_done = 'language: {0} — reload or open a new tab; servers: srv install <host>'
+
+        srv_missing = 'missing {0} — run setup-terminal.ps1'; srv_env = '-Env: letters, digits, - and _ only (none — remove the label)'
+        srv_pick = 'srv {0} — pick a server · Esc — cancel'; srv_removed = 'rolled back'; srv_restore = '— restore: srv install {0}'
+        srv_done = 'done'; srv_relogin = '— reconnect: ssh {0}, then help'; srv_error = 'error (code {0}) — nothing on the server changed after this point'
+        srv_title = 'srv — the same bash on servers'; srv_templates = 'templates: {0}'
+        srv_rows = @(
+            , ('srv install [host…]', 'install or update (no host — pick from a list)', 'srv install myserver')
+            , ('srv install <host> -Env prod', 'same + a label in the prompt: prod / staging / dev / none')
+            , ('srv install <host> -Lang ru', 'language on the server (default — same as here)')
+            , ('srv remove [host]', 'roll back: remove the hook, files → *.off')
+        )
+        srv_gets = 'What the server gets'
+        srv_gets_rows = @(
+            'the same prompt (environment label, branch, duration of long commands), big history, ↑/↓ by prefix, help, sys'
+            'projects are discovered (docker compose ls): <name> · <name> logs web · <name> sh web · proj · app'
+            'guards: docker down -v / volume rm / prune ask for yes; rm, cp, mv ask before mass changes'
+            'nothing in the background and nothing installed — only files in the home folder'
+        )
+        srv_custom = 'Your own commands for servers'
+        srv_custom_rows = @(
+            '{0}\custom\*.sh — copied to every server into ~/.bashrc.d/ on srv install'
+            'a line # help: name — description in a file shows up in help on the server'
+            'on the server itself: ~/.bashrc.d/*.sh and ~/bin/* survive updates'
+        )
+        srv_note = 'Every run: backup, checks before changes, one ssh connection. Running again breaks nothing.'
+    }
+}
+'@
+$EmbeddedFiles['toolkit'] = @'
 function _tkRgb([int]$hex) { $PSStyle.Foreground.FromRgb($hex) }
 function _tkBg([int]$hex) { $PSStyle.Background.FromRgb($hex) }
 
-# ── Палитра → цвета вывода, подсветки ввода и fzf ────────────────────────────
 function Set-TerminalPalette {
     $p = $global:Palette
     $global:TK = @{
@@ -468,89 +822,6 @@ function Set-TerminalPalette {
     }
 }
 
-# ── Шпаргалка: раздел → строки (команда, что делает, пример) ─────────────────
-#  Строка, начинающаяся с клавиши (Ctrl+…, F1, ↑), в строку ввода не вставляется.
-$TkSections = @(
-    @{ Key = 'nav'; Title = 'Навигация'; Rows = @(
-        , ('z <часть имени>', 'перейти в папку, где часто бываешь', 'z coding')
-        , ('zi', 'то же, но выбрать из списка')
-        , ('Alt+C', 'выбрать папку через fzf и перейти')
-        , ('.. / ...', 'на уровень / два вверх')
-        , ('mkcd <папка>', 'создать папку и сразу зайти в неё', 'mkcd new-app')
-        , ('ii .', 'открыть текущую папку в Проводнике')
-        , ('code .', 'открыть папку в VS Code')
-    ) }
-    @{ Key = 'files'; Title = 'Файлы'; Rows = @(
-        , ('l / ll / lt', 'список · подробно с git-статусом · деревом')
-        , ('bat <файл>', 'просмотр с подсветкой и номерами строк', 'bat .env')
-        , ('touch <файл>', 'создать пустой файл / обновить дату')
-        , ('which <команда>', 'где лежит программа', 'which python')
-        , ('tldr <команда>', 'короткая шпаргалка с примерами', 'tldr tar')
-    ) }
-    @{ Key = 'search'; Title = 'Поиск'; Rows = @(
-        , ('rg <текст>', 'найти текст во всех файлах папки', 'rg TODO -t py')
-        , ('fd <имя>', 'найти файл по имени', 'fd docker-compose')
-        , ('Ctrl+T', 'выбрать файл через fzf и вставить путь в строку')
-    ) }
-    @{ Key = 'keys'; Title = 'Клавиши'; Rows = @(
-        , ('F1', 'эта шпаргалка с поиском — Enter вставляет команду')
-        , ('Ctrl+R', 'поиск по всей истории: 10 строк, PgUp/PgDn листать')
-        , ('↑ / ↓', 'история по уже набранному началу', 'набрал git → ↑')
-        , ('→ / Ctrl+→', 'принять подсказку целиком / по словам')
-        , ('F2', 'подсказки: список ⇄ серый текст в строке')
-        , ('Tab', 'меню дополнений (команды, пути, ssh-хосты)')
-        , ('Ctrl+Backspace / Ctrl+Del', 'удалить слово слева / справа')
-        , ('Ctrl+Z / Ctrl+Y', 'отменить / вернуть правку строки')
-        , ('Shift+Enter', 'новая строка без запуска')
-        , ('Ctrl+C', 'отменить строку · копировать, если выделено')
-        , ('Ctrl+Shift+F', 'поиск по выводу в окне терминала')
-        , ('Alt+Shift+D', 'разделить окно на две панели')
-        , ('Win+`', 'терминал выпадает сверху поверх всего (quake)')
-    ) }
-    @{ Key = 'input'; Title = 'Ввод'; Rows = @(
-        , ('начни печатать', 'до 50 подсказок из истории, ↑/↓ листать, Esc — скрыть')
-        , ('g␣ k␣ d␣ dc␣', 'сокращения раскрываются сами: g → git', 'abbr — все')
-        , ('abbr gcm ''git commit -m "%"''', 'своё сокращение, % — где оставить курсор')
-        , ('вщслук зы ⏎', 'набрал в русской раскладке — исправится само')
-        , ('h / h docker', 'последние 50 команд по 10 · с фильтром')
-    ) }
-    @{ Key = 'git'; Title = 'Git'; Rows = @(
-        , ('gst', 'короткий статус')
-        , ('lg', 'красивый лог, 30 коммитов', 'lg -n 100')
-        , ('lazygit', 'git в полноэкранном интерфейсе: стейдж, коммиты, ветки')
-        , ('git diff', 'дифф с подсветкой (delta), n/N — к след./пред. файлу')
-        , ('gh pr create', 'пулл-реквест из терминала (gh — GitHub CLI)')
-        , ('my git', 'имя, почта, remotes текущего репо')
-    ) }
-    @{ Key = 'ssh'; Title = 'Серверы'; Rows = @(
-        , ('my ssh [фильтр]', 'все SSH-хосты из ~/.ssh/config', 'my ssh prod')
-        , ('jump [имя]', 'выбрать сервер из списка и подключиться', 'jump prod')
-        , ('ssh <Tab>', 'дополнение имён хостов (и для scp)')
-        , ('srv install [хост]', 'поставить/обновить такой же bash на сервере', 'srv install myserver -Env prod')
-        , ('srv remove [хост]', 'откатить bashrc на сервере')
-        , ('srv', 'подробно: что получает сервер, свои файлы для серверов')
-    ) }
-    @{ Key = 'dev'; Title = 'Инструменты'; Rows = @(
-        , ('docker / kubectl / helm', 'Tab-дополнения подкоманд и флагов')
-        , ('my k8s', 'текущий контекст и namespace kubectl, все контексты')
-        , ('my docker', 'контейнеры и compose-проекты')
-        , ('my sys', 'процессор, память, диски, топ процессов')
-        , ('my ports [порт]', 'кто слушает порты', 'my ports 5432')
-        , ('my ip', 'IP-адреса и шлюз · my ip public — внешний IP')
-        , ('my tools', 'версии всех установленных инструментов')
-    ) }
-    @{ Key = 'mine'; Title = 'Своё'; Rows = @(
-        , ('new имя.py', 'своя команда: py · ps1 · js · ts · sh · go · rs · clj', 'new weather.py')
-        , ('my cmds', 'мои команды, функции и сокращения')
-        , ('ep', 'открыть папку профиля в VS Code: custom.ps1, bin\')
-        , ('theme [вариант]', 'mocha · macchiato · frappe · latte — на лету', 'theme latte')
-        , ('reload', 'перечитать профиль после правок')
-        , ('Update-Completions', 'обновить Tab-дополнения после обновления CLI')
-    ) }
-)
-
-$TkNoInsert = '^(Ctrl|Alt|Shift|Win|Tab|F\d|↑|→|начни|набрал|вщслук|g␣)'
-
 function Write-TkRow([string]$Command, [string]$Description, [string]$Example) {
     $cmdCell = if ($Command.Length -ge 26) { $Command + '  ' } else { $Command.PadRight(26) }
     $line = '    ' + $TK.cmd + $cmdCell + $TK.R + $TK.text + $Description + $TK.R
@@ -558,77 +829,11 @@ function Write-TkRow([string]$Command, [string]$Description, [string]$Example) {
     Write-Host $line
 }
 
-# Раздел «Моё» строится на лету: команды из bin, функции из custom.ps1, сокращения
-function Get-TkUserSection {
-    $rows = @()
-    foreach ($c in $global:UserCommands) { $rows += , ($c.Name, $c.Help, ("bin\" + $c.File)) }
-    foreach ($f in $global:CustomFunctions) { $rows += , ($f, 'функция из custom.ps1') }
-    if ($global:Abbreviations.Count) {
-        $list = ($global:Abbreviations.GetEnumerator() | Select-Object -First 6 | ForEach-Object { "$($_.Key)→$($_.Value)" }) -join '  '
-        if ($global:Abbreviations.Count -gt 6) { $list += "  … ещё $($global:Abbreviations.Count - 6)" }
-        $rows += , ('abbr', $list, 'abbr — все')
-    }
-    if ($rows) { @{ Key = 'my'; Title = 'Моё'; Rows = $rows } }
-}
-
-function Get-TkAllSections { @($TkSections) + @(Get-TkUserSection) }
-
-function Show-TkHelp($Sections) {
-    if (-not $Sections) { $Sections = Get-TkAllSections }
+function Write-TkTitle([string]$Title, [string]$Hint) {
     Write-Host ''
-    Write-Host ("  {0}{1}✦ Что умеет мой терминал{2}  {3}тема: {4}{5}" -f $TK.title, $TK.B, $TK.R, $TK.dim, $global:ThemeName, $TK.R)
-    Write-Host ("  {0}F1 — то же с поиском · help <тема> — раздел · help <текст> — поиск · my — мои данные{1}" -f $TK.dim, $TK.R)
-    foreach ($s in $Sections) {
-        Write-Host ''
-        Write-Host ("  {0}{1}{2}{3}  {4}help {5}{6}" -f $TK.title, $TK.B, $s.Title, $TK.R, $TK.dim, $s.Key, $TK.R)
-        foreach ($r in $s.Rows) { Write-TkRow @r }
-    }
-    Write-Host ''
+    Write-Host ("  {0}{1}{2}{3}  {4}{5}{6}" -f $TK.title, $TK.B, $Title, $TK.R, $TK.dim, $Hint, $TK.R)
 }
 
-function help {
-    if (-not $args) { Show-TkHelp; return }
-    $query = "$args"
-    $all = Get-TkAllSections
-    $section = $all | Where-Object { $_.Key -eq $query -or $_.Title -eq $query }
-    if ($section) { Show-TkHelp $section; return }
-
-    $hits = @(foreach ($s in $all) {
-        foreach ($r in $s.Rows) { if (($r -join ' ').IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0) { , $r } }
-    })
-    # командлеты PowerShell (Get-ChildItem, ls…) — в обычную справку, остальное — в шпаргалку
-    $isCmdlet = Get-Command $query -CommandType Cmdlet, Alias -ErrorAction SilentlyContinue
-    if ($hits -and $args.Count -eq 1 -and -not $isCmdlet) {
-        Write-Host ''
-        Write-Host ("  {0}{1}Нашлось в шпаргалке: {2}{3}" -f $TK.title, $TK.B, $query, $TK.R)
-        foreach ($r in $hits) { Write-TkRow @r }
-        Write-Host ''
-        return
-    }
-    Get-Help @args
-}
-
-# F1: шпаргалка в fzf, Enter вставляет команду в строку ввода
-function Invoke-HelpPicker {
-    $lines = foreach ($s in Get-TkAllSections) {
-        foreach ($r in $s.Rows) {
-            $cmd = $r[0]; $desc = $r[1]
-            $shown = '{0,-28} {1}' -f $cmd, $desc
-            if ($r.Count -gt 2 -and $r[2]) { $shown += "   $($r[2])" }
-            $insert = if ($cmd -match $TkNoInsert) { '' } else { ($cmd -split ' / | · | \[| <')[0].Trim() }
-            "{0,-12}  {1}`t{2}" -f $s.Title, $shown, $insert
-        }
-    }
-    $pick = $lines | fzf --height=60% --prompt='help ❯ ' --header='Enter — вставить команду в строку · Esc' --delimiter="`t" --with-nth=1 --tabstop=4
-    [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
-    if ($pick) {
-        $insert = ($pick -split "`t")[1]
-        if ($insert) { [Microsoft.PowerShell.PSConsoleReadLine]::Insert($insert) }
-    }
-}
-
-# ── Таблицы, заголовки, шкалы ────────────────────────────────────────────────
-#  Columns: @{ N = заголовок; P = свойство; C = цвет из $TK или { param($row) 'цвет' } }
 function Write-TkTable($Rows, $Columns) {
     $widths = foreach ($col in $Columns) {
         $max = $col.N.Length
@@ -647,12 +852,6 @@ function Write-TkTable($Rows, $Columns) {
     }
 }
 
-function Write-TkTitle([string]$Title, [string]$Hint) {
-    Write-Host ''
-    Write-Host ("  {0}{1}{2}{3}  {4}{5}{6}" -f $TK.title, $TK.B, $Title, $TK.R, $TK.dim, $Hint, $TK.R)
-}
-
-# Шкала: ████████░░░░ 67%  (зелёная до 70, жёлтая до 90, дальше красная)
 function Get-TkBar([double]$Percent, [int]$Width = 20) {
     $filled = [math]::Round([math]::Min(100, [math]::Max(0, $Percent)) / 100 * $Width)
     $color = if ($Percent -ge 90) { $TK.err } elseif ($Percent -ge 70) { $TK.warn } else { $TK.ok }
@@ -660,11 +859,11 @@ function Get-TkBar([double]$Percent, [int]$Width = 20) {
 }
 
 function Format-TkSize([double]$Bytes) {
-    foreach ($u in 'Б', 'КБ', 'МБ', 'ГБ', 'ТБ') { if ($Bytes -lt 1024) { return ('{0:N1} {1}' -f $Bytes, $u) -replace '[.,]0 ', ' ' }; $Bytes /= 1024 }
-    '{0:N1} ПБ' -f $Bytes
+    foreach ($u in $T.units) { if ($Bytes -lt 1024) { return ('{0:N1} {1}' -f $Bytes, $u) -replace '[.,]0 ', ' ' }; $Bytes /= 1024 }
+    '{0:N1} {1}' -f $Bytes, $T.units[-1]
 }
 
-# Запуск внешней программы с лимитом времени (docker без Desktop может висеть десятки секунд)
+# docker/kubectl can hang for a long time when their daemon is down
 function Invoke-WithTimeout([string]$Command, [string[]]$Arguments, [int]$Milliseconds = 3000) {
     $exe = (Get-Command $Command -ErrorAction SilentlyContinue).Source
     if (-not $exe) { return $null }
@@ -678,7 +877,74 @@ function Invoke-WithTimeout([string]$Command, [string[]]$Arguments, [int]$Millis
     $out.Result -split "`n" | Where-Object { $_.Trim() }
 }
 
-# ── SSH ──────────────────────────────────────────────────────────────────────
+# ── help ─────────────────────────────────────────────────────────────────────
+function Get-TkUserSection {
+    $rows = @()
+    foreach ($c in $global:UserCommands) { $rows += , ($c.Name, $c.Help, ("bin\" + $c.File)) }
+    foreach ($f in $global:CustomFunctions) { $rows += , ($f, $T.help_custom) }
+    if ($global:Abbreviations.Count) {
+        $list = ($global:Abbreviations.GetEnumerator() | Select-Object -First 6 | ForEach-Object { "$($_.Key)→$($_.Value)" }) -join '  '
+        if ($global:Abbreviations.Count -gt 6) { $list += '  ' + ($T.help_more -f ($global:Abbreviations.Count - 6)) }
+        $rows += , ('abbr', $list, $T.help_abbr_all)
+    }
+    if ($rows) { @{ Key = 'my'; Title = $T.help_user; Rows = $rows } }
+}
+
+function Get-TkAllSections { @($T.sections) + @(Get-TkUserSection) }
+
+function Show-TkHelp($Sections) {
+    if (-not $Sections) { $Sections = Get-TkAllSections }
+    Write-Host ''
+    Write-Host ("  {0}{1}{2}{3}  {4}{5}: {6}{7}" -f $TK.title, $TK.B, $T.help_title, $TK.R, $TK.dim, $T.help_theme, $global:ThemeName, $TK.R)
+    Write-Host ("  {0}{1}{2}" -f $TK.dim, $T.help_hint, $TK.R)
+    foreach ($s in $Sections) {
+        Write-Host ''
+        Write-Host ("  {0}{1}{2}{3}  {4}help {5}{6}" -f $TK.title, $TK.B, $s.Title, $TK.R, $TK.dim, $s.Key, $TK.R)
+        foreach ($r in $s.Rows) { Write-TkRow @r }
+    }
+    Write-Host ''
+}
+
+function help {
+    if (-not $args) { Show-TkHelp; return }
+    $query = "$args"
+    $all = Get-TkAllSections
+    $section = $all | Where-Object { $_.Key -eq $query -or $_.Title -eq $query }
+    if ($section) { Show-TkHelp $section; return }
+
+    $hits = @(foreach ($s in $all) {
+        foreach ($r in $s.Rows) { if (($r -join ' ').IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0) { , $r } }
+    })
+    $isCmdlet = Get-Command $query -CommandType Cmdlet, Alias -ErrorAction SilentlyContinue
+    if ($hits -and $args.Count -eq 1 -and -not $isCmdlet) {
+        Write-Host ''
+        Write-Host ("  {0}{1}{2}: {3}{4}" -f $TK.title, $TK.B, $T.help_found, $query, $TK.R)
+        foreach ($r in $hits) { Write-TkRow @r }
+        Write-Host ''
+        return
+    }
+    Get-Help @args
+}
+
+function Invoke-HelpPicker {
+    $lines = foreach ($s in Get-TkAllSections) {
+        foreach ($r in $s.Rows) {
+            $cmd = $r[0]; $desc = $r[1]
+            $shown = '{0,-28} {1}' -f $cmd, $desc
+            if ($r.Count -gt 2 -and $r[2]) { $shown += "   $($r[2])" }
+            $insert = if ($cmd -match $T.no_insert) { '' } else { ($cmd -split ' / | · | \[| <')[0].Trim() }
+            "{0,-12}  {1}`t{2}" -f $s.Title, $shown, $insert
+        }
+    }
+    $pick = $lines | fzf --height=60% --prompt='help ❯ ' --header=$T.picker_header --delimiter="`t" --with-nth=1 --tabstop=4
+    [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
+    if ($pick) {
+        $insert = ($pick -split "`t")[1]
+        if ($insert) { [Microsoft.PowerShell.PSConsoleReadLine]::Insert($insert) }
+    }
+}
+
+# ── ssh ──────────────────────────────────────────────────────────────────────
 function Get-SshHost {
     $config = Join-Path $HOME '.ssh\config'
     if (-not (Test-Path $config)) { return }
@@ -699,7 +965,7 @@ function Get-SshHost {
         } elseif ($key -eq 'Match') {
             $current = @()
         } elseif ($field) {
-            # как в самом ssh: действует первое встретившееся значение
+            # ssh semantics: the first value wins
             foreach ($h in $current) { if (-not $h.$field) { $h.$field = $value } }
         }
     }
@@ -713,7 +979,7 @@ function Get-SshHost {
 
 function Select-SshHost([string]$Query, [string]$Header) {
     $hosts = @(Get-SshHost)
-    if (-not $hosts) { Write-Host '  ~/.ssh/config пуст'; return }
+    if (-not $hosts) { Write-Host "  $($T.ssh_empty)"; return }
     $width = ($hosts.Name | Measure-Object Length -Maximum).Maximum
     $pick = $hosts | ForEach-Object { '{0}  {1}@{2}' -f $_.Name.PadRight($width), $_.User, $_.HostName } |
         fzf --query=$Query --select-1 --height=14 --header=$Header
@@ -721,7 +987,7 @@ function Select-SshHost([string]$Query, [string]$Header) {
 }
 
 function jump([string]$Query) {
-    $name = Select-SshHost $Query 'Enter — подключиться · Esc — отмена'
+    $name = Select-SshHost $Query $T.jump_header
     if ($name) {
         Write-Host ("  {0}→ ssh {1}{2}" -f $TK.dim, $name, $TK.R)
         ssh $name
@@ -736,93 +1002,70 @@ Register-ArgumentCompleter -Native -CommandName ssh, scp, sftp -ScriptBlock {
     }
 }
 
-# ── srv: такой же bash на серверах ───────────────────────────────────────────
-#  Шаблоны: server\bashrc.local, inputrc, install.sh рядом с профилем.
-#  server\custom\*.sh — свои файлы, уезжают на каждый сервер в ~/.bashrc.d/.
-#  Всё за одно ssh-подключение — ufw limit на сервере не срабатывает.
+# ── srv ──────────────────────────────────────────────────────────────────────
 function srv {
     param(
         [Parameter(Position = 0)][ValidateSet('install', 'remove', 'help')][string]$Action = 'help',
         [Parameter(Position = 1, ValueFromRemainingArguments)]
         [ArgumentCompleter({ param($c, $p, $word) (Get-SshHost).Name | Where-Object { $_ -like "$word*" } })]
         [string[]]$Hosts,
-        [string]$Env          # метка в промпте: prod / staging / dev / none — убрать
+        [string]$Env,
+        [ValidateSet('', 'ru', 'en')][string]$Lang = ''
     )
     $dir = Join-Path $global:ProfileDir 'server'
     if ($Action -eq 'help') { Show-SrvHelp $dir; return }
     foreach ($f in 'bashrc.local', 'inputrc', 'install.sh') {
-        if (-not (Test-Path (Join-Path $dir $f))) { Write-Host "  $($TK.err)нет $dir\$f — запусти setup-terminal.ps1$($TK.R)"; return }
+        if (-not (Test-Path (Join-Path $dir $f))) { Write-Host "  $($TK.err)$($T.srv_missing -f "$dir\$f")$($TK.R)"; return }
     }
-    if ($Env -and $Env -notmatch '^[A-Za-z0-9_-]{1,20}$') {
-        Write-Host "  $($TK.err)-Env: только буквы, цифры, - и _ (none — убрать метку)$($TK.R)"; return
-    }
+    if ($Env -and $Env -notmatch '^[A-Za-z0-9_-]{1,20}$') { Write-Host "  $($TK.err)$($T.srv_env)$($TK.R)"; return }
     if (-not $Hosts) {
-        $picked = Select-SshHost '' "srv $Action — выбери сервер · Esc — отмена"
+        $picked = Select-SshHost '' ($T.srv_pick -f $Action)
         if (-not $picked) { return }
         $Hosts = @($picked)
     }
+    if (-not $Lang) { $Lang = $global:LangName }
 
     $read = { param($path) [IO.File]::ReadAllText($path) -replace "`r`n", "`n" }
     $b64 = { param($text) [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)) }
     $custom = foreach ($f in Get-ChildItem (Join-Path $dir 'custom') -File -Filter *.sh -ErrorAction SilentlyContinue) {
         "__put '.bashrc.d/$($f.Name)' '$(& $b64 (& $read $f.FullName))'"
     }
-    $script = (& $read (Join-Path $dir 'install.sh')).Replace('__ACTION__', $Action).Replace('__ENV__', $Env)
+    $script = (& $read (Join-Path $dir 'install.sh')).Replace('__ACTION__', $Action).Replace('__ENV__', $Env).Replace('__LANG__', $Lang)
     $script = $script.Replace('__BASHRC_B64__', (& $b64 (& $read (Join-Path $dir 'bashrc.local'))))
     $script = $script.Replace('__INPUTRC_B64__', (& $b64 (& $read (Join-Path $dir 'inputrc'))))
     $script = $script.Replace('__CUSTOM_FILES__', ($custom -join "`n"))
-    $script = $script.TrimEnd()      # PowerShell допишет перевод строки сам — пусть он попадёт в комментарий «# end»
+    # the trailing newline PowerShell adds on pipe lands inside the final "# end" comment
+    $script = $script.TrimEnd()
 
     foreach ($h in $Hosts) {
         Write-TkTitle "srv $Action → $h" ''
         $script | ssh $h 'bash -s'
-        if ($LASTEXITCODE -eq 0 -and $Action -eq 'remove') { Write-Host "  $($TK.ok)откачено$($TK.R) $($TK.dim)— вернуть: srv install $h$($TK.R)" }
-        elseif ($LASTEXITCODE -eq 0) { Write-Host "  $($TK.ok)готово$($TK.R) $($TK.dim)— перезайди: ssh $h, затем help$($TK.R)" }
-        else { Write-Host "  $($TK.err)ошибка (код $LASTEXITCODE) — на сервере ничего не менялось после этой точки$($TK.R)" }
+        if ($LASTEXITCODE -eq 0 -and $Action -eq 'remove') { Write-Host "  $($TK.ok)$($T.srv_removed)$($TK.R) $($TK.dim)$($T.srv_restore -f $h)$($TK.R)" }
+        elseif ($LASTEXITCODE -eq 0) { Write-Host "  $($TK.ok)$($T.srv_done)$($TK.R) $($TK.dim)$($T.srv_relogin -f $h)$($TK.R)" }
+        else { Write-Host "  $($TK.err)$($T.srv_error -f $LASTEXITCODE)$($TK.R)" }
         Write-Host ''
     }
 }
 
 function Show-SrvHelp([string]$Dir) {
-    Write-TkTitle 'srv — такой же bash на серверах' "шаблоны: $Dir"
-    Write-TkRow 'srv install [хост…]' 'поставить или обновить (без хоста — выбор из списка)' 'srv install myserver'
-    Write-TkRow 'srv install <хост> -Env prod' 'то же + метка в промпте: prod / staging / dev / none'
-    Write-TkRow 'srv remove [хост]' 'откатить: убрать подключение, файлы → *.off'
+    Write-TkTitle $T.srv_title ($T.srv_templates -f $Dir)
+    foreach ($r in $T.srv_rows) { Write-TkRow @r }
     Write-Host ''
-    Write-Host "  $($TK.title)Что получает сервер$($TK.R)"
-    Write-Host "    промпт как здесь (метка окружения, ветка, время долгой команды), большая история, ↑/↓ по началу, help, sys"
-    Write-Host "    проекты находятся сами (docker compose ls): $($TK.cmd)<имя> · <имя> logs web · <имя> sh web · proj · app$($TK.R)"
-    Write-Host "    защита: docker down -v / volume rm / prune просят yes; rm, cp, mv — подтверждение"
-    Write-Host "    ничего в фоне и ничего не ставится — только файлы в домашней папке"
+    Write-Host "  $($TK.title)$($T.srv_gets)$($TK.R)"
+    foreach ($line in $T.srv_gets_rows) { Write-Host "    $line" }
     Write-Host ''
-    Write-Host "  $($TK.title)Свои команды для серверов$($TK.R)"
-    Write-Host "    $($TK.cmd)$Dir\custom\*.sh$($TK.R) — уезжают на каждый сервер в ~/.bashrc.d/ при srv install"
-    Write-Host "    строка $($TK.cmd)# help: имя — описание$($TK.R) в файле попадает в help на сервере"
-    Write-Host "    на самом сервере: ~/.bashrc.d/*.sh и ~/bin/* — остаются при обновлении"
+    Write-Host "  $($TK.title)$($T.srv_custom)$($TK.R)"
+    foreach ($line in $T.srv_custom_rows) { Write-Host "    $($line -f $Dir)" }
     Write-Host ''
-    Write-Host "  $($TK.dim)Каждый запуск: бэкап, проверка до изменений, одно ssh-подключение. Повторный запуск ничего не ломает.$($TK.R)"
+    Write-Host "  $($TK.dim)$($T.srv_note)$($TK.R)"
     Write-Host ''
 }
 
 # ── my ───────────────────────────────────────────────────────────────────────
-$TkMyTopics = [ordered]@{
-    sys    = 'процессор, память, диски, топ процессов, контейнеры'
-    ssh    = 'SSH-хосты из ~/.ssh/config                     my ssh prod'
-    ports  = 'кто слушает порты                              my ports 8080'
-    ip     = 'IP-адреса, шлюз · внешний IP                   my ip public'
-    k8s    = 'контекст и namespace kubectl, все контексты'
-    docker = 'контейнеры и compose-проекты'
-    tools  = 'версии установленных инструментов'
-    path   = 'PATH: что есть, чего нет, дубли'
-    git    = 'имя, почта, remotes, алиасы git'
-    cmds   = 'мои команды из bin, функции из custom.ps1, сокращения'
-    keys   = 'горячие клавиши'
-}
-
 function my {
     param(
         [Parameter(Position = 0)][ArgumentCompleter({
-            param($c, $p, $word) $TkMyTopics.get_Keys() | Where-Object { $_ -like "$word*" }
+            param($c, $p, $word) $T.my_topics.get_Keys() | Where-Object { $_ -like "$word*" }
         })][string]$Topic,
         [Parameter(Position = 1)][string]$Filter
     )
@@ -837,11 +1080,11 @@ function my {
         'path'   { Show-MyPath }
         'git'    { Show-MyGit }
         'cmds'   { Show-MyCommands }
-        'keys'   { Show-TkHelp ($TkSections | Where-Object { $_.Key -in 'keys', 'input' }) }
+        'keys'   { Show-TkHelp ($T.sections | Where-Object { $_.Key -in 'keys', 'input' }) }
         default {
-            Write-TkTitle 'my <тема>' 'Tab дополняет тему'
-            # .get_Keys(): у словаря есть ключ 'keys', и .Keys вернул бы его значение
-            foreach ($k in $TkMyTopics.get_Keys()) { Write-TkRow "my $k" $TkMyTopics[$k] }
+            Write-TkTitle $T.my_title $T.my_hint
+            # get_Keys(): the dictionary has a 'keys' entry, so .Keys would return it
+            foreach ($k in $T.my_topics.get_Keys()) { Write-TkRow "my $k" $T.my_topics[$k] }
             Write-Host ''
         }
     }
@@ -851,21 +1094,21 @@ function Show-MySys {
     $os = Get-CimInstance Win32_OperatingSystem
     $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
     $up = (Get-Date) - $os.LastBootUpTime
-    Write-TkTitle $env:COMPUTERNAME ("работает {0} д {1} ч {2} мин · {3}" -f [int]$up.TotalDays, $up.Hours, $up.Minutes, $os.Caption.Replace('Microsoft ', ''))
+    Write-TkTitle $env:COMPUTERNAME (($T.sys_uptime -f [int]$up.TotalDays, $up.Hours, $up.Minutes) + ' · ' + $os.Caption.Replace('Microsoft ', ''))
     $cpuName = ($cpu.Name -replace '\s+', ' ' -replace '\(R\)|\(TM\)|CPU|Processor', '').Trim()
     $row = { param($label, $percent, $note) Write-Host ("  {0}{1}{2}  {3}  {4}{5}{6}" -f $TK.dim, $label.PadRight(10), $TK.R, (Get-TkBar $percent), $TK.dim, $note, $TK.R) }
-    & $row 'процессор' $cpu.LoadPercentage "$cpuName · ядер: $([Environment]::ProcessorCount)"
+    & $row $T.sys_cpu $cpu.LoadPercentage "$cpuName · $($T.sys_cores): $([Environment]::ProcessorCount)"
     $memUsed = ($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) * 1KB
     $memTotal = $os.TotalVisibleMemorySize * 1KB
-    & $row 'память' ($memUsed / $memTotal * 100) "$(Format-TkSize $memUsed) из $(Format-TkSize $memTotal)"
+    & $row $T.sys_mem ($memUsed / $memTotal * 100) "$(Format-TkSize $memUsed) $($T.of) $(Format-TkSize $memTotal)"
     foreach ($d in Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Sort-Object DeviceID) {
         if (-not $d.Size) { continue }
         $used = $d.Size - $d.FreeSpace
-        & $row "диск $($d.DeviceID)" ($used / $d.Size * 100) "$(Format-TkSize $used) из $(Format-TkSize $d.Size)$(if ($d.VolumeName) { " · $($d.VolumeName)" })"
+        & $row "$($T.sys_disk) $($d.DeviceID)" ($used / $d.Size * 100) "$(Format-TkSize $used) $($T.of) $(Format-TkSize $d.Size)$(if ($d.VolumeName) { " · $($d.VolumeName)" })"
     }
 
     Write-Host ''
-    Write-Host ("  {0}по памяти{1}" -f $TK.title, $TK.R)
+    Write-Host ("  {0}{1}{2}" -f $TK.title, $T.sys_bymem, $TK.R)
     $top = Get-Process | Group-Object ProcessName | ForEach-Object {
         [pscustomobject]@{ Name = $_.Name; Memory = ($_.Group | Measure-Object WorkingSet64 -Sum).Sum; Count = $_.Count }
     } | Sort-Object Memory -Descending | Select-Object -First 6
@@ -875,10 +1118,10 @@ function Show-MySys {
 
     if (Get-Command docker -ErrorAction SilentlyContinue) {
         Write-Host ''
-        Write-Host ("  {0}контейнеры{1}" -f $TK.title, $TK.R)
+        Write-Host ("  {0}{1}{2}" -f $TK.title, $T.sys_containers, $TK.R)
         $rows = Invoke-WithTimeout docker @('ps', '-a', '--format', '{{.Names}}\t{{.Status}}')
-        if ($null -eq $rows) { Write-Host "  $($TK.dim)docker не отвечает — Docker Desktop выключен?$($TK.R)" }
-        elseif (-not $rows) { Write-Host "  $($TK.dim)контейнеров нет$($TK.R)" }
+        if ($null -eq $rows) { Write-Host "  $($TK.dim)$($T.docker_down)$($TK.R)" }
+        elseif (-not $rows) { Write-Host "  $($TK.dim)$($T.docker_none)$($TK.R)" }
         foreach ($r in $rows) {
             $name, $state = $r -split "`t"
             $dot = if ($state -match 'unhealthy|Restarting') { $TK.err } elseif ($state -like 'Up*') { $TK.ok } elseif ($state -like 'Exited (0)*') { $TK.dim } else { $TK.err }
@@ -889,10 +1132,10 @@ function Show-MySys {
 }
 
 function Show-MyK8s {
-    if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) { Write-Host "  $($TK.dim)kubectl не установлен$($TK.R)"; return }
+    if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) { Write-Host "  $($TK.dim)$($T.k8s_missing)$($TK.R)"; return }
     $rows = Invoke-WithTimeout kubectl @('config', 'get-contexts', '--no-headers') 5000
-    Write-TkTitle 'Kubernetes' 'сменить: kubectl config use-context <имя> · namespace: kubectl config set-context --current --namespace <ns>'
-    if (-not $rows) { Write-Host "  $($TK.dim)контекстов нет (kubeconfig пуст)$($TK.R)"; Write-Host ''; return }
+    Write-TkTitle 'Kubernetes' $T.k8s_hint
+    if (-not $rows) { Write-Host "  $($TK.dim)$($T.k8s_none)$($TK.R)"; Write-Host ''; return }
     $list = foreach ($r in $rows) {
         $f = $r -split '\s+'
         $cur = $f[0] -eq '*'
@@ -901,36 +1144,36 @@ function Show-MyK8s {
     }
     Write-TkTable $list @(
         @{ N = ' '; P = 'Mark'; C = 'ok' }
-        @{ N = 'Контекст'; P = 'Name'; C = { param($r) if ($r.Mark -eq '●') { 'cmd' } else { 'text' } } }
-        @{ N = 'Кластер'; P = 'Cluster'; C = 'dim' }
+        @{ N = $T.col_context; P = 'Name'; C = { param($r) if ($r.Mark -eq '●') { 'cmd' } else { 'text' } } }
+        @{ N = $T.col_cluster; P = 'Cluster'; C = 'dim' }
         @{ N = 'Namespace'; P = 'Namespace'; C = 'accent' }
     )
     Write-Host ''
 }
 
 function Show-MyDocker {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Write-Host "  $($TK.dim)docker не установлен$($TK.R)"; return }
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Write-Host "  $($TK.dim)$($T.docker_missing)$($TK.R)"; return }
     $rows = Invoke-WithTimeout docker @('ps', '-a', '--format', '{{.Names}}\t{{.Status}}\t{{.Ports}}')
-    Write-TkTitle 'Docker' 'логи: docker logs -f <имя> · внутрь: docker exec -it <имя> sh'
-    if ($null -eq $rows) { Write-Host "  $($TK.dim)docker не отвечает — Docker Desktop выключен?$($TK.R)"; Write-Host ''; return }
+    Write-TkTitle 'Docker' $T.docker_hint
+    if ($null -eq $rows) { Write-Host "  $($TK.dim)$($T.docker_down)$($TK.R)"; Write-Host ''; return }
     $list = foreach ($r in $rows) {
         $name, $state, $ports = $r -split "`t"
         $ports = ($ports -replace '0\.0\.0\.0:|\[::\]:|/tcp', '' -split ', ' | Sort-Object -Unique) -join ' '
         [pscustomobject]@{ Dot = '●'; Name = $name; State = $state; Ports = $ports }
     }
-    if (-not $list) { Write-Host "  $($TK.dim)контейнеров нет$($TK.R)" }
+    if (-not $list) { Write-Host "  $($TK.dim)$($T.docker_none)$($TK.R)" }
     else {
         Write-TkTable $list @(
             @{ N = ' '; P = 'Dot'; C = { param($r) if ($r.State -match 'unhealthy|Restarting') { 'err' } elseif ($r.State -like 'Up*') { 'ok' } elseif ($r.State -like 'Exited (0)*') { 'dim' } else { 'err' } } }
-            @{ N = 'Контейнер'; P = 'Name'; C = 'cmd' }
-            @{ N = 'Статус'; P = 'State'; C = 'dim' }
-            @{ N = 'Порты'; P = 'Ports'; C = 'accent' }
+            @{ N = $T.col_container; P = 'Name'; C = 'cmd' }
+            @{ N = $T.col_status; P = 'State'; C = 'dim' }
+            @{ N = $T.col_ports; P = 'Ports'; C = 'accent' }
         )
     }
     $projects = Invoke-WithTimeout docker @('compose', 'ls', '-a', '--format', '{{.Name}}\t{{.Status}}\t{{.ConfigFiles}}') 5000
     if ($projects) {
         Write-Host ''
-        Write-Host ("  {0}compose-проекты{1}" -f $TK.title, $TK.R)
+        Write-Host ("  {0}{1}{2}" -f $TK.title, $T.docker_projects, $TK.R)
         foreach ($p in $projects) {
             $name, $state, $files = $p -split "`t"
             Write-Host ("  {0}{1,-20}{2} {3,-24} {4}{5}{6}" -f $TK.cmd, $name, $TK.R, $state, $TK.dim, (Split-Path ($files -split ',')[0]), $TK.R)
@@ -941,18 +1184,16 @@ function Show-MyDocker {
 
 function Show-MySsh([string]$Filter) {
     $hosts = @(Get-SshHost | Where-Object { -not $Filter -or "$($_.Name) $($_.HostName) $($_.User)" -like "*$Filter*" })
-    Write-TkTitle 'SSH-хосты' 'подключиться: ssh <имя> · jump — выбрать из списка · ssh <Tab>'
-    if (-not $hosts) { Write-Host "  $($TK.dim)ничего не найдено$($TK.R)"; Write-Host ''; return }
+    Write-TkTitle $T.ssh_title $T.ssh_hint
+    if (-not $hosts) { Write-Host "  $($TK.dim)$($T.nothing_found)$($TK.R)"; Write-Host ''; return }
     Write-TkTable $hosts @(
-        @{ N = 'Имя'; P = 'Name'; C = 'cmd' }
-        @{ N = 'Адрес'; P = 'HostName'; C = 'text' }
-        @{ N = 'Пользователь'; P = 'User'; C = { param($r) if ($r.User -eq 'root') { 'err' } else { 'ok' } } }
-        @{ N = 'Порт'; P = 'Port'; C = 'dim' }
-        @{ N = 'Ключ'; P = 'IdentityFile'; C = 'dim' }
+        @{ N = $T.col_name; P = 'Name'; C = 'cmd' }
+        @{ N = $T.col_address; P = 'HostName'; C = 'text' }
+        @{ N = $T.col_user; P = 'User'; C = { param($r) if ($r.User -eq 'root') { 'err' } else { 'ok' } } }
+        @{ N = $T.col_port; P = 'Port'; C = 'dim' }
+        @{ N = $T.col_key; P = 'IdentityFile'; C = 'dim' }
     )
-    foreach ($d in $hosts | Where-Object Duplicate) {
-        Write-Host ("  {0}⚠ {1} описан в config несколько раз — ssh берёт значения из первого блока (User {2}){3}" -f $TK.warn, $d.Name, $d.User, $TK.R)
-    }
+    foreach ($d in $hosts | Where-Object Duplicate) { Write-Host ("  {0}{1}{2}" -f $TK.warn, ($T.ssh_dup -f $d.Name, $d.User), $TK.R) }
     Write-Host ''
 }
 
@@ -961,13 +1202,13 @@ function Show-MyIp([string]$Mode) {
         Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
         Sort-Object InterfaceMetric |
         ForEach-Object { [pscustomobject]@{ Interface = $_.InterfaceAlias; Address = "$($_.IPAddress)/$($_.PrefixLength)" } }
-    Write-TkTitle 'IP-адреса' 'my ip public — внешний IP'
-    Write-TkTable $rows @(@{ N = 'Интерфейс'; P = 'Interface'; C = 'text' }, @{ N = 'Адрес'; P = 'Address'; C = 'cmd' })
+    Write-TkTitle $T.ip_title $T.ip_hint
+    Write-TkTable $rows @(@{ N = $T.col_iface; P = 'Interface'; C = 'text' }, @{ N = $T.col_address; P = 'Address'; C = 'cmd' })
     $gw = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1
-    if ($gw) { Write-Host ("  {0}шлюз{1}  {2} {3}({4}){5}" -f $TK.dim, $TK.R, $gw.NextHop, $TK.dim, $gw.InterfaceAlias, $TK.R) }
+    if ($gw) { Write-Host ("  {0}{1}{2}  {3} {4}({5}){6}" -f $TK.dim, $T.ip_gateway, $TK.R, $gw.NextHop, $TK.dim, $gw.InterfaceAlias, $TK.R) }
     if ($Mode -eq 'public') {
-        try { $ip = Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 5; Write-Host ("  {0}внешний{1}  {2}{3}{4}" -f $TK.dim, $TK.R, $TK.accent, $ip, $TK.R) }
-        catch { Write-Host "  $($TK.err)не удалось узнать внешний IP$($TK.R)" }
+        try { $ip = Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 5; Write-Host ("  {0}{1}{2}  {3}{4}{5}" -f $TK.dim, $T.ip_public, $TK.R, $TK.accent, $ip, $TK.R) }
+        catch { Write-Host "  $($TK.err)$($T.ip_public_fail)$($TK.R)" }
     }
     Write-Host ''
 }
@@ -986,12 +1227,12 @@ function Show-MyPorts([string]$Filter) {
     $rows = if ($Filter -eq 'all') { $all }
             elseif ($Filter) { $all | Where-Object { "$($_.Port)" -eq $Filter -or $_.Process -like "*$Filter*" } }
             else { $all | Where-Object Port -lt 49152 }
-    Write-TkTitle 'Слушающие порты' 'my ports <порт|процесс> · my ports all — вместе с системными 49152+'
+    Write-TkTitle $T.ports_title $T.ports_hint
     Write-TkTable $rows @(
-        @{ N = 'Порт'; P = 'Port'; C = 'accent' }
-        @{ N = 'Процесс'; P = 'Process'; C = 'cmd' }
+        @{ N = $T.col_port; P = 'Port'; C = 'accent' }
+        @{ N = $T.col_process; P = 'Process'; C = 'cmd' }
         @{ N = 'PID'; P = 'PID'; C = 'dim' }
-        @{ N = 'Адрес'; P = 'Address'; C = 'dim' }
+        @{ N = $T.col_address; P = 'Address'; C = 'dim' }
     )
     Write-Host ''
 }
@@ -999,14 +1240,14 @@ function Show-MyPorts([string]$Filter) {
 function Show-MyPath {
     $seen = @{}
     $rows = foreach ($p in $env:PATH -split ';' | Where-Object { $_ }) {
-        $state = if ($seen.ContainsKey($p.TrimEnd('\'))) { 'дубль' } elseif (-not (Test-Path $p)) { 'нет папки' } else { '' }
+        $state = if ($seen.ContainsKey($p.TrimEnd('\'))) { $T.path_dup } elseif (-not (Test-Path $p)) { $T.path_missing } else { '' }
         $seen[$p.TrimEnd('\')] = $true
         [pscustomobject]@{ Path = $p; State = $state }
     }
-    Write-TkTitle 'PATH' 'порядок важен: побеждает папка выше'
+    Write-TkTitle $T.path_title $T.path_hint
     Write-TkTable $rows @(
-        @{ N = 'Папка'; P = 'Path'; C = { param($r) if ($r.State) { 'dim' } else { 'text' } } }
-        @{ N = ''; P = 'State'; C = { param($r) if ($r.State -eq 'дубль') { 'warn' } else { 'err' } } }
+        @{ N = $T.col_folder; P = 'Path'; C = { param($r) if ($r.State) { 'dim' } else { 'text' } } }
+        @{ N = ''; P = 'State'; C = { param($r) if ($r.State -eq $T.path_dup) { 'warn' } else { 'err' } } }
     )
     Write-Host ''
 }
@@ -1025,29 +1266,29 @@ function Show-MyTools {
         $out = (& $name ($argLine -split ' ') 2>&1 | Select-Object -First 3) -join ' '
         [pscustomobject]@{ Name = $name; Version = ([regex]::Match($out, '\d+\.\d+(\.\d+)?')).Value; Path = $cmd.Source }
     } | Sort-Object Name
-    Write-TkTitle 'Инструменты' 'обновить всё: winget upgrade --all'
+    Write-TkTitle $T.tools_title $T.tools_hint
     Write-TkTable $rows @(
-        @{ N = 'Программа'; P = 'Name'; C = 'cmd' }
-        @{ N = 'Версия'; P = 'Version'; C = 'ok' }
-        @{ N = 'Где'; P = 'Path'; C = 'dim' }
+        @{ N = $T.col_program; P = 'Name'; C = 'cmd' }
+        @{ N = $T.col_version; P = 'Version'; C = 'ok' }
+        @{ N = $T.col_where; P = 'Path'; C = 'dim' }
     )
     Write-Host ''
 }
 
 function Show-MyGit {
     Write-TkTitle 'Git' ''
-    Write-TkRow 'имя' (git config --global user.name)
-    Write-TkRow 'почта' (git config --global user.email)
+    Write-TkRow $T.git_name (git config --global user.name)
+    Write-TkRow $T.git_email (git config --global user.email)
     $root = git rev-parse --show-toplevel 2>$null
     if ($root) {
-        Write-TkRow 'репозиторий' $root
-        Write-TkRow 'ветка' (git branch --show-current)
+        Write-TkRow $T.git_repo $root
+        Write-TkRow $T.git_branch (git branch --show-current)
         foreach ($r in git remote -v | Where-Object { $_ -like '*(fetch)' }) {
             $name, $url = $r -split '\s+'
             Write-TkRow "remote $name" $url
         }
     } else {
-        Write-Host "    $($TK.dim)сейчас не в git-репозитории$($TK.R)"
+        Write-Host "    $($TK.dim)$($T.git_none)$($TK.R)"
     }
     $aliases = git config --global --get-regexp '^alias\.' 2>$null
     foreach ($a in $aliases) { $k, $v = $a -split ' ', 2; Write-TkRow ('git ' + $k.Substring(6)) $v }
@@ -1055,12 +1296,12 @@ function Show-MyGit {
 }
 
 function Show-MyCommands {
-    Write-TkTitle 'Мои команды' "new имя.py — создать · ep — открыть папку · $($global:ProfileDir)"
+    Write-TkTitle $T.cmds_title ($T.cmds_hint -f $global:ProfileDir)
     if ($global:UserCommands) {
         Write-Host ("  {0}bin\{1}" -f $TK.title, $TK.R)
         foreach ($c in $global:UserCommands) { Write-TkRow $c.Name $c.Help "$($c.File) · $($c.Runner)" }
     } else {
-        Write-Host ("  {0}bin\ пуста — new weather.py 'погода' создаст первую команду{1}" -f $TK.dim, $TK.R)
+        Write-Host ("  {0}{1}{2}" -f $TK.dim, $T.cmds_empty, $TK.R)
     }
     if ($global:CustomFunctions) {
         Write-Host ''
@@ -1069,20 +1310,20 @@ function Show-MyCommands {
     }
     if ($global:Abbreviations.Count) {
         Write-Host ''
-        Write-Host ("  {0}сокращения{1}  {2}abbr имя 'текст' — добавить · abbr -Remove имя{3}" -f $TK.title, $TK.R, $TK.dim, $TK.R)
+        Write-Host ("  {0}{1}{2}  {3}{4}{5}" -f $TK.title, $T.cmds_abbr, $TK.R, $TK.dim, $T.cmds_abbr_hint, $TK.R)
         foreach ($a in $global:Abbreviations.GetEnumerator()) { Write-TkRow "$($a.Key)␣" $a.Value }
     }
     Write-Host ''
 }
 
-# ── История ──────────────────────────────────────────────────────────────────
-if (Test-Path Alias:h) { Remove-Item Alias:h -Force }   # встроенный h = Get-History
+# ── history ──────────────────────────────────────────────────────────────────
+if (Test-Path Alias:h) { Remove-Item Alias:h -Force }
 function h {
     param([string]$Filter, [int]$Count = 50, [int]$PageSize = 10)
     $path = (Get-PSReadLineOption).HistorySavePath
     if (-not (Test-Path $path)) { return }
 
-    # многострочные команды хранятся построчно с ` в конце — склеиваем
+    # multi-line entries are stored as lines ending with a backtick
     $entries = [System.Collections.Generic.List[string]]::new()
     $buffer = ''
     foreach ($line in [IO.File]::ReadLines($path)) {
@@ -1099,30 +1340,27 @@ function h {
         if ($seen.Add($e)) { $list.Add($e) }
     }
 
-    $title = if ($Filter) { "История: «$Filter»" } else { 'История' }
-    Write-TkTitle $title "новые сверху · Ctrl+R — поиск с вставкой в строку"
+    Write-TkTitle $(if ($Filter) { $T.hist_filtered -f $Filter } else { $T.hist_title }) $T.hist_hint
     $paging = -not [Console]::IsInputRedirected
     for ($i = 0; $i -lt $list.Count; $i++) {
         $lines = $list[$i] -split "`n"
         $text = $lines[0]
         if ($Filter) { $text = $text -ireplace [regex]::Escape($Filter), ($TK.accent + '$0' + $TK.R) }
-        if ($lines.Count -gt 1) { $text += "  $($TK.dim)… +$($lines.Count - 1) стр.$($TK.R)" }
+        if ($lines.Count -gt 1) { $text += "  $($TK.dim)$($T.hist_more -f ($lines.Count - 1))$($TK.R)" }
         Write-Host ("  {0}{1,3}{2}  {3}" -f $TK.dim, ($i + 1), $TK.R, $text)
 
         if ($paging -and ($i + 1) % $PageSize -eq 0 -and $i + 1 -lt $list.Count) {
-            Write-Host -NoNewline ("  {0}── {1}/{2} · Enter или Пробел — ещё · Q/Esc — хватит ──{3}" -f $TK.dim, ($i + 1), $list.Count, $TK.R)
+            Write-Host -NoNewline ("  {0}{1}{2}" -f $TK.dim, ($T.hist_page -f ($i + 1), $list.Count), $TK.R)
             $key = [Console]::ReadKey($true).Key
             Write-Host -NoNewline "`r$([char]27)[2K"
             if ($key -in 'Q', 'Escape') { break }
         }
     }
-    if (-not $list.Count) { Write-Host "  $($TK.dim)ничего не найдено$($TK.R)" }
+    if (-not $list.Count) { Write-Host "  $($TK.dim)$($T.nothing_found)$($TK.R)" }
     Write-Host ''
 }
 
-# ── Сокращения: g␣ → git␣ (как abbr в fish) ──────────────────────────────────
-#  Раскрываются по пробелу и Enter только в позиции команды, поэтому в истории
-#  остаются полные команды. % в тексте — куда поставить курсор.
+# ── abbreviations (fish-style: expand on space/Enter at command position) ────
 $global:Abbreviations = [System.Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
 
 function abbr {
@@ -1137,24 +1375,25 @@ function abbr {
         return
     }
     if (-not $Name) {
-        Write-TkTitle 'Сокращения' 'раскрываются по пробелу · abbr имя ''текст'' — добавить · abbr -Remove имя'
+        Write-TkTitle $T.abbr_title $T.abbr_hint
         foreach ($a in $global:Abbreviations.GetEnumerator()) { Write-TkRow "$($a.Key)␣" $a.Value }
         Write-Host ''
         return
     }
-    if (-not $Expansion) { Write-Host "  $($TK.err)abbr имя 'во что раскрыть'$($TK.R)"; return }
+    if (-not $Expansion) { Write-Host "  $($TK.err)$($T.abbr_usage)$($TK.R)"; return }
     $global:Abbreviations[$Name] = $Expansion
-    # интерактивно — запоминаем в custom.ps1 (при загрузке профиля строка уже там)
+    # typed interactively (not sourced from a file) → persist to custom.ps1
     if ($MyInvocation.ScriptName -eq '' -and $global:isInteractive) {
         $line = "abbr $Name '$($Expansion.Replace("'", "''"))'"
         if (-not (Test-Path $custom) -or -not (Select-String -Path $custom -SimpleMatch $line -Quiet)) {
             Add-Content $custom "`n$line" -Encoding utf8
-            Write-Host ("  {0}записано в custom.ps1: {1}{2}" -f $TK.dim, $line, $TK.R)
+            Write-Host ("  {0}{1}{2}" -f $TK.dim, ($T.abbr_saved -f $line), $TK.R)
         }
     }
 }
 
-# Что раскрыть в строке $Line при курсоре $Cursor: @{Start; Length; Text; Cursor} или $null
+# Returns @{Start; Length; Text; Cursor} when the word before the cursor is an abbreviation
+# in command position (line start or after | ; & ( {). '%' in the expansion marks the cursor.
 function Expand-Abbreviation([string]$Line, [int]$Cursor) {
     if (-not $global:Abbreviations.Count -or $Cursor -le 0) { return }
     $before = $Line.Substring(0, $Cursor)
@@ -1179,7 +1418,7 @@ abbr gcm 'git commit -m "%"'
 abbr kgp 'kubectl get pods'
 abbr kga 'kubectl get all'
 
-# ── Русская раскладка: «вщслук зы» → «docker ps» ─────────────────────────────
+# ── keyboard layout: a command typed in the Russian layout becomes its Latin counterpart ──
 $TkLayoutMap = @{}
 $ru = 'ёйцукенгшщзхъфывапролджэячсмитьбюЁЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ'
 $en = '`qwertyuiop[]asdfghjkl;''zxcvbnm,.~QWERTYUIOP{}ASDFGHJKL:"ZXCVBNM<>'
@@ -1192,23 +1431,21 @@ function Convert-Layout([string]$Text) {
     $sb.ToString()
 }
 
-# Исправленная строка, если первое слово набрано кириллицей и после перевода — известная команда
+# Only when the first word is Cyrillic, is not a real command, and converts to a known one
 function Repair-CommandLayout([string]$Line) {
     if ($Line -notmatch '^\s*[А-Яа-яЁё]') { return }
     $first = ($Line.Trim() -split '\s+', 2)[0]
-    if (Get-Command $first -ErrorAction SilentlyContinue) { return }       # настоящая команда с кириллицей
+    if (Get-Command $first -ErrorAction SilentlyContinue) { return }
     $fixed = Convert-Layout $first
     if ($fixed -eq $first) { return }
     if (-not (Get-Command $fixed -ErrorAction SilentlyContinue) -and -not $global:Abbreviations.ContainsKey($fixed)) { return }
     Convert-Layout $Line
 }
 
-# ── Свои команды на любом языке: bin\ рядом с профилем ───────────────────────
-#  weather.py → команда weather. Первая строка «# help: …» попадает в help.
-#  Для каждого расширения — чем запускать (первый найденный):
+# ── bin\: every script becomes a command, runner chosen by extension ─────────
 $global:ScriptRunners = [ordered]@{
     '.ps1' = @('pwsh -NoProfile -File')
-    '.py'  = @('uv run', 'python')          # uv: зависимости прямо в файле (# /// script … ///)
+    '.py'  = @('uv run', 'python')
     '.js'  = @('node')
     '.ts'  = @('bun', 'deno run -A', 'node')
     '.sh'  = @('bash')
@@ -1229,12 +1466,12 @@ function Get-ScriptRunner([string]$Extension) {
 function Register-BinCommands([string]$Dir) {
     $global:UserCommands = @()
     if (-not (Test-Path $Dir)) { return }
-    if (($env:PATH -split ';') -notcontains $Dir) { $env:PATH = "$Dir;$env:PATH" }   # .exe и .cmd — как есть
+    if (($env:PATH -split ';') -notcontains $Dir) { $env:PATH = "$Dir;$env:PATH" }
     foreach ($f in Get-ChildItem $Dir -File | Sort-Object Name) {
         $name = $f.BaseName
         $ext = $f.Extension.ToLower()
         if (-not $global:ScriptRunners.Contains($ext) -or $name -notmatch '^[A-Za-z_][\w-]*$') { continue }
-        # имя занято настоящей командой (не нашей функцией и не файлом из bin) — не перекрываем
+        # never shadow a real command; bin itself is on PATH, so ignore matches from there
         $taken = Get-Command $name -All -ErrorAction SilentlyContinue |
             Where-Object { $_.Source -notlike "$Dir\*" -and $_.ScriptBlock -notlike '*UserCommand*' } | Select-Object -First 1
         if ($taken) { continue }
@@ -1245,10 +1482,10 @@ function Register-BinCommands([string]$Dir) {
             $parts = ($runner -split ' ') | ForEach-Object { "'$_'" }
             "# UserCommand`n& $($parts -join ' ') '$($f.FullName)' @args"
         } else {
-            "# UserCommand`nWrite-Host '  нечем запустить $($f.Name): нужен $($global:ScriptRunners[$ext] -join ' или ')'"
+            "# UserCommand`nWrite-Host '  $($T.bin_norunner -f $f.Name, ($global:ScriptRunners[$ext] -join ' / '))'"
         }
         Set-Item "Function:global:$name" -Value ([scriptblock]::Create($body))
-        $global:UserCommands += [pscustomobject]@{ Name = $name; File = $f.Name; Help = $help; Runner = $(if ($runner) { $runner } else { 'нет: ' + ($global:ScriptRunners[$ext] -join '/') }); Path = $f.FullName }
+        $global:UserCommands += [pscustomobject]@{ Name = $name; File = $f.Name; Help = $help; Runner = $(if ($runner) { $runner } else { '— ' + ($global:ScriptRunners[$ext] -join '/') }); Path = $f.FullName }
     }
 }
 
@@ -1263,28 +1500,29 @@ $TkTemplates = @{
     '.clj' = ";; help: {desc}`n(println `"hello from {name}`" *command-line-args*)`n"
     '.rb'  = "# help: {desc}`nputs `"hello from {name}: #{ARGV.join(' ')}`"`n"
     '.lua' = "-- help: {desc}`nprint('hello from {name}', table.concat(arg, ' '))`n"
-    '.php' = "<?php\n// help: {desc}`necho 'hello from {name}: ', implode(' ', array_slice(`$argv, 1)), PHP_EOL;`n"
+    '.php' = "<?php`n// help: {desc}`necho 'hello from {name}: ', implode(' ', array_slice(`$argv, 1)), PHP_EOL;`n"
 }
 
 function new {
-    param([Parameter(Position = 0)][string]$FileName, [Parameter(Position = 1)][string]$Description = 'моя команда')
+    param([Parameter(Position = 0)][string]$FileName, [Parameter(Position = 1)][string]$Description)
+    if (-not $Description) { $Description = $T.new_default }
     $bin = Join-Path $global:ProfileDir 'bin'
     if (-not $FileName) {
-        Write-TkTitle 'new имя.расширение [описание]' "создаёт команду в $bin"
+        Write-TkTitle $T.new_title ($T.new_hint -f $bin)
         foreach ($ext in $global:ScriptRunners.Keys) {
             $runner = Get-ScriptRunner $ext
-            Write-TkRow "new имя$ext" $(if ($runner) { "запуск: $runner" } else { "нужен $($global:ScriptRunners[$ext] -join ' или ')" }) $(if ($runner) { '' } else { 'не установлен' })
+            Write-TkRow "new name$ext" $(if ($runner) { $T.new_run -f $runner } else { $T.new_need -f ($global:ScriptRunners[$ext] -join ' / ') }) $(if ($runner) { '' } else { $T.new_missing })
         }
         Write-Host ''
         return
     }
     $ext = [IO.Path]::GetExtension($FileName).ToLower()
     $name = [IO.Path]::GetFileNameWithoutExtension($FileName)
-    if (-not $TkTemplates.ContainsKey($ext)) { Write-Host "  $($TK.err)не знаю расширение $ext — new без аргументов покажет список$($TK.R)"; return }
-    if ($name -notmatch '^[A-Za-z_][\w-]*$') { Write-Host "  $($TK.err)имя: латиница, цифры, - и _$($TK.R)"; return }
+    if (-not $TkTemplates.ContainsKey($ext)) { Write-Host "  $($TK.err)$($T.new_bad_ext -f $ext)$($TK.R)"; return }
+    if ($name -notmatch '^[A-Za-z_][\w-]*$') { Write-Host "  $($TK.err)$($T.new_bad_name)$($TK.R)"; return }
     $taken = Get-Command $name -All -ErrorAction SilentlyContinue |
         Where-Object { $_.Source -notlike "$bin\*" -and $_.ScriptBlock -notlike '*UserCommand*' } | Select-Object -First 1
-    if ($taken) { Write-Host "  $($TK.err)имя $name уже занято ($($taken.CommandType) $($taken.Source))$($TK.R)"; return }
+    if ($taken) { Write-Host "  $($TK.err)$($T.new_taken -f $name, $taken.CommandType, $taken.Source)$($TK.R)"; return }
     New-Item -ItemType Directory -Force $bin | Out-Null
     $path = Join-Path $bin "$name$ext"
     if (-not (Test-Path $path)) {
@@ -1294,12 +1532,12 @@ function new {
     }
     Register-BinCommands $bin
     $runner = Get-ScriptRunner $ext
-    if ($runner) { Write-Host ("  {0}команда готова: {1}{2} [аргументы]{3}  {4}запуск через {5}{6}" -f $TK.dim, $TK.cmd, $name, $TK.R, $TK.dim, $runner, $TK.R) }
-    else { Write-Host ("  {0}чтобы запускать, нужен {1}{2}" -f $TK.warn, ($global:ScriptRunners[$ext] -join ' или '), $TK.R) }
+    if ($runner) { Write-Host ("  {0}{1}{2}{3}{4} {5}{6}  {7}{8}{9}" -f $TK.dim, $T.new_ready, $TK.cmd, $name, $TK.R, $TK.dim, $T.new_args, $TK.dim, ($T.new_via -f $runner), $TK.R) }
+    else { Write-Host ("  {0}{1}{2}" -f $TK.warn, ($T.new_norunner -f ($global:ScriptRunners[$ext] -join ' / ')), $TK.R) }
     if (Get-Command code -ErrorAction SilentlyContinue) { code $path }
 }
 
-# ── Тема ─────────────────────────────────────────────────────────────────────
+# ── theme / lang ─────────────────────────────────────────────────────────────
 function Get-TerminalSettingsPaths {
     $paths = foreach ($pkg in 'Microsoft.WindowsTerminal_8wekyb3d8bbwe', 'Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe') {
         Join-Path $env:LOCALAPPDATA "Packages\$pkg\LocalState\settings.json"
@@ -1311,18 +1549,18 @@ function Get-TerminalSettingsPaths {
 function theme {
     param([Parameter(Position = 0)][ArgumentCompleter({ param($c, $p, $word) $CatppuccinFlavors.Keys | Where-Object { $_ -like "$word*" } })][string]$Name)
     if (-not $Name) {
-        Write-TkTitle 'Тема' 'theme <вариант> — переключить всё сразу: терминал, промпт, подсветку'
+        Write-TkTitle $T.theme_title $T.theme_hint
         foreach ($f in $CatppuccinFlavors.Keys) {
             $p = $CatppuccinFlavors[$f]
             $swatch = ($p.red, $p.peach, $p.yellow, $p.green, $p.teal, $p.blue, $p.mauve | ForEach-Object { (_tkRgb $_) + '●' }) -join ' '
             $mark = if ($f -eq $global:ThemeName) { $TK.ok + '● ' } else { '  ' }
-            Write-Host ("  {0}{1}{2,-10}{3} {4}{5}  {6}{7}{8}" -f $mark, $TK.cmd, $f, $TK.R, $swatch, $TK.R, $TK.dim, $(if ($p.dark) { 'тёмная' } else { 'светлая' }), $TK.R)
+            Write-Host ("  {0}{1}{2,-10}{3} {4}{5}  {6}{7}{8}" -f $mark, $TK.cmd, $f, $TK.R, $swatch, $TK.R, $TK.dim, $(if ($p.dark) { $T.theme_dark } else { $T.theme_light }), $TK.R)
         }
         Write-Host ''
         return
     }
     $Name = $Name.ToLower()
-    if (-not $CatppuccinFlavors.Contains($Name)) { Write-Host "  $($TK.err)есть только: $($CatppuccinFlavors.Keys -join ', ')$($TK.R)"; return }
+    if (-not $CatppuccinFlavors.Contains($Name)) { Write-Host "  $($TK.err)$($T.theme_only -f ($CatppuccinFlavors.Keys -join ', '))$($TK.R)"; return }
     New-Item -ItemType Directory -Force (Split-Path $ThemeFile) | Out-Null
     [IO.File]::WriteAllText($ThemeFile, "$Name`n")
     $global:ThemeName = $Name
@@ -1335,39 +1573,47 @@ function theme {
         $new = $raw -replace '("colorScheme"\s*:\s*)"Catppuccin [A-Za-z]+"', "`$1`"$title`"" -replace '("theme"\s*:\s*)"Catppuccin [A-Za-z]+"', "`$1`"$title`""
         if ($new -ne $raw) { [IO.File]::WriteAllText($path, $new, [Text.UTF8Encoding]::new($false)) }
     }
-    Write-Host ("  {0}✓ {1}{2}  {3}Windows Terminal переключится сам, новые вкладки — тоже{4}" -f $TK.ok, $title, $TK.R, $TK.dim, $TK.R)
+    Write-Host ("  {0}✓ {1}{2}  {3}{4}{5}" -f $TK.ok, $title, $TK.R, $TK.dim, $T.theme_done, $TK.R)
+}
+
+function lang {
+    param([Parameter(Position = 0)][ValidateSet('', 'ru', 'en')][string]$Name = '')
+    if (-not $Name) {
+        Write-TkTitle $T.lang_title $T.lang_hint
+        foreach ($l in 'ru', 'en') {
+            $mark = if ($l -eq $global:LangName) { $TK.ok + '● ' } else { '  ' }
+            Write-Host ("  {0}{1}{2,-6}{3} {4}{5}{6}" -f $mark, $TK.cmd, $l, $TK.R, $TK.dim, $T["lang_$l"], $TK.R)
+        }
+        Write-Host ''
+        return
+    }
+    New-Item -ItemType Directory -Force (Split-Path $LangFile) | Out-Null
+    [IO.File]::WriteAllText($LangFile, "$Name`n")
+    $global:LangName = $Name
+    $global:T = $Strings[$Name]
+    Write-Host ("  {0}✓ {1}{2}" -f $TK.ok, ($T.lang_done -f $T["lang_$Name"]), $TK.R)
 }
 
 function ep { code $global:ProfileDir }
 '@
 $EmbeddedFiles['custom'] = @'
-# ─────────────────────────────────────────────────────────────────────────────
-#  custom.ps1 — моё. Этот файл setup-terminal.ps1 никогда не перезаписывает.
-#  Загружается после toolkit.ps1, до клавиш и промпта. Проверить: reload
+# custom.ps1 — yours. setup-terminal.ps1 never overwrites this file. Loaded after toolkit.ps1; check with: reload
 #
-#  Переключатели:
-#    $TerminalSetup.Abbreviations = $false   # отключить g␣ → git␣
-#    $TerminalSetup.LayoutFix     = $false   # отключить исправление раскладки
-#    $TerminalSetup.Predictions   = 20       # подсказок из истории (0 — стандартные 10)
+#   $TerminalSetup.Abbreviations = $false     # g␣ → git␣
+#   $TerminalSetup.LayoutFix     = $false     # Russian layout fix on Enter
+#   $TerminalSetup.Predictions   = 20         # history suggestions (0 — PSReadLine default 10)
 #
-#  Сокращения (раскрываются по пробелу, % — где оставить курсор):
-#    abbr gcm 'git commit -m "%"'
-#    abbr -Remove d
+#   abbr gcm 'git commit -m "%"'              # % — cursor position
+#   abbr -Remove d
 #
-#  Свои функции — попадут в help и my cmds автоматически:
-#    function deploy { ssh prod 'cd app && git pull && docker compose up -d' }
+#   function deploy { ssh prod 'cd app && git pull && docker compose up -d' }   # shows up in help
 #
-#  Команды на других языках — файлы в bin\ рядом с этим файлом (new имя.py).
-#  Строка «# help: описание» в начале файла — подпись в help.
-#
-#  Чем запускать расширения (первый найденный): $ScriptRunners['.ts'] = @('bun', 'node')
-# ─────────────────────────────────────────────────────────────────────────────
+#   Commands in other languages: files in bin\ next to this file (new name.py); "# help: ..." is the caption.
+#   $ScriptRunners['.ts'] = @('bun', 'node')  # which runner to use per extension
 '@
 $EmbeddedFiles['predictor'] = @'
-// Подсказки из истории PSReadLine без встроенного лимита в 10 строк.
-// Встроенный источник History жёстко ограничен 10 записями, а плагины получают
-// до 50 — список показывает 10 строк и листается стрелками.
-// Компилируется профилем в ~/.cache/pwsh-predictor при изменении этого файла.
+// History suggestions without PSReadLine's built-in cap: the History source is hard-limited
+// to 10 entries, plugins get up to 50. Compiled by the profile into ~/.cache/pwsh-predictor.
 
 using System;
 using System.Collections.Generic;
@@ -1407,7 +1653,7 @@ public sealed class DeepHistoryPredictor : ICommandPredictor
 
         var entries = _entries;
         var result = new List<PredictiveSuggestion>();
-        // сначала команды, которые начинаются с набранного, потом — где оно встречается внутри
+        // prefix matches first, then substring matches
         foreach (var e in entries)
         {
             if (e.Length > input.Length && e.StartsWith(input, StringComparison.OrdinalIgnoreCase))
@@ -1430,7 +1676,7 @@ public sealed class DeepHistoryPredictor : ICommandPredictor
         return result.Count == 0 ? default : new SuggestionPackage(result);
     }
 
-    // PSReadLine ждёт плагин ~20 мс, поэтому файл перечитывается в фоне
+    // PSReadLine gives a plugin ~20 ms, so the file is re-read in the background
     private void RefreshIfChanged()
     {
         long length;
@@ -1448,7 +1694,7 @@ public sealed class DeepHistoryPredictor : ICommandPredictor
         using (var fs = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
         using (var reader = new StreamReader(fs))
         {
-            // многострочные команды хранятся строками с ` на конце — их пропускаем целиком
+            // multi-line entries are stored as lines ending with a backtick — skipped entirely
             bool continuation = false;
             string line;
             while ((line = reader.ReadLine()) != null)
@@ -1547,24 +1793,74 @@ $EmbeddedFiles['omp-theme'] = @'
 }
 '@
 $EmbeddedFiles['srv-bashrc'] = @'
-# ~/.bashrc.local — один и тот же для всех серверов. Ставится из PowerShell: srv install <хост>
-# version: 2.0.0
-#
-#  Настройки сервера:  ~/.config/bashrc-local.conf   (PROMPT_ENV=prod …)
-#  Своё:               ~/.bashrc.d/*.sh — подключаются в конце, остаются при обновлении
-#                      ~/bin/*          — свои скрипты, строка «# help: …» попадает в help
-#  Проекты находятся сами (docker compose ls) и запоминаются в ~/.config/projects,
-#  для каждого появляется команда с его именем:  myapp · myapp logs web · myapp sh web
-#  Ничего не ставится и ничего не работает в фоне — только функции в этой оболочке.
-#  Откат: srv remove <хост>  (или удалить строку с .bashrc.local в конце ~/.bashrc)
+# ~/.bashrc.local — installed by `srv install <host>` from terminal-setup. Nothing runs in the background.
+# version: 2.1.0
+# Per-server settings: ~/.config/bashrc-local.conf (PROMPT_ENV=prod, LANG_UI=en)
+# Your own: ~/.bashrc.d/*.sh and ~/bin/* (a "# help: ..." line shows up in help)
 
-[[ $- == *i* ]] || return     # для scp/rsync/скриптов — ничего не делаем и ничего не печатаем
+[[ $- == *i* ]] || return
 
-PROMPT_ENV=''                 # метка в промпте: prod — красная, staging/test — жёлтая, dev — зелёная
+PROMPT_ENV=''
+LANG_UI=''
 [[ -f ~/.config/bashrc-local.conf ]] && . ~/.config/bashrc-local.conf
+[[ $LANG_UI == en ]] || LANG_UI=ru
 
-# ── История: большая, без дублей, с датой, общая между вкладками ─────────────
-# Команда, начатая с пробела, в историю не попадает — удобно для паролей/токенов.
+declare -A T_ru=(
+    [help_hint]='help <слово> — поиск · help <встроенная> — справка bash'
+    [projects]='проекты' [own]='Своё  (~/bin, ~/.bashrc.d)' [own_script]='скрипт в ~/bin'
+    [s_proj]='Проекты  (находятся сами: docker compose ls)' [s_docker]='Docker' [s_server]='Сервер' [s_files]='Файлы'
+    [s_hist]='История и ввод' [s_guard]='Подстраховка'
+    [r_proj]='все проекты: статус и папка' [r_status]='статус контейнеров' [r_logs]='логи: 200 строк и дальше поток'
+    [r_sh]='shell внутри контейнера' [r_any]='любая docker compose команда' [r_cd]='перейти в папку проекта'
+    [r_dsh]='shell в контейнере проекта, где ты сейчас' [r_add]='добавить вручную (по умолчанию — текущую)' [r_rm]='скрыть из списка'
+    [r_dps]='все контейнеры: статус и порты' [r_dc]='docker compose / логи в текущей папке'
+    [r_sys]='нагрузка, память, диск, процессы, контейнеры' [r_ports]='кто слушает порты' [r_psg]='процессы по имени'
+    [r_df]='диск · память · размер папок здесь' [r_ll]='подробный список · со скрытыми'
+    [r_bak]='копия рядом: файл.bak-дата — перед правкой на проде' [r_ex]='распаковать: tar.gz, zip, xz, 7z…'
+    [r_up]='вверх · два вверх · создать и зайти' [r_h]='последние 50 команд · поиск' [r_arrows]='листать только подходящие из истории'
+    [r_ctrlr]='поиск по всей истории' [r_tab]='дополнение без учёта регистра (и сервисов)' [r_space]='не сохранится в историю — для паролей'
+    [r_rm_guard]='спрашивают перед массовым удалением' [r_down]='docker требует набрать yes' [r_noguard]='без подтверждения (обход алиаса)'
+    [r_env]='метка сервера: ~/.config/bashrc-local.conf'
+    [k_arrows]='начало команды + ↑/↓' [k_space]=' команда (с пробелом)' [k_env]='● prod в промпте' [k_proj]='<проект>' [k_svc]='сервис' [k_folder]='папка' [k_name]='имя' [k_file]='файл' [k_archive]='архив'
+    [sys_load]='нагрузка' [sys_mem]='память' [sys_disk]='диск /' [sys_cores]='ядер' [sys_top]='топ процессов' [sys_cont]='контейнеры' [sys_nolabel]='без метки' [of]='из'
+    [p_title]='Проекты' [p_hint]='proj add — добавить текущую папку · proj rm <имя> — скрыть'
+    [p_none]='пока нет: запусти docker compose up в папке проекта или proj add' [p_stopped]='не запущен'
+    [p_nodir]='нет папки: %s\n' [p_badname]='плохое имя: %s\n' [p_added]='добавлен: %s → %s\n' [p_rmname]='укажи имя: proj rm <имя>'
+    [p_hidden]='скрыт: %s (вернуть: proj add %s <папка>)\n' [p_unknown]='нет проекта «%s» — список: proj\n' [p_svc]='укажи сервис: %s sh <Tab>\n'
+    [p_cmds]='%s logs <сервис> · %s sh <сервис> · %s restart <сервис> · %s cd' [p_many]='проектов несколько — зайди в папку проекта или: <проект> sh <сервис>'
+    [d_warn]='⚠ %s: «docker %s» удалит данные (тома, базы).' [d_ask]='Напиши yes, чтобы продолжить: ' [d_cancel]='Отменено.'
+    [ex_nofile]='нет файла: %s\n' [ex_unknown]='не знаю, чем распаковать: %s\n'
+    [banner]='help — шпаргалка · sys — состояние сервера'
+)
+declare -A T_en=(
+    [help_hint]='help <word> — search · help <builtin> — bash help'
+    [projects]='projects' [own]='Mine  (~/bin, ~/.bashrc.d)' [own_script]='script in ~/bin'
+    [s_proj]='Projects  (discovered: docker compose ls)' [s_docker]='Docker' [s_server]='Server' [s_files]='Files'
+    [s_hist]='History and input' [s_guard]='Guards'
+    [r_proj]='all projects: status and folder' [r_status]='container status' [r_logs]='logs: last 200 lines, then follow'
+    [r_sh]='shell inside a container' [r_any]='any docker compose command' [r_cd]='go to the project folder'
+    [r_dsh]='shell in a container of the project you are in' [r_add]='add manually (default — current folder)' [r_rm]='hide from the list'
+    [r_dps]='all containers: status and ports' [r_dc]='docker compose / logs in the current folder'
+    [r_sys]='load, memory, disk, processes, containers' [r_ports]='who listens on which port' [r_psg]='processes by name'
+    [r_df]='disk · memory · folder sizes here' [r_ll]='detailed list · with hidden files'
+    [r_bak]='copy next to it: file.bak-date — before editing on prod' [r_ex]='extract: tar.gz, zip, xz, 7z…'
+    [r_up]='up · two up · create and enter' [r_h]='last 50 commands · search' [r_arrows]='scroll only matching history'
+    [r_ctrlr]='search the whole history' [r_tab]='case-insensitive completion (and services)' [r_space]='not saved to history — for passwords'
+    [r_rm_guard]='ask before mass deletion' [r_down]='docker asks you to type yes' [r_noguard]='no confirmation (bypass the alias)'
+    [r_env]='server label: ~/.config/bashrc-local.conf'
+    [k_arrows]='command prefix + ↑/↓' [k_space]=' command (leading space)' [k_env]='● prod in the prompt' [k_proj]='<project>' [k_svc]='service' [k_folder]='folder' [k_name]='name' [k_file]='file' [k_archive]='archive'
+    [sys_load]='load' [sys_mem]='memory' [sys_disk]='disk /' [sys_cores]='cores' [sys_top]='top processes' [sys_cont]='containers' [sys_nolabel]='no label' [of]='of'
+    [p_title]='Projects' [p_hint]='proj add — add the current folder · proj rm <name> — hide'
+    [p_none]='none yet: run docker compose up in a project folder or proj add' [p_stopped]='not running'
+    [p_nodir]='no such folder: %s\n' [p_badname]='bad name: %s\n' [p_added]='added: %s → %s\n' [p_rmname]='give a name: proj rm <name>'
+    [p_hidden]='hidden: %s (restore: proj add %s <folder>)\n' [p_unknown]='no project "%s" — list: proj\n' [p_svc]='give a service: %s sh <Tab>\n'
+    [p_cmds]='%s logs <service> · %s sh <service> · %s restart <service> · %s cd' [p_many]='several projects — enter a project folder or: <project> sh <service>'
+    [d_warn]='⚠ %s: "docker %s" deletes data (volumes, databases).' [d_ask]='Type yes to continue: ' [d_cancel]='Cancelled.'
+    [ex_nofile]='no such file: %s\n' [ex_unknown]='do not know how to extract: %s\n'
+    [banner]='help — cheat sheet · sys — server status'
+)
+__t() { local v="T_${LANG_UI}[$1]"; printf '%s' "${!v}"; }
+
 HISTSIZE=50000
 HISTFILESIZE=100000
 HISTCONTROL=ignoreboth:erasedups
@@ -1572,19 +1868,15 @@ HISTTIMEFORMAT='%F %T  '
 HISTIGNORE='ls:ll:la:pwd:exit:clear:history:h'
 shopt -s histappend cmdhist checkwinsize globstar
 
-# ── Промпт ───────────────────────────────────────────────────────────────────
-#  ┌─ ● prod deploy@vm1 ~/app ⎇ main*  ⏱ 12s  ✘ 1
-#  └─❯
 __git_branch() {
     local b dirty=
-    # GIT_OPTIONAL_LOCKS=0 — промпт не берёт index.lock и не мешает деплою
     b=$(GIT_OPTIONAL_LOCKS=0 git symbolic-ref --short HEAD 2>/dev/null || GIT_OPTIONAL_LOCKS=0 git rev-parse --short HEAD 2>/dev/null) || return
     [[ -n $(GIT_OPTIONAL_LOCKS=0 git status --porcelain --untracked-files=no 2>/dev/null | head -n1) ]] && dirty='*'
     printf ' ⎇ %s%s' "$b" "$dirty"
 }
 
-# Время долгой команды: ловушка DEBUG запоминает старт первой команды после промпта.
-# Срабатывает только на верхнем уровне (внутри функций — нет), стоит микросекунды.
+# DEBUG trap remembers when the first top-level command after the prompt started;
+# commands that are part of PROMPT_COMMAND are skipped so idle time is never counted.
 __cmd_start() { [[ "${PROMPT_COMMAND[*]}" == *"$BASH_COMMAND"* ]] || __ts=${__ts:-$SECONDS}; }
 trap __cmd_start DEBUG
 
@@ -1603,7 +1895,7 @@ __prompt() {
     local r='\[\e[0m\]' dim='\[\e[90m\]' red='\[\e[31m\]' green='\[\e[32m\]'
     local yellow='\[\e[33m\]' blue='\[\e[34m\]' mauve='\[\e[35m\]' cyan='\[\e[36m\]'
 
-    local user=$cyan;  (( EUID == 0 )) && user=$red     # root — красным
+    local user=$cyan;  (( EUID == 0 )) && user=$red
     local arrow=$green status= env= venv= took=
     (( code != 0 )) && { arrow=$red; status="  ${red}✘ ${code}${r}"; }
     (( elapsed >= 3 )) && took="  ${dim}⏱ $(__fmt_duration $elapsed)${r}"
@@ -1620,11 +1912,10 @@ __prompt() {
 }
 [[ "${PROMPT_COMMAND[*]}" == *__prompt* ]] || PROMPT_COMMAND="__prompt${PROMPT_COMMAND:+; ${PROMPT_COMMAND[*]}}"
 
-# ── Цвета в выводе ───────────────────────────────────────────────────────────
 export LESS='-R -F -X -i'
-export LESS_TERMCAP_md=$'\e[1;34m' LESS_TERMCAP_me=$'\e[0m'      # man: заголовки
-export LESS_TERMCAP_us=$'\e[4;32m' LESS_TERMCAP_ue=$'\e[0m'      # man: подчёркнутое
-export LESS_TERMCAP_so=$'\e[30;43m' LESS_TERMCAP_se=$'\e[0m'     # поиск/статус
+export LESS_TERMCAP_md=$'\e[1;34m' LESS_TERMCAP_me=$'\e[0m'
+export LESS_TERMCAP_us=$'\e[4;32m' LESS_TERMCAP_ue=$'\e[0m'
+export LESS_TERMCAP_so=$'\e[30;43m' LESS_TERMCAP_se=$'\e[0m'
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 
 alias ls='ls --color=auto --group-directories-first'
@@ -1634,12 +1925,10 @@ alias grep='grep --color=auto'
 alias diff='diff --color=auto'
 alias ip='ip -color=auto'
 
-# ── Подстраховка (только для ручного ввода, скрипты не затрагивает) ──────────
-alias rm='rm -I'              # спросит, если удаляется больше 3 файлов или рекурсивно
-alias cp='cp -i'              # спросит перед перезаписью
+alias rm='rm -I'
+alias cp='cp -i'
 alias mv='mv -i'
 
-# ── Удобства ─────────────────────────────────────────────────────────────────
 alias ..='cd ..'
 alias ...='cd ../..'
 alias df='df -h'
@@ -1647,47 +1936,44 @@ alias free='free -h'
 alias du1='du -h --max-depth=1 2>/dev/null | sort -h'
 alias ports='ss -tulpn'
 mkcd() { mkdir -p "$1" && cd "$1"; }
-psg() { ps aux | grep -i --color=auto -- "[${1:0:1}]${1:1}"; }                 # psg nginx — процессы по имени
-bak() { local f; for f in "$@"; do command cp -a "$f" "$f.bak-$(date +%Y%m%d-%H%M%S)" && echo "→ $f.bak-$(date +%Y%m%d-%H%M%S)"; done; }
-ex() {                                                                       # ex архив — распаковать что угодно
-    [[ -f $1 ]] || { echo "нет файла: $1"; return 1; }
+psg() { ps aux | grep -i --color=auto -- "[${1:0:1}]${1:1}"; }
+bak() { local f s; s=$(date +%Y%m%d-%H%M%S); for f in "$@"; do command cp -a "$f" "$f.bak-$s" && echo "→ $f.bak-$s"; done; }
+ex() {
+    [[ -f $1 ]] || { printf "$(__t ex_nofile)" "$1"; return 1; }
     case $1 in
         *.tar.gz|*.tgz)  tar xzf "$1" ;;   *.tar.xz|*.txz) tar xJf "$1" ;;   *.tar.bz2|*.tbz2) tar xjf "$1" ;;
         *.tar|*.tar.zst) tar xf "$1" ;;    *.gz)  gunzip -k "$1" ;;          *.bz2) bunzip2 -k "$1" ;;
         *.xz)  unxz -k "$1" ;;             *.zip) unzip -q "$1" ;;           *.7z)  7z x "$1" ;;
-        *) echo "не знаю, чем распаковать: $1"; return 1 ;;
+        *) printf "$(__t ex_unknown)" "$1"; return 1 ;;
     esac
 }
-h() {                                                                        # h [текст] — последние команды
+h() {
     if (( $# )); then history | grep -i -- "$*" | tail -n 30
     else history | tail -n 50; fi
 }
 
-# Дополнить строку пробелами до ширины n в символах (printf %-Ns считает байты и ломает кириллицу)
+# printf %-Ns counts bytes, which breaks alignment with Cyrillic — pad by characters instead
 __pad() { local s=$1 n=$(( $2 - ${#1} )); (( n < 1 )) && n=1; printf '%s%*s' "$s" "$n" ''; }
 
-# Цветная точка по статусу контейнера
 __dot() {
     case $1 in
         *unhealthy*|Restarting*) printf '\e[31m●\e[0m' ;;
         Up*starting*)            printf '\e[33m●\e[0m' ;;
         Up*)                     printf '\e[32m●\e[0m' ;;
-        'Exited (0)'*|Created*)  printf '\e[90m●\e[0m' ;;   # завершился штатно (migrate и т.п.)
+        'Exited (0)'*|Created*)  printf '\e[90m●\e[0m' ;;
         *)                       printf '\e[31m●\e[0m' ;;
     esac
 }
 
-# ── Docker ───────────────────────────────────────────────────────────────────
 if command -v docker >/dev/null; then
-    # Команды, которые удаляют тома (а значит базы), требуют набрать yes
     docker() {
         local args=" $* "
         local wipe_volumes=' down .*(-v|--volumes) ' remove_volumes=' volume (rm|prune) ' prune=' system prune '
         if [[ $args =~ $wipe_volumes || $args =~ $remove_volumes || $args =~ $prune ]]; then
-            printf '\e[1;31m⚠ %s: «docker %s» удалит данные (тома, базы).\e[0m\n' "${PROMPT_ENV:-$(hostname)}" "$*"
+            printf "\e[1;31m$(__t d_warn)\e[0m\n" "${PROMPT_ENV:-$(hostname)}" "$*"
             local answer
-            read -r -p 'Напиши yes, чтобы продолжить: ' answer
-            [[ $answer == yes ]] || { echo 'Отменено.'; return 1; }
+            read -r -p "$(__t d_ask)" answer
+            [[ $answer == yes ]] || { __t d_cancel; echo; return 1; }
         fi
         command docker "$@"
     }
@@ -1696,16 +1982,8 @@ if command -v docker >/dev/null; then
     alias dlogs='docker compose logs -f --tail=200'
 fi
 
-# ── Проекты ──────────────────────────────────────────────────────────────────
-#  proj                     список: статус и папка
-#  <имя> | proj <имя>       статус контейнеров проекта
-#  <имя> logs [сервис]      логи: последние 200 строк и дальше поток
-#  <имя> sh <сервис>        shell внутри контейнера
-#  <имя> cd  ·  app [имя]   перейти в папку проекта
-#  <имя> <что угодно>       docker compose <что угодно> в папке проекта
-#  proj add [имя] [папка]   добавить вручную (по умолчанию — текущая папка)
-#  proj rm <имя>            скрыть из списка
-PROJ_FILE=~/.config/projects                     # строки «имя<TAB>папка», папка «-» — скрыт
+# ── projects: discovered from docker compose, remembered in ~/.config/projects ("name<TAB>dir", "-" = hidden)
+PROJ_FILE=~/.config/projects
 declare -gA PROJ_DIR=() PROJ_STATUS=()
 declare -gA __PROJ_FUNCS __PROJ_SVC
 __PROJ_SUBCOMMANDS='cd sh logs ps up down restart stop start pull build exec run top config images'
@@ -1732,13 +2010,12 @@ __proj_load() {
         PROJ_STATUS[$name]=${BASH_REMATCH[2]}
         if [[ -z ${PROJ_DIR[$name]} && -d $dir ]]; then
             PROJ_DIR[$name]=$dir
-            # запоминаем — команда останется и после «down»
             mkdir -p "${PROJ_FILE%/*}" && printf '%s\t%s\n' "$name" "$dir" >> "$PROJ_FILE"
         fi
     done
 }
 
-# Команда с именем проекта: myapp ps. Не создаётся, если имя уже занято (git, nginx…) — тогда proj <имя>.
+# A function named after each project, unless the name is already a command (git, nginx…) — then `proj <name>`
 __proj_define() {
     local name
     for name in "${!PROJ_DIR[@]}"; do
@@ -1748,13 +2025,12 @@ __proj_define() {
         complete -F __proj_complete "$name"
         __PROJ_FUNCS[$name]=1
     done
-    for name in "${!__PROJ_FUNCS[@]}"; do       # проект скрыт или удалён — убираем его команду
+    for name in "${!__PROJ_FUNCS[@]}"; do
         [[ -n ${PROJ_DIR[$name]} ]] && continue
         unset -f "$name"; complete -r "$name" 2>/dev/null; unset "__PROJ_FUNCS[$name]"
     done
 }
 
-# Проект, в папке которого мы сейчас; если проект один — он
 __proj_current() {
     local name best= len=0 d
     for name in "${!PROJ_DIR[@]}"; do
@@ -1769,13 +2045,13 @@ __proj_cmd() { [[ -n ${__PROJ_FUNCS[$1]} ]] && printf '%s' "$1" || printf 'proj 
 
 __proj_list() {
     local d=$'\e[90m' t=$'\e[1;35m' c=$'\e[34m' r=$'\e[0m' name state dot
-    printf '\n  %sПроекты%s  %sproj add — добавить текущую папку · proj rm <имя> — скрыть%s\n' "$t" "$r" "$d" "$r"
+    printf '\n  %s%s%s  %s%s%s\n' "$t" "$(__t p_title)" "$r" "$d" "$(__t p_hint)" "$r"
     if (( ${#PROJ_DIR[@]} == 0 )); then
-        printf '  %sпока нет: запусти docker compose up в папке проекта или proj add%s\n\n' "$d" "$r"; return
+        printf '  %s%s%s\n\n' "$d" "$(__t p_none)" "$r"; return
     fi
     for name in $(printf '%s\n' "${!PROJ_DIR[@]}" | sort); do
-        state=${PROJ_STATUS[$name]:-не запущен}
-        case $state in *running*) dot=$'\e[32m●' ;; не*) dot=$'\e[90m○' ;; *) dot=$'\e[33m●' ;; esac
+        state=${PROJ_STATUS[$name]:-$(__t p_stopped)}
+        case $state in *running*) dot=$'\e[32m●' ;; "$(__t p_stopped)") dot=$'\e[90m○' ;; *) dot=$'\e[33m●' ;; esac
         printf '  %s%s %s%s%s %s %s%s%s\n' "$dot" "$r" "$c" "$(__pad "$(__proj_cmd "$name")" 16)" "$r" "$(__pad "$state" 24)" "$d" "${PROJ_DIR[$name]/#$HOME/\~}" "$r"
     done
     echo
@@ -1789,7 +2065,7 @@ __proj_status() {
         while IFS=$'\t' read -r svc state; do
             printf '  %s %-24s %s%s%s\n' "$(__dot "$state")" "$svc" "$d" "$state" "$r"
         done
-    printf '  %s%s logs <сервис> · %s sh <сервис> · %s restart <сервис> · %s cd%s\n\n' "$d" "$cmd" "$cmd" "$cmd" "$cmd" "$r"
+    printf "  %s$(__t p_cmds)%s\n\n" "$d" "$cmd" "$cmd" "$cmd" "$cmd" "$r"
 }
 
 proj() {
@@ -1798,40 +2074,40 @@ proj() {
         ''|ls) __proj_list; return ;;
         add)
             local dir=${3:-$PWD}
-            dir=$(cd "$dir" 2>/dev/null && pwd) || { echo "нет папки: ${3:-$PWD}"; return 1; }
+            dir=$(cd "$dir" 2>/dev/null && pwd) || { printf "$(__t p_nodir)" "${3:-$PWD}"; return 1; }
             name=${2:-${dir##*/}}
-            [[ $name =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "плохое имя: $name"; return 1; }
+            [[ $name =~ ^[A-Za-z0-9_.-]+$ ]] || { printf "$(__t p_badname)" "$name"; return 1; }
             mkdir -p "${PROJ_FILE%/*}"
             { [[ -f $PROJ_FILE ]] && awk -F'\t' -v n="$name" '$1 != n' "$PROJ_FILE"; printf '%s\t%s\n' "$name" "$dir"; } > "$PROJ_FILE.tmp" &&
                 command mv -f "$PROJ_FILE.tmp" "$PROJ_FILE"
             __proj_load; __proj_define
-            echo "добавлен: $(__proj_cmd "$name") → $dir"; return ;;
+            printf "$(__t p_added)" "$(__proj_cmd "$name")" "$dir"; return ;;
         rm)
             name=$2
-            [[ -n $name ]] || { echo 'укажи имя: proj rm <имя>'; return 1; }
+            [[ -n $name ]] || { __t p_rmname; echo; return 1; }
             mkdir -p "${PROJ_FILE%/*}"
             { [[ -f $PROJ_FILE ]] && awk -F'\t' -v n="$name" '$1 != n' "$PROJ_FILE"; printf '%s\t-\n' "$name"; } > "$PROJ_FILE.tmp" &&
                 command mv -f "$PROJ_FILE.tmp" "$PROJ_FILE"
             __proj_load; __proj_define
-            echo "скрыт: $name (вернуть: proj add $name <папка>)"; return ;;
+            printf "$(__t p_hidden)" "$name" "$name"; return ;;
     esac
 
     local dir=${PROJ_DIR[$name]}
-    [[ -n $dir ]] || { echo "нет проекта «$name» — список: proj"; return 1; }
+    [[ -n $dir ]] || { printf "$(__t p_unknown)" "$name"; return 1; }
     shift
     case $1 in
         '')   __proj_status "$name" ;;
         cd)   cd "$dir" ;;
-        sh)   [[ -n $2 ]] || { echo "укажи сервис: $(__proj_cmd "$name") sh <Tab>"; return 1; }
+        sh)   [[ -n $2 ]] || { printf "$(__t p_svc)" "$(__proj_cmd "$name")"; return 1; }
               (cd "$dir" && command docker compose exec "$2" sh -c 'command -v bash >/dev/null && exec bash || exec sh') ;;
         logs) shift
-              [[ $1 == -* ]] || set -- -f --tail=200 "$@"     # свои флаги — как есть
+              [[ $1 == -* ]] || set -- -f --tail=200 "$@"
               (cd "$dir" && command docker compose logs "$@") ;;
-        *)    (cd "$dir" && docker compose "$@") ;;          # через docker() — с защитой от down -v
+        *)    (cd "$dir" && docker compose "$@") ;;
     esac
 }
 
-__proj_services() {     # кладёт список сервисов в __svc (кэш на сессию)
+__proj_services() {
     local name=$1
     [[ -n ${__PROJ_SVC[$name]} ]] ||
         __PROJ_SVC[$name]=$(cd "${PROJ_DIR[$name]}" && timeout 5 docker compose config --services 2>/dev/null | tr '\n' ' ')
@@ -1855,14 +2131,14 @@ __proj_complete() {
 }
 complete -F __proj_complete proj
 
-app() {                 # app — в папку текущего/единственного проекта, app <имя> — в папку проекта
+app() {
     local name=${1:-$(__proj_current)}
     [[ -n $name ]] || { __proj_list; return; }
     proj "$name" cd
 }
-dsh() {                 # dsh <сервис> — shell в контейнере текущего/единственного проекта
+dsh() {
     local name; name=$(__proj_current)
-    [[ -n $name ]] || { echo 'проектов несколько — зайди в папку проекта или: <проект> sh <сервис>'; return 1; }
+    [[ -n $name ]] || { __t p_many; echo; return 1; }
     proj "$name" sh "$1"
 }
 __app_complete() { COMPREPLY=($(compgen -W "${!PROJ_DIR[*]}" -- "${COMP_WORDS[COMP_CWORD]}")); }
@@ -1873,8 +2149,7 @@ __dsh_complete() {
 complete -F __app_complete app
 complete -F __dsh_complete dsh
 
-# ── Состояние сервера ────────────────────────────────────────────────────────
-__bar() {       # __bar 67 → ████████████░░░░░░░░  67%
+__bar() {
     local p=${1%.*} w=${2:-20} c=$'\e[32m'
     (( p >= 90 )) && c=$'\e[31m' || { (( p >= 70 )) && c=$'\e[33m'; }
     local filled=$(( p * w / 100 ))
@@ -1882,23 +2157,29 @@ __bar() {       # __bar 67 → ████████████░░░░�
     printf '\e[0m %3d%%' "$p"
 }
 
+__bar_line() {   # "label__BAR__pct  note" → label + bar + note
+    local line pct
+    while IFS= read -r line; do
+        pct=${line#*__BAR__}; pct=${pct%%  *}
+        printf '%s%s%s\n' "${line%%__BAR__*}" "$(__bar "$pct")" "${line#*__BAR__$pct}"
+    done
+}
+
 sys() {
     local t=$'\e[1;35m' d=$'\e[90m' r=$'\e[0m' name state
-    printf '\n  %s%s%s  %s%s · %s%s\n' "$t" "$(hostname)" "$r" "$d" "$(uptime -p)" "${PROMPT_ENV:-без метки}" "$r"
+    printf '\n  %s%s%s  %s%s · %s%s\n' "$t" "$(hostname)" "$r" "$d" "$(uptime -p)" "${PROMPT_ENV:-$(__t sys_nolabel)}" "$r"
     local load; load=$(cut -d' ' -f1 /proc/loadavg)
-    printf '  %sнагрузка%s   %s  %s%s · ядер: %s%s\n' "$d" "$r" "$(__bar "$(awk -v l="$load" -v n="$(nproc)" 'BEGIN{printf "%d", l/n*100}')")" "$d" "$(cut -d' ' -f1-3 /proc/loadavg)" "$(nproc)" "$r"
-    # command — иначе подставятся алиасы free -h / df -h, объявленные выше
-    command free -b | awk -v d="$d" -v r="$r" '/^Mem:/ {printf "  %sпамять%s     __BAR__%d  %s%.1f из %.1f ГБ%s\n", d, r, ($2-$7)/$2*100, d, ($2-$7)/1073741824, $2/1073741824, r}' |
-        while IFS= read -r line; do local pct=${line#*__BAR__}; pct=${pct%%  *}; printf '%s%s%s\n' "${line%%__BAR__*}" "$(__bar "$pct")" "${line#*__BAR__$pct}"; done
-    command df -P / | awk -v d="$d" -v r="$r" 'NR==2 {gsub("%","",$5); printf "  %sдиск /%s     __BAR__%d  %s%.0f из %.0f ГБ%s\n", d, r, $5, d, $3/1048576, $2/1048576, r}' |
-        while IFS= read -r line; do local pct=${line#*__BAR__}; pct=${pct%%  *}; printf '%s%s%s\n' "${line%%__BAR__*}" "$(__bar "$pct")" "${line#*__BAR__$pct}"; done
+    printf '  %s%s%s  %s  %s%s · %s: %s%s\n' "$d" "$(__pad "$(__t sys_load)" 9)" "$r" "$(__bar "$(awk -v l="$load" -v n="$(nproc)" 'BEGIN{printf "%d", l/n*100}')")" "$d" "$(cut -d' ' -f1-3 /proc/loadavg)" "$(__t sys_cores)" "$(nproc)" "$r"
+    # `command` — the free/df aliases above would otherwise change the output format
+    command free -b | awk -v d="$d" -v r="$r" -v L="$(__pad "$(__t sys_mem)" 9)" -v of="$(__t of)" '/^Mem:/ {printf "  %s%s%s  __BAR__%d  %s%.1f %s %.1f GB%s\n", d, L, r, ($2-$7)/$2*100, d, ($2-$7)/1073741824, of, $2/1073741824, r}' | __bar_line
+    command df -P / | awk -v d="$d" -v r="$r" -v L="$(__pad "$(__t sys_disk)" 9)" -v of="$(__t of)" 'NR==2 {gsub("%","",$5); printf "  %s%s%s  __BAR__%d  %s%.0f %s %.0f GB%s\n", d, L, r, $5, d, $3/1048576, of, $2/1048576, r}' | __bar_line
 
-    printf '\n  %sтоп процессов%s\n' "$t" "$r"
+    printf '\n  %s%s%s\n' "$t" "$(__t sys_top)" "$r"
     ps -eo comm,%cpu,%mem --sort=-%cpu --no-headers | head -n 5 |
         awk -v c=$'\e[34m' -v d="$d" -v r="$r" '{printf "  %s%-26s%s %scpu %5.1f%%   mem %5.1f%%%s\n", c, $1, r, d, $2, $3, r}'
 
     if command -v docker >/dev/null; then
-        printf '\n  %sконтейнеры%s\n' "$t" "$r"
+        printf '\n  %s%s%s\n' "$t" "$(__t sys_cont)" "$r"
         command docker ps -a --format '{{.Names}}'$'\t''{{.Status}}' | while IFS=$'\t' read -r name state; do
             printf '  %s %-30s %s%s%s\n' "$(__dot "$state")" "$name" "$d" "$state" "$r"
         done
@@ -1906,7 +2187,6 @@ sys() {
     echo
 }
 
-# ── Шпаргалка: help · help <слово> — поиск · help <встроенная команда> — справка bash
 __help_rows() {
     local f=$1
     __help_section() { __pending_title=$1; }
@@ -1917,49 +2197,50 @@ __help_rows() {
     }
     local ex; ex=$(__proj_current); ex=${ex:-${!PROJ_DIR[*]}}; ex=${ex%% *}; ex=${ex:-myapp}
     local p; p=$(__proj_cmd "$ex")
+    local P; P=$(__t k_proj)
+    local S; S=$(__t k_svc)
 
-    __help_section 'Проекты  (находятся сами: docker compose ls)'
-    __help_row 'proj' 'все проекты: статус и папка'
-    __help_row '<проект>' 'статус контейнеров' "$p"
-    __help_row '<проект> logs [сервис]' 'логи: 200 строк и дальше поток' "$p logs web"
-    __help_row '<проект> sh <сервис>' 'shell внутри контейнера' "$p sh web"
-    __help_row '<проект> <команда>' 'любая docker compose команда' "$p restart web"
-    __help_row '<проект> cd · app' 'перейти в папку проекта' "app $ex"
-    __help_row 'dsh <сервис>' 'shell в контейнере проекта, где ты сейчас'
-    __help_row 'proj add [имя] [папка]' 'добавить вручную (по умолчанию — текущую)'
-    __help_row 'proj rm <имя>' 'скрыть из списка'
-    __help_section 'Docker'
-    __help_row 'dps' 'все контейнеры: статус и порты'
-    __help_row 'dc · dlogs' 'docker compose / логи в текущей папке'
-    __help_section 'Сервер'
-    __help_row 'sys' 'нагрузка, память, диск, процессы, контейнеры'
-    __help_row 'ports' 'кто слушает порты'
-    __help_row 'psg <имя>' 'процессы по имени' 'psg nginx'
-    __help_row 'df · free · du1' 'диск · память · размер папок здесь'
-    __help_section 'Файлы'
-    __help_row 'll · la' 'подробный список · со скрытыми'
-    __help_row 'bak <файл>' 'копия рядом: файл.bak-дата — перед правкой на проде' 'bak .env'
-    __help_row 'ex <архив>' 'распаковать: tar.gz, zip, xz, 7z…'
-    __help_row '.. · ... · mkcd <папка>' 'вверх · два вверх · создать и зайти'
-    __help_section 'История и ввод'
-    __help_row 'h · h <текст>' 'последние 50 команд · поиск'
-    __help_row 'начало команды + ↑/↓' 'листать только подходящие из истории'
-    __help_row 'Ctrl+R' 'поиск по всей истории'
-    __help_row 'Tab' 'дополнение без учёта регистра (и сервисов)'
-    __help_row ' команда (с пробелом)' 'не сохранится в историю — для паролей'
-    __help_section 'Подстраховка'
-    __help_row 'rm · cp · mv' 'спрашивают перед массовым удалением'
-    __help_row 'down -v · volume rm · prune' 'docker требует набрать yes'
-    __help_row '\rm …' 'без подтверждения (обход алиаса)'
-    __help_row '● prod в промпте' 'метка сервера: ~/.config/bashrc-local.conf'
+    __help_section "$(__t s_proj)"
+    __help_row 'proj' "$(__t r_proj)"
+    __help_row "$P" "$(__t r_status)" "$p"
+    __help_row "$P logs [$S]" "$(__t r_logs)" "$p logs web"
+    __help_row "$P sh <$S>" "$(__t r_sh)" "$p sh web"
+    __help_row "$P <cmd>" "$(__t r_any)" "$p restart web"
+    __help_row "$P cd · app" "$(__t r_cd)" "app $ex"
+    __help_row "dsh <$S>" "$(__t r_dsh)"
+    __help_row "proj add [$(__t k_name)] [$(__t k_folder)]" "$(__t r_add)"
+    __help_row "proj rm <$(__t k_name)>" "$(__t r_rm)"
+    __help_section "$(__t s_docker)"
+    __help_row 'dps' "$(__t r_dps)"
+    __help_row 'dc · dlogs' "$(__t r_dc)"
+    __help_section "$(__t s_server)"
+    __help_row 'sys' "$(__t r_sys)"
+    __help_row 'ports' "$(__t r_ports)"
+    __help_row "psg <$(__t k_name)>" "$(__t r_psg)" 'psg nginx'
+    __help_row 'df · free · du1' "$(__t r_df)"
+    __help_section "$(__t s_files)"
+    __help_row 'll · la' "$(__t r_ll)"
+    __help_row "bak <$(__t k_file)>" "$(__t r_bak)" 'bak .env'
+    __help_row "ex <$(__t k_archive)>" "$(__t r_ex)"
+    __help_row ".. · ... · mkcd <$(__t k_folder)>" "$(__t r_up)"
+    __help_section "$(__t s_hist)"
+    __help_row 'h · h <text>' "$(__t r_h)"
+    __help_row "$(__t k_arrows)" "$(__t r_arrows)"
+    __help_row 'Ctrl+R' "$(__t r_ctrlr)"
+    __help_row 'Tab' "$(__t r_tab)"
+    __help_row "$(__t k_space)" "$(__t r_space)"
+    __help_section "$(__t s_guard)"
+    __help_row 'rm · cp · mv' "$(__t r_rm_guard)"
+    __help_row 'down -v · volume rm · prune' "$(__t r_down)"
+    __help_row '\rm …' "$(__t r_noguard)"
+    __help_row "$(__t k_env)" "$(__t r_env)"
 
-    # Своё: ~/bin/* и ~/.bashrc.d/*.sh со строками «# help: имя — описание»
-    __help_section 'Своё  (~/bin, ~/.bashrc.d)'
+    __help_section "$(__t own)"
     local file line
     for file in ~/bin/*; do
         [[ -f $file && -x $file ]] || continue
         line=$(head -n 15 "$file" | sed -n 's/^[[:space:]]*\(#\|\/\/\|;;\|--\)[[:space:]]*help:[[:space:]]*//p' | head -n1)
-        __help_row "${file##*/}" "${line:-скрипт в ~/bin}"
+        __help_row "${file##*/}" "${line:-$(__t own_script)}"
     done
     for file in ~/.bashrc.d/*.sh; do
         [[ -f $file ]] || continue
@@ -1973,31 +2254,28 @@ __help_rows() {
 help() {
     local d=$'\e[90m' t=$'\e[1;35m' r=$'\e[0m'
     if (( $# )) && builtin help "$1" >/dev/null 2>&1; then builtin help "$@"; return; fi
-    printf '\n  %s✦ %s%s%s   %shelp <слово> — поиск · help <встроенная> — справка bash%s\n' "$t" "$(hostname)" "${PROMPT_ENV:+ · $PROMPT_ENV}" "$r" "$d" "$r"
-    if (( ${#PROJ_DIR[@]} )); then printf '  %sпроекты: %s%s\n' "$d" "$(for n in "${!PROJ_DIR[@]}"; do printf '%s  ' "$(__proj_cmd "$n")"; done)" "$r"; fi
+    printf '\n  %s✦ %s%s%s   %s%s%s\n' "$t" "$(hostname)" "${PROMPT_ENV:+ · $PROMPT_ENV}" "$r" "$d" "$(__t help_hint)" "$r"
+    if (( ${#PROJ_DIR[@]} )); then printf '  %s%s: %s%s\n' "$d" "$(__t projects)" "$(for n in "${!PROJ_DIR[@]}"; do printf '%s  ' "$(__proj_cmd "$n")"; done)" "$r"; fi
     local __pending_title=
     __help_rows "$*"
     echo
 }
 
-# ── Своё: ~/.bashrc.d/*.sh (уезжают с srv install, остаются при обновлении) ──
 for __f in ~/.bashrc.d/*.sh; do [[ -f $__f ]] && . "$__f"; done; unset __f
 
-# ── Старт ────────────────────────────────────────────────────────────────────
 __proj_load
 __proj_define
 
 if shopt -q login_shell; then
     __names=$(for n in $(printf '%s\n' "${!PROJ_DIR[@]}" | sort); do printf '%s ' "$(__proj_cmd "$n")"; done)
-    printf '\e[90m  %shelp — шпаргалка · sys — состояние сервера\e[0m\n' "${__names:+проекты: $__names· }"
+    printf '\e[90m  %s%s\e[0m\n' "${__names:+$(__t projects): $__names· }" "$(__t banner)"
     unset __names
 fi
 '@
 $EmbeddedFiles['srv-inputrc'] = @'
-# srv: managed — ставится командой srv install, старая версия сохраняется в ~/.inputrc.bak-*
+# srv: managed — installed by srv install; the previous file is kept as ~/.inputrc.bak-*
 $include /etc/inputrc
 
-# Tab: без учёта регистра, сразу список вариантов, цветом
 set completion-ignore-case on
 set show-all-if-ambiguous on
 set colored-stats on
@@ -2005,26 +2283,43 @@ set colored-completion-prefix on
 set mark-symlinked-directories on
 set bell-style none
 
-# Набрал начало команды + ↑/↓ — листаешь только подходящие из истории
 "\e[A": history-search-backward
 "\e[B": history-search-forward
 
-# Ctrl+← / Ctrl+→ — по словам
 "\e[1;5C": forward-word
 "\e[1;5D": backward-word
 '@
 $EmbeddedFiles['srv-install'] = @'
-# Выполняется на сервере командой srv (PowerShell) через одно ssh-подключение.
-# Плейсхолдеры __…__ подставляет srv. Сам ничего не печатает в .bashrc, кроме одной строки подключения.
+# Runs on the server through `ssh host 'bash -s'`; placeholders __…__ are filled by srv (PowerShell).
 set -eu
 umask 022
 
 action='__ACTION__'
 env_label='__ENV__'
+lang='__LANG__'
+[[ $lang == en ]] || lang=ru
 ts=$(date +%Y%m%d-%H%M%S)
 ok=$'\e[32m✓\e[0m' warn=$'\e[33m!\e[0m' bad=$'\e[31m✗\e[0m' dim=$'\e[90m' r=$'\e[0m'
 conf=~/.config/bashrc-local.conf
 hook='[ -f ~/.bashrc.local ] && . ~/.bashrc.local   # prompt, history, helpers (srv)'
+
+declare -A M_ru=(
+    [removed_hook]='строка подключения убрана из ~/.bashrc' [backup]='бэкап' [kept]='~/.config/projects, ~/.config/bashrc-local.conf и ~/.bashrc.d оставлены'
+    [uptodate]='уже актуален' [syntax_err]='синтаксическая ошибка — ничего не меняю' [load_err]='пробная загрузка с ошибками — ничего не меняю:'
+    [checked]='проверка: синтаксис и пробная загрузка' [label]='метка' [none]='нет' [lang]='язык' [migrated]='метка перенесена из старой версии'
+    [created]='создан' [hook_present]='~/.bashrc уже подключает ~/.bashrc.local' [hook_added]='~/.bashrc: добавлена строка подключения'
+    [profile_warn]='~/.bash_profile не подключает ~/.bashrc — добавь: [ -f ~/.bashrc ] && . ~/.bashrc' [profile_created]='создан ~/.bash_profile (подключает ~/.bashrc при входе)'
+    [projects]='проекты' [relogin]='перезайди по ssh, затем help'
+)
+declare -A M_en=(
+    [removed_hook]='hook line removed from ~/.bashrc' [backup]='backup' [kept]='~/.config/projects, ~/.config/bashrc-local.conf and ~/.bashrc.d kept'
+    [uptodate]='already up to date' [syntax_err]='syntax error — nothing changed' [load_err]='trial load failed — nothing changed:'
+    [checked]='checked: syntax and trial load' [label]='label' [none]='none' [lang]='language' [migrated]='label migrated from the old version'
+    [created]='created' [hook_present]='~/.bashrc already sources ~/.bashrc.local' [hook_added]='~/.bashrc: hook line added'
+    [profile_warn]='~/.bash_profile does not source ~/.bashrc — add: [ -f ~/.bashrc ] && . ~/.bashrc' [profile_created]='created ~/.bash_profile (sources ~/.bashrc on login)'
+    [projects]='projects' [relogin]='reconnect over ssh, then help'
+)
+m() { local v="M_${lang}[$1]"; printf '%s' "${!v}"; }
 
 echo "${dim}$(whoami)@$(hostname) · $(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME") · bash ${BASH_VERSION%%(*}${r}"
 
@@ -2032,7 +2327,7 @@ if [ "$action" = remove ]; then
     if [ -f ~/.bashrc ] && grep -qF '.bashrc.local' ~/.bashrc; then
         cp -p ~/.bashrc ~/.bashrc.bak-$ts
         grep -vF '.bashrc.local' ~/.bashrc.bak-$ts > ~/.bashrc || true
-        echo "$ok строка подключения убрана из ~/.bashrc ${dim}(бэкап ~/.bashrc.bak-$ts)${r}"
+        echo "$ok $(m removed_hook) ${dim}($(m backup) ~/.bashrc.bak-$ts)${r}"
     fi
     if [ -f ~/.bashrc.local ]; then
         mv ~/.bashrc.local ~/.bashrc.local.off-$ts
@@ -2042,17 +2337,16 @@ if [ "$action" = remove ]; then
         mv ~/.inputrc ~/.inputrc.off-$ts
         echo "$ok ~/.inputrc → ~/.inputrc.off-$ts"
     fi
-    echo "${dim}~/.config/projects, ~/.config/bashrc-local.conf и ~/.bashrc.d оставлены${r}"
+    echo "${dim}$(m kept)${r}"
     exit 0
 fi
 
-# __put <путь от ~> <base64> — записать файл, если он отличается (свои файлы из server\custom)
 __put() {
     local target=~/"$1" tmp
     tmp=$(mktemp)
     printf '%s' "$2" | base64 -d > "$tmp"
     mkdir -p "${target%/*}"
-    if [ -f "$target" ] && cmp -s "$tmp" "$target"; then rm -f "$tmp"; echo "$ok ~/$1 уже актуален"; return; fi
+    if [ -f "$target" ] && cmp -s "$tmp" "$target"; then rm -f "$tmp"; echo "$ok ~/$1 $(m uptodate)"; return; fi
     cat "$tmp" > "$target"; rm -f "$tmp"
     echo "$ok ~/$1"
 }
@@ -2062,118 +2356,106 @@ trap 'rm -rf "$work"' EXIT
 printf '%s' '__BASHRC_B64__' | base64 -d > "$work/bashrc.local"
 printf '%s' '__INPUTRC_B64__' | base64 -d > "$work/inputrc"
 
-# 1. проверка до любых изменений
-bash -n "$work/bashrc.local" || { echo "$bad синтаксическая ошибка — ничего не меняю"; exit 1; }
+bash -n "$work/bashrc.local" || { echo "$bad $(m syntax_err)"; exit 1; }
 errors=$(HOME=$HOME bash --norc -i -c ". '$work/bashrc.local'" </dev/null 2>&1 >/dev/null |
     grep -v -e 'job control' -e 'terminal process group' -e 'Inappropriate ioctl' || true)
 if [ -n "$errors" ]; then
-    echo "$bad пробная загрузка с ошибками — ничего не меняю:"; echo "$errors"; exit 1
+    echo "$bad $(m load_err)"; echo "$errors"; exit 1
 fi
-echo "$ok проверка: синтаксис и пробная загрузка"
+echo "$ok $(m checked)"
 
-# 2. настройки сервера (метка prod/staging) — отдельно от общего файла
 mkdir -p ~/.config
+{ [ -f "$conf" ] && grep -v -e '^PROMPT_ENV=' -e '^LANG_UI=' "$conf" || true; } > "$work/conf"
 if [ -n "$env_label" ]; then
-    { [ -f "$conf" ] && grep -v '^PROMPT_ENV=' "$conf" || true; } > "$work/conf"
     [ "$env_label" = none ] && env_label=''
-    printf 'PROMPT_ENV=%s\n' "$env_label" >> "$work/conf"
-    cat "$work/conf" > "$conf"
-    echo "$ok метка: ${env_label:-нет}"
-elif [ ! -f "$conf" ] && [ -f ~/.bashrc.local ]; then
-    # переезд со старой версии, где метка была прямо в файле
-    old_env=$(sed -n 's/^PROMPT_ENV=\([A-Za-z0-9_-]*\).*/\1/p' ~/.bashrc.local | head -n1)
-    if [ -n "$old_env" ]; then
-        printf 'PROMPT_ENV=%s\n' "$old_env" > "$conf"
-        echo "$ok метка перенесена из старой версии: $old_env"
-    fi
+elif [ -f "$conf" ]; then
+    env_label=$(sed -n 's/^PROMPT_ENV=\([A-Za-z0-9_-]*\).*/\1/p' "$conf" | head -n1)
+elif [ -f ~/.bashrc.local ]; then
+    env_label=$(sed -n 's/^PROMPT_ENV=\([A-Za-z0-9_-]*\).*/\1/p' ~/.bashrc.local | head -n1)
+    [ -n "$env_label" ] && echo "$ok $(m migrated): $env_label"
 fi
+printf 'PROMPT_ENV=%s\nLANG_UI=%s\n' "$env_label" "$lang" >> "$work/conf"
+cat "$work/conf" > "$conf"
+echo "$ok $(m label): ${env_label:-$(m none)} · $(m lang): $lang"
 
-# 3. ~/.bashrc.local
 old_ver=$(sed -n 's/^# version: //p' ~/.bashrc.local 2>/dev/null | head -n1 || true)
 new_ver=$(sed -n 's/^# version: //p' "$work/bashrc.local" | head -n1)
 if [ -f ~/.bashrc.local ] && cmp -s "$work/bashrc.local" ~/.bashrc.local; then
-    echo "$ok ~/.bashrc.local уже актуален ${dim}($new_ver)${r}"
+    echo "$ok ~/.bashrc.local $(m uptodate) ${dim}($new_ver)${r}"
 else
     if [ -f ~/.bashrc.local ]; then
         cp -p ~/.bashrc.local ~/.bashrc.local.bak-$ts
-        echo "$ok бэкап: ~/.bashrc.local.bak-$ts"
+        echo "$ok $(m backup): ~/.bashrc.local.bak-$ts"
     fi
     cat "$work/bashrc.local" > ~/.bashrc.local
-    echo "$ok ~/.bashrc.local ${dim}${old_ver:-нет} → ${r}$new_ver"
+    echo "$ok ~/.bashrc.local ${dim}${old_ver:-$(m none)} → ${r}$new_ver"
 fi
 
-# 4. ~/.inputrc (стрелки по истории, Tab без регистра)
 if [ -f ~/.inputrc ] && cmp -s "$work/inputrc" ~/.inputrc; then
-    echo "$ok ~/.inputrc уже актуален"
+    echo "$ok ~/.inputrc $(m uptodate)"
 else
     if [ -f ~/.inputrc ]; then
         cp -p ~/.inputrc ~/.inputrc.bak-$ts
-        echo "$ok бэкап: ~/.inputrc.bak-$ts"
+        echo "$ok $(m backup): ~/.inputrc.bak-$ts"
     fi
     cat "$work/inputrc" > ~/.inputrc
     echo "$ok ~/.inputrc"
 fi
 
-# 5. подключение из ~/.bashrc (одна строка, повторно не добавляется)
 if [ ! -f ~/.bashrc ]; then
     if [ -f /etc/skel/.bashrc ]; then cp /etc/skel/.bashrc ~/.bashrc; else : > ~/.bashrc; fi
-    echo "$ok создан ~/.bashrc"
+    echo "$ok ~/.bashrc $(m created)"
 fi
 if grep -qF '.bashrc.local' ~/.bashrc; then
-    echo "$ok ~/.bashrc уже подключает ~/.bashrc.local"
+    echo "$ok $(m hook_present)"
 else
     cp -p ~/.bashrc ~/.bashrc.bak-$ts
     printf '\n%s\n' "$hook" >> ~/.bashrc
-    echo "$ok ~/.bashrc: добавлена строка подключения ${dim}(бэкап ~/.bashrc.bak-$ts)${r}"
+    echo "$ok $(m hook_added) ${dim}($(m backup) ~/.bashrc.bak-$ts)${r}"
 fi
 
-# 6. свои файлы для серверов: server\custom\*.sh → ~/.bashrc.d/
 mkdir -p ~/.bashrc.d
 __CUSTOM_FILES__
 
-# 7. при входе по ssh bash читает .bash_profile/.profile — они должны подтягивать .bashrc
 if [ -f ~/.bash_profile ]; then
-    grep -q 'bashrc' ~/.bash_profile || echo "$warn ~/.bash_profile не подключает ~/.bashrc — добавь: [ -f ~/.bashrc ] && . ~/.bashrc"
+    grep -q 'bashrc' ~/.bash_profile || echo "$warn $(m profile_warn)"
 elif [ ! -f ~/.bash_login ] && [ ! -f ~/.profile ]; then
     printf '%s\n' '[ -f ~/.bashrc ] && . ~/.bashrc' > ~/.bash_profile
-    echo "$ok создан ~/.bash_profile (подключает ~/.bashrc при входе)"
+    echo "$ok $(m profile_created)"
 fi
 
-# 8. итог
 projects=$(bash --norc -i -c '. ~/.bashrc.local; printf "%s " "${!PROJ_DIR[@]}"' </dev/null 2>/dev/null || true)
-echo "${dim}проекты: ${projects:-нет} · перезайди по ssh, затем help${r}"
+echo "${dim}$(m projects): ${projects:-$(m none)} · $(m relogin)${r}"
 # end
 '@
 
-# ── 1. Программы ─────────────────────────────────────────────────────────────
 if (-not $SkipApps) {
-    Step 'Программы'
+    Step $L.s_apps
     if (-not (Test-Command winget)) {
-        Warn 'нет winget — программы пропускаю (App Installer из Microsoft Store)'
+        Warn $L.skip_apps
     } else {
         Install-WingetPackage 'Microsoft.WindowsTerminal' 'wt' 'Windows Terminal'
         $apps = @(
             @('Git.Git', 'git', 'git'),
-            @('JanDeDobbeleer.OhMyPosh', 'oh-my-posh', 'oh-my-posh — промпт'),
-            @('junegunn.fzf', 'fzf', 'fzf — поиск по истории и файлам'),
-            @('ajeetdsouza.zoxide', 'zoxide', 'zoxide — z <папка>'),
-            @('eza-community.eza', 'eza', 'eza — l / ll / lt'),
-            @('sharkdp.bat', 'bat', 'bat — просмотр файлов'),
-            @('BurntSushi.ripgrep.MSVC', 'rg', 'ripgrep — rg'),
-            @('sharkdp.fd', 'fd', 'fd — поиск файлов'),
-            @('dandavison.delta', 'delta', 'delta — диффы git'),
-            @('JesseDuffield.lazygit', 'lazygit', 'lazygit — git в полноэкранном интерфейсе'),
-            @('tldr-pages.tlrc', 'tldr', 'tldr — короткие шпаргалки по командам'),
-            @('GitHub.cli', 'gh', 'gh — GitHub из терминала')
+            @('JanDeDobbeleer.OhMyPosh', 'oh-my-posh', 'oh-my-posh'),
+            @('junegunn.fzf', 'fzf', 'fzf'),
+            @('ajeetdsouza.zoxide', 'zoxide', 'zoxide'),
+            @('eza-community.eza', 'eza', 'eza'),
+            @('sharkdp.bat', 'bat', 'bat'),
+            @('BurntSushi.ripgrep.MSVC', 'rg', 'ripgrep'),
+            @('sharkdp.fd', 'fd', 'fd'),
+            @('dandavison.delta', 'delta', 'delta'),
+            @('JesseDuffield.lazygit', 'lazygit', 'lazygit'),
+            @('tldr-pages.tlrc', 'tldr', 'tldr'),
+            @('GitHub.cli', 'gh', 'gh')
         )
         foreach ($a in $apps) { Install-WingetPackage $a[0] $a[1] $a[2] }
     }
 
-    # ── 2. Шрифт ─────────────────────────────────────────────────────────────
-    Step 'Шрифт JetBrainsMono Nerd Font'
+    Step $L.s_font
     $missing = @($FontStyles.Keys | Where-Object { -not (Test-Path "$env:windir\Fonts\JetBrainsMonoNerdFont-$_.ttf") })
     if (-not $missing) {
-        Ok 'уже установлен для всех пользователей'
+        Ok $L.font_present
     } else {
         $fontTmp = Join-Path ([IO.Path]::GetTempPath()) "nerd-font-$Stamp"
         New-Item -ItemType Directory -Force $fontTmp | Out-Null
@@ -2182,10 +2464,10 @@ if (-not $SkipApps) {
                 $file = Join-Path $fontTmp "JetBrainsMonoNerdFont-$style.ttf"
                 Invoke-WebRequest "$FontBaseUrl/$style/JetBrainsMonoNerdFont-$style.ttf" -OutFile $file -UseBasicParsing
                 $head = [IO.File]::ReadAllBytes($file)[0..3] -join ','
-                if ((Get-Item $file).Length -lt 500KB -or $head -ne '0,1,0,0') { throw "скачался не шрифт: $style" }
+                if ((Get-Item $file).Length -lt 500KB -or $head -ne '0,1,0,0') { throw ($L.font_notfont -f $style) }
             }
-            Info "скачано: $($missing -join ', ')"
-            # Ставим в C:\Windows\Fonts — шрифты «только для меня» Windows Terminal не видит
+            Info ($L.font_downloaded -f ($missing -join ', '))
+            # per-user fonts are invisible to the packaged Windows Terminal, so install machine-wide
             $installer = Join-Path $fontTmp 'install-font.ps1'
             $styleMap = ($FontStyles.GetEnumerator() | ForEach-Object { "'$($_.Key)'='$($_.Value)'" }) -join ';'
             @"
@@ -2200,50 +2482,49 @@ foreach (`$f in Get-ChildItem '$fontTmp' -Filter *.ttf) {
             if (Test-Admin) {
                 & $installer
             } else {
-                Info 'нужны права администратора — подтверди запрос Windows (UAC)'
+                Info $L.font_uac
                 Start-Process (Get-Pwsh) -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$installer`""
             }
             $still = @($FontStyles.Keys | Where-Object { -not (Test-Path "$env:windir\Fonts\JetBrainsMonoNerdFont-$_.ttf") })
-            if ($still) { Warn "не установились: $($still -join ', ')" } else { Ok 'установлен для всех пользователей' }
+            if ($still) { Warn ($L.font_failed -f ($still -join ', ')) } else { Ok $L.font_done }
         } catch {
-            Warn "шрифт не установлен: $($_.Exception.Message)"
+            Warn ($L.font_error -f $_.Exception.Message)
         } finally {
             Remove-Item $fontTmp -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 
-    # ── 3. Модуль PSFzf (Ctrl+R / Ctrl+T / Alt+C через fzf) ───────────────────
-    Step 'Модуль PSFzf'
-    if (Get-Module -ListAvailable PSFzf) { Ok 'уже есть' }
+    Step $L.s_psfzf
+    if (Get-Module -ListAvailable PSFzf) { Ok $L.present }
     else {
-        try { Install-Module PSFzf -Scope CurrentUser -Force -AllowClobber; Ok 'установлен' }
-        catch { Warn "не установился: $($_.Exception.Message)" }
+        try { Install-Module PSFzf -Scope CurrentUser -Force -AllowClobber; Ok $L.installed }
+        catch { Warn ($L.psfzf_failed -f $_.Exception.Message) }
     }
 }
 $FontInstalled = Test-Path "$env:windir\Fonts\JetBrainsMonoNerdFont-Regular.ttf"
-if (-not $FontInstalled) { $FontFace = 'Cascadia Mono'; Warn 'Nerd Font нет — в терминале будет Cascadia Mono (иконки не покажутся)' }
+if (-not $FontInstalled) { $FontFace = 'Cascadia Mono'; Warn $L.font_fallback }
 
-# ── 4. Файлы профиля ─────────────────────────────────────────────────────────
 function Write-ManagedFile([string]$Path, [string]$Content) {
     $Content = ($Content -replace "`r`n", "`n").TrimEnd("`n") + "`n"
     $dir = Split-Path $Path
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }
     if (Test-Path $Path) {
         $old = [IO.File]::ReadAllText($Path) -replace "`r`n", "`n"
-        if ($old -eq $Content) { Ok "$(Short $Path) — без изменений"; return }
+        if ($old -eq $Content) { Ok "$(Short $Path) — $($L.unchanged)"; return }
         Copy-Item $Path "$Path.bak-$Stamp" -Force
         [IO.File]::WriteAllText($Path, $Content, $Utf8NoBom)
-        Ok "$(Short $Path) — обновлён $([char]0x00B7) старый: $(Split-Path $Path -Leaf).bak-$Stamp"
+        Ok "$(Short $Path) — $($L.updated) $([char]0x00B7) $($L.old): $(Split-Path $Path -Leaf).bak-$Stamp"
     } else {
         [IO.File]::WriteAllText($Path, $Content, $Utf8NoBom)
-        Ok "$(Short $Path) — создан"
+        Ok "$(Short $Path) — $($L.created)"
     }
 }
 
-Step 'Профиль PowerShell и шаблоны'
+Step $L.s_profile
 $targets = [ordered]@{
     'profile'     = $PROFILE
     'palette'     = Join-Path $ProfileDir 'palette.ps1'
+    'lang'        = Join-Path $ProfileDir 'lang.ps1'
     'toolkit'     = Join-Path $ProfileDir 'toolkit.ps1'
     'predictor'   = Join-Path $ProfileDir 'DeepHistoryPredictor.cs'
     'omp-theme'   = Join-Path $HOME '.config\ohmyposh\soft.omp.json'
@@ -2253,26 +2534,23 @@ $targets = [ordered]@{
 }
 foreach ($key in $targets.Keys) { Write-ManagedFile $targets[$key] $EmbeddedFiles[$key] }
 
-# custom.ps1 — только если его ещё нет: это файл пользователя, его никогда не перезаписываем
 $customFile = Join-Path $ProfileDir 'custom.ps1'
-if (Test-Path $customFile) { Ok "$(Short $customFile) — твой, не трогаю" }
-else { [IO.File]::WriteAllText($customFile, ($EmbeddedFiles['custom'] -replace "`r`n", "`n"), $Utf8NoBom); Ok "$(Short $customFile) — создан (для своих настроек и команд)" }
+if (Test-Path $customFile) { Ok "$(Short $customFile) — $($L.custom_yours)" }
+else { [IO.File]::WriteAllText($customFile, ($EmbeddedFiles['custom'] -replace "`r`n", "`n"), $Utf8NoBom); Ok "$(Short $customFile) — $($L.custom_created)" }
 foreach ($d in 'bin', 'server\custom') {
     $p = Join-Path $ProfileDir $d
-    if (-not (Test-Path $p)) { New-Item -ItemType Directory -Force $p | Out-Null; Ok "$(Short $p)\ — создана" }
+    if (-not (Test-Path $p)) { New-Item -ItemType Directory -Force $p | Out-Null; Ok "$(Short $p)\ — $($L.dir_created)" }
 }
 
-# Тема: файл ~/.config/terminal-setup/theme (одно слово), по умолчанию mocha
+New-Item -ItemType Directory -Force $ConfigDir | Out-Null
+[IO.File]::WriteAllText($LangFile, "$Lang`n")
+Ok ($L.lang_set -f $Lang)
 . ([scriptblock]::Create($EmbeddedFiles['palette']))
-if ($Theme) {
-    New-Item -ItemType Directory -Force (Split-Path $ThemeFile) | Out-Null
-    [IO.File]::WriteAllText($ThemeFile, "$Theme`n")
-}
+if ($Theme) { [IO.File]::WriteAllText($ThemeFile, "$Theme`n") }
 $ThemeName = Get-ThemeName
 $ThemeTitle = "Catppuccin $((Get-Culture).TextInfo.ToTitleCase($ThemeName))"
-Ok "тема: $ThemeName $([char]0x00B7) сменить: theme latte"
+Ok ($L.theme_set -f $ThemeName)
 
-# ── 5. Windows Terminal ──────────────────────────────────────────────────────
 function Set-Key($Table, [string]$Key, $Value) { $Table[$Key] = $Value }
 
 function Get-StableGuid([string]$Text) {
@@ -2283,7 +2561,7 @@ function Get-StableGuid([string]$Text) {
 function Update-TerminalSettings([string]$Path) {
     $raw = if (Test-Path $Path) { [IO.File]::ReadAllText($Path) } else { '' }
     try { $s = if ($raw.Trim()) { $raw | ConvertFrom-Json -AsHashtable } else { [ordered]@{} } }
-    catch { Warn "$(Short $Path) — не разобрал JSON, пропускаю: $($_.Exception.Message)"; return }
+    catch { Warn "$(Short $Path) — $($L.wt_badjson -f $_.Exception.Message)"; return }
     $before = if ($raw.Trim()) { $s | ConvertTo-Json -Depth 32 } else { '' }
 
     if (-not $s.Contains('profiles')) { $s['profiles'] = [ordered]@{} }
@@ -2307,7 +2585,6 @@ function Update-TerminalSettings([string]$Path) {
     Set-Key $d 'historySize' 20000
     Set-Key $d 'bellStyle' 'none'
 
-    # PowerShell 7 — по умолчанию
     $pwshGuid = '{574e775e-4f2a-5b96-ac1e-a2962a402336}'
     $pw = $list | Where-Object { $_.guid -eq $pwshGuid } | Select-Object -First 1
     if (-not $pw) {
@@ -2319,10 +2596,8 @@ function Update-TerminalSettings([string]$Path) {
     if ($StartingDirectory) { Set-Key $pw 'startingDirectory' $StartingDirectory }
     Set-Key $s 'defaultProfile' $pwshGuid
 
-    # Azure Cloud Shell почти никому не нужен — прячем
     foreach ($p in $list) { if ($p.source -eq 'Windows.Terminal.Azure') { Set-Key $p 'hidden' $true } }
 
-    # Вкладки для SSH-серверов
     foreach ($h in $SshTabs) {
         $tab = $list | Where-Object { $_.commandline -eq "ssh $h" } | Select-Object -First 1
         if (-not $tab) { $tab = [ordered]@{ guid = (Get-StableGuid "ssh:$h") }; $list.Add($tab) }
@@ -2334,12 +2609,10 @@ function Update-TerminalSettings([string]$Path) {
     }
     $s.profiles['list'] = $list.ToArray()
 
-    # Все четыре варианта Catppuccin — чтобы theme переключал на лету
     $s['schemes'] = @(@($s.schemes | Where-Object { $_ -and $_.name -notlike 'Catppuccin *' }) + @($CatppuccinFlavors.Keys | ForEach-Object { Get-TerminalScheme $_ }))
     $s['themes'] = @(@($s.themes | Where-Object { $_ -and $_.name -notlike 'Catppuccin *' }) + @($CatppuccinFlavors.Keys | ForEach-Object { Get-TerminalTheme $_ }))
     Set-Key $s 'theme' $ThemeTitle
 
-    # Win+` — терминал выпадает сверху поверх всего (quake mode)
     if (-not $s.Contains('actions')) { $s['actions'] = @() }
     if (-not $s.Contains('keybindings')) { $s['keybindings'] = @() }
     if (-not ($s.actions | Where-Object { $_.id -eq 'User.quakeMode' })) {
@@ -2350,14 +2623,14 @@ function Update-TerminalSettings([string]$Path) {
     }
 
     $after = $s | ConvertTo-Json -Depth 32
-    if ($after -eq $before) { Ok "$(Short $Path) — без изменений"; return }
+    if ($after -eq $before) { Ok "$(Short $Path) — $($L.unchanged)"; return }
     if (Test-Path $Path) { Copy-Item $Path "$Path.bak-$Stamp" -Force }
     else { New-Item -ItemType Directory -Force (Split-Path $Path) | Out-Null }
     [IO.File]::WriteAllText($Path, $after, $Utf8NoBom)
-    Ok "$(Short $Path) — обновлён$(if ($raw.Trim()) { " $([char]0x00B7) старый: settings.json.bak-$Stamp" })"
+    Ok "$(Short $Path) — $($L.updated)$(if ($raw.Trim()) { " $([char]0x00B7) $($L.old): settings.json.bak-$Stamp" })"
 }
 
-Step 'Windows Terminal'
+Step $L.s_wt
 $wtFound = $false
 foreach ($pkg in 'Microsoft.WindowsTerminal_8wekyb3d8bbwe', 'Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe') {
     $pkgDir = Join-Path $env:LOCALAPPDATA "Packages\$pkg"
@@ -2365,13 +2638,12 @@ foreach ($pkg in 'Microsoft.WindowsTerminal_8wekyb3d8bbwe', 'Microsoft.WindowsTe
 }
 $portable = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows Terminal\settings.json'
 if (Test-Path $portable) { $wtFound = $true; Update-TerminalSettings $portable }
-if (-not $wtFound) { Warn 'Windows Terminal ещё ни разу не запускался — открой его один раз и запусти скрипт снова' }
+if (-not $wtFound) { Warn $L.wt_never }
 
-# ── 6. VS Code ───────────────────────────────────────────────────────────────
-Step 'Терминал VS Code'
+Step $L.s_vscode
 $vsSettings = Join-Path $env:APPDATA 'Code\User\settings.json'
 if (-not (Test-Path (Split-Path $vsSettings)) -and -not (Test-Command code)) {
-    Info 'VS Code не найден — пропускаю'
+    Info $L.vscode_none
 } else {
     $line = "`"terminal.integrated.fontFamily`": `"$FontFace`""
     $raw = if (Test-Path $vsSettings) { [IO.File]::ReadAllText($vsSettings) } else { '{}' }
@@ -2382,21 +2654,20 @@ if (-not (Test-Path (Split-Path $vsSettings)) -and -not (Test-Command code)) {
     } else {
         ([regex]'\{').Replace($raw, "{`n  $line,", 1)
     }
-    if ($new -eq $raw) { Ok "$(Short $vsSettings) — без изменений" }
+    if ($new -eq $raw) { Ok "$(Short $vsSettings) — $($L.unchanged)" }
     else {
         if (Test-Path $vsSettings) { Copy-Item $vsSettings "$vsSettings.bak-$Stamp" -Force }
         else { New-Item -ItemType Directory -Force (Split-Path $vsSettings) | Out-Null }
         [IO.File]::WriteAllText($vsSettings, $new, $Utf8NoBom)
-        Ok "$(Short $vsSettings) — шрифт терминала: $FontFace"
+        Ok "$(Short $vsSettings) — $($L.vscode_font -f $FontFace)"
     }
 }
 
-# ── 7. git + delta ───────────────────────────────────────────────────────────
-Step 'git: диффы через delta'
-if (-not (Test-Command git)) { Warn 'git не найден — пропускаю' }
-elseif (-not (Test-Command delta)) { Warn 'delta не найден — пропускаю' }
+Step $L.s_git
+if (-not (Test-Command git)) { Warn $L.git_none }
+elseif (-not (Test-Command delta)) { Warn $L.delta_none }
 else {
-    # Только ANSI-цвета — тогда диффы следуют за темой терминала (theme latte — и дифф светлый)
+    # ANSI colors only, so diffs follow the terminal theme (light or dark)
     $gitSettings = [ordered]@{
         'core.pager'                         = 'delta'
         'interactive.diffFilter'             = 'delta --color-only'
@@ -2417,26 +2688,23 @@ else {
         $current = git config --global --get $k 2>$null
         if ($current -ne $gitSettings[$k]) { git config --global $k $gitSettings[$k]; $changed++ }
     }
-    # фиксированные hex-цвета фона из прошлой версии ломают светлую тему — убираем
     foreach ($k in 'delta.minus-style', 'delta.minus-emph-style', 'delta.plus-style', 'delta.plus-emph-style') {
         if (git config --global --get $k 2>$null) { git config --global --unset $k; $changed++ }
     }
-    if ($changed) { Ok "~/.gitconfig — изменено настроек: $changed" } else { Ok '~/.gitconfig — без изменений' }
+    if ($changed) { Ok ($L.git_changed -f $changed) } else { Ok $L.git_same }
 }
 
-# ── 8. Проверка ──────────────────────────────────────────────────────────────
-Step 'Проверка профиля'
+Step $L.s_check
 $check = & (Get-Pwsh) -NoLogo -NoProfile -Command "`$Error.Clear(); . '$PROFILE' *> `$null; `$Error.Count; foreach (`$e in `$Error) { `$e.ToString() }" 2>&1
 $errCount = [int]($check | Select-Object -First 1)
-if ($errCount -eq 0) { Ok 'профиль загружается без ошибок' }
-else { Warn "ошибок при загрузке профиля: $errCount"; $check | Select-Object -Skip 1 -First 5 | ForEach-Object { Info "$_" } }
+if ($errCount -eq 0) { Ok $L.profile_ok }
+else { Warn ($L.profile_errors -f $errCount); $check | Select-Object -Skip 1 -First 5 | ForEach-Object { Info "$_" } }
 
-# ── Итог ─────────────────────────────────────────────────────────────────────
 Write-Host ''
-if ($Warnings) { Write-Host "  Готово, предупреждений: $Warnings (см. выше, жёлтым)." -ForegroundColor Yellow }
-else { Write-Host '  Готово.' -ForegroundColor Green }
-Write-Host '  Закрой все окна Windows Terminal и открой заново, затем набери: help  (или F1)' -ForegroundColor Gray
-Write-Host '  Своё: custom.ps1 и bin\ рядом с профилем (ep) · new имя.py — команда на любом языке · theme latte' -ForegroundColor DarkGray
-Write-Host '  Серверы: srv install <хост> -Env prod  — такой же удобный bash на Linux.' -ForegroundColor DarkGray
-Write-Host '  Скрипт можно запускать повторно — он доустановит недостающее и обновит конфиги.' -ForegroundColor DarkGray
+if ($Warnings) { Write-Host "  $($L.done_warn -f $Warnings)" -ForegroundColor Yellow }
+else { Write-Host "  $($L.done)" -ForegroundColor Green }
+Write-Host "  $($L.next1)" -ForegroundColor Gray
+Write-Host "  $($L.next2)" -ForegroundColor DarkGray
+Write-Host "  $($L.next3)" -ForegroundColor DarkGray
+Write-Host "  $($L.next4)" -ForegroundColor DarkGray
 Write-Host ''

@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
-  Рисует «скриншот терминала» из текста с ANSI-кодами: окно Catppuccin, шрифт JetBrainsMono NF, PNG.
-  Используется tools\make-screenshots.ps1 — картинки в docs\ сделаны из настоящего вывода команд.
+  Renders text with ANSI codes as a terminal window PNG (Catppuccin colors, JetBrainsMono NF).
+  Used by tools\make-screenshots.ps1 — the images in docs\ come from real command output.
 
 .EXAMPLE
   .\render-terminal.ps1 -InputFile out.txt -OutFile docs\help.png -Title 'help' -Flavor mocha
@@ -35,7 +35,7 @@ function Color256([int]$n) {
     $g = 8 + ($n - 232) * 10; [Drawing.Color]::FromArgb($g, $g, $g)
 }
 
-# ── Текст с ANSI → строки из отрезков (Text, Fg, Bg, Bold, Italic, Dim, Underline) ──
+# ANSI text → lines of runs (Text, Fg, Bg, Bold, Italic, Dim, Underline)
 $raw = [IO.File]::ReadAllText($InputFile)
 $raw = $raw -replace "`e\][^`a`e]*(`a|`e\\)", '' -replace "`e[()][AB012]", '' -replace "`r", ''
 $lines = [Collections.Generic.List[object]]::new()
@@ -51,7 +51,7 @@ $rx = [regex]"`e\[([0-9;?]*)([A-Za-z])"
 foreach ($m in $rx.Matches($raw)) {
     $chunk = $raw.Substring($pos, $m.Index - $pos)
     $pos = $m.Index + $m.Length
-    $segments = $chunk -split "`n"      # первый кусок продолжает строку, каждый следующий — новая
+    $segments = $chunk -split "`n"
     for ($i = 0; $i -lt $segments.Count; $i++) {
         if ($i -gt 0) { $lines.Add($current); $current = [Collections.Generic.List[object]]::new(); $col = 0 }
         $seg = $segments[$i]
@@ -89,12 +89,11 @@ $lines.Add($current)
 while ($lines.Count -and -not ($lines[$lines.Count - 1] | Where-Object { $_.Text.Trim() })) { $lines.RemoveAt($lines.Count - 1) }
 while ($lines.Count -and -not ($lines[0] | Where-Object { $_.Text.Trim() })) { $lines.RemoveAt(0) }
 
-# ширина в ячейках: суррогатные пары (иконки) — одна ячейка
+# width in cells: a surrogate pair (icon) is one cell
 function Cells([string]$s) { $n = 0; for ($i = 0; $i -lt $s.Length; $i++) { if (-not [char]::IsLowSurrogate($s[$i])) { $n++ } }; $n }
 $maxLen = ($lines | ForEach-Object { ($_ | ForEach-Object { Cells $_.Text } | Measure-Object -Sum).Sum } | Measure-Object -Maximum).Maximum
 $columns = [math]::Max($MinColumns, [math]::Min($MaxColumns, [int]$maxLen + 2))
 
-# ── Рисуем ───────────────────────────────────────────────────────────────────
 $font = [Drawing.Font]::new($FontName, [single]($FontSize * $Scale), [Drawing.FontStyle]::Regular, [Drawing.GraphicsUnit]::Point)
 $fontBold = [Drawing.Font]::new($FontName, [single]($FontSize * $Scale), [Drawing.FontStyle]::Bold, [Drawing.GraphicsUnit]::Point)
 $fontItalic = [Drawing.Font]::new($FontName, [single]($FontSize * $Scale), [Drawing.FontStyle]::Italic, [Drawing.GraphicsUnit]::Point)
@@ -115,7 +114,6 @@ $g = [Drawing.Graphics]::FromImage($bmp)
 $g.SmoothingMode = 'AntiAlias'; $g.TextRenderingHint = 'AntiAliasGridFit'; $g.InterpolationMode = 'HighQualityBicubic'
 $g.Clear([Drawing.Color]::Transparent)
 
-# тень
 for ($i = 6; $i -ge 1; $i--) {
     $sh = [Drawing.Drawing2D.GraphicsPath]::new(); $r = $radius + $i * $Scale
     $x = $margin - $i * $Scale; $y = $margin - $i * $Scale + 3 * $Scale; $ww = $w + 2 * $i * $Scale; $hh = $h + 2 * $i * $Scale

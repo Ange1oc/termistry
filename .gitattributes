@@ -1,2 +1,2 @@
-# Всё хранится с LF: bash-шаблоны с CRLF на сервере не работают
+# LF everywhere: bash templates with CRLF do not work on servers
 * text=auto eol=lf

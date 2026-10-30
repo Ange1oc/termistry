@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
-  Делает скриншоты для README из настоящего вывода команд: docs\*.png.
-  Ничего личного не попадает: демо-проект во временной папке, демо-kubeconfig,
-  имя компьютера заменяется. Сервер — из WSL с поддельным docker.
+  Builds the README screenshots (docs\*.png) from real command output.
+  Nothing personal leaks: a demo project in a temp folder, a demo kubeconfig, the computer name is replaced.
+  The server scene runs in WSL with a fake docker.
 
 .EXAMPLE
   .\tools\make-screenshots.ps1
@@ -17,7 +17,6 @@ $work = Join-Path ([IO.Path]::GetTempPath()) 'terminal-setup-shots'
 if (Test-Path $work) { Remove-Item $work -Recurse -Force }
 New-Item -ItemType Directory -Force "$work\home\profile\bin", "$work\home\profile\server", "$work\home\.config\ohmyposh", "$work\home\.cache" | Out-Null
 
-# ── Демо-окружение ───────────────────────────────────────────────────────────
 Copy-Item "$root\src\profile\*" "$work\home\profile" -Recurse -Force
 Copy-Item "$root\src\server\*" "$work\home\profile\server" -Recurse -Force
 Copy-Item "$root\src\ohmyposh\soft.omp.json" "$work\home\.config\ohmyposh\soft.omp.json"
@@ -64,7 +63,7 @@ users:
   user: {}
 "@ | Set-Content $kube
 
-# ── Сцены на PowerShell: capture.ps1 выполняется в отдельном pwsh с демо-профилем
+# capture.ps1 runs in a separate pwsh with the demo profile
 $capture = @"
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 `$PSStyle.OutputRendering = 'Ansi'
@@ -91,7 +90,6 @@ function Typed([string]`$Cmd) {     # как подсветит PSReadLine: ко
     `$out -join ' '
 }
 function Capture([scriptblock]`$Block) { ((& `$Block *>&1) | ForEach-Object { "`$_" }) -join "``n" }
-# временная папка демо-проекта показывается как ~\code
 function Scene([string]`$Name, [string]`$Text) {
     `$Text = `$Text.Replace('~\..\Temp\terminal-setup-shots', '~\code').Replace('$work', '~\code')
     [IO.File]::WriteAllText('$work\' + `$Name + '.txt', `$Text, [Text.UTF8Encoding]::new(`$false))
@@ -99,7 +97,6 @@ function Scene([string]`$Name, [string]`$Text) {
 function Demo([string]`$Text) { `$Text.Replace(`$env:COMPUTERNAME, 'workstation') }
 
 Set-Location '$demo'
-# 1. hero: промпт в проекте, ll, промпт после долгой упавшей команды
 `$hero = @(
     (Prompt-Line '$demo') + (Typed 'll')
     (Capture { eza --icons=always --group-directories-first --color=always -la --git --time-style=relative --no-user . })
@@ -109,10 +106,8 @@ Set-Location '$demo'
 ) -join "``n"
 Scene 'hero' `$hero
 
-# 2. help: несколько разделов + «Моё» (bin, custom.ps1, сокращения)
 Scene 'help' (Capture { Show-TkHelp (@(`$TkSections | Where-Object { `$_.Key -in 'input', 'git', 'ssh', 'mine' }) + @(Get-TkUserSection)) })
 
-# 3. my sys (имя компьютера заменено, контейнеры убраны)
 `$sys = Capture { my sys }
 `$cut = `$sys.IndexOf('контейнеры'); if (`$cut -gt 0) { `$sys = `$sys.Substring(0, `$sys.LastIndexOf("``n", `$cut)).TrimEnd() }
 Scene 'my-sys' ((Prompt-Line '$demo') + (Typed 'my sys') + "``n" + (Demo `$sys))
@@ -120,7 +115,6 @@ Scene 'my-sys' ((Prompt-Line '$demo') + (Typed 'my sys') + "``n" + (Demo `$sys))
 # 4. my cmds + new
 Scene 'my-cmds' ((Prompt-Line '$demo') + (Typed 'my cmds') + "``n" + (Capture { my cmds }).Replace('$work\home\profile', '~\Documents\PowerShell'))
 
-# 5. тема — одна и та же сцена в четырёх вариантах
 foreach (`$f in 'mocha', 'macchiato', 'frappe', 'latte') {
     `$env:TERMINAL_THEME = `$f; `$global:ThemeName = `$f; `$global:Palette = `$CatppuccinFlavors[`$f]; Set-TerminalPalette
     `$t = @(
@@ -136,7 +130,6 @@ foreach (`$f in 'mocha', 'macchiato', 'frappe', 'latte') {
 Write-Host '  захват PowerShell…'
 & (Get-Command pwsh).Source -NoProfile -NoLogo -File "$work\capture.ps1"
 
-# ── Сцена на сервере: WSL, временный HOME, поддельный docker ─────────────────
 $serverScript = @'
 set -e
 T=$(mktemp -d); export HOME=$T/home; mkdir -p "$HOME/apps/shop" "$HOME/apps/api" "$HOME/bin" "$T/bin"
@@ -178,7 +171,6 @@ $wslBashrc = wsl wslpath -a (($root -replace '\\', '/') + '/src/server/bashrc.lo
 $serverOut = wsl bash "$wslWork/server.sh" "$wslBashrc"
 [IO.File]::WriteAllText("$work\server.txt", (($serverOut -join "`n") -replace "`r", ''), [Text.UTF8Encoding]::new($false))
 
-# ── Рендер ───────────────────────────────────────────────────────────────────
 Write-Host '  рендер…'
 & $render -InputFile "$work\hero.txt" -OutFile "$OutDir\hero.png" -Title 'PowerShell 7 · Windows Terminal'
 & $render -InputFile "$work\help.txt" -OutFile "$OutDir\help.png" -Title 'help'
@@ -189,7 +181,6 @@ foreach ($f in 'mocha', 'macchiato', 'frappe', 'latte') {
     & $render -InputFile "$work\theme-$f.txt" -OutFile "$work\theme-$f.png" -Title "theme $f" -Flavor $f -MinColumns 84 -MaxColumns 84
 }
 
-# 2×2 сетка тем
 $imgs = 'mocha', 'macchiato', 'frappe', 'latte' | ForEach-Object { [Drawing.Image]::FromFile("$work\theme-$_.png") }
 $cw = ($imgs | Measure-Object Width -Maximum).Maximum; $ch = ($imgs | Measure-Object Height -Maximum).Maximum
 $grid = [Drawing.Bitmap]::new([int](2 * $cw), [int](2 * $ch))

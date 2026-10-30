@@ -1,9 +1,3 @@
-# ─────────────────────────────────────────────────────────────────────────────
-#  Палитры Catppuccin — четыре варианта одной темы: mocha (тёмная, по умолчанию),
-#  macchiato, frappe (тёмные помягче) и latte (светлая). Переключение: theme latte
-#  Отсюда берут цвета профиль, подсветка ввода, fzf, шпаргалка и промпт oh-my-posh.
-# ─────────────────────────────────────────────────────────────────────────────
-
 $CatppuccinFlavors = [ordered]@{
     mocha = @{
         rosewater = 0xF5E0DC; flamingo = 0xF2CDCD; pink = 0xF5C2E7; mauve = 0xCBA6F7; red = 0xF38BA8; maroon = 0xEBA0AC
@@ -44,7 +38,6 @@ function Get-ThemeName {
 
 function ConvertTo-Hex([int]$Rgb) { '#{0:X6}' -f $Rgb }
 
-# Схема Windows Terminal для варианта (как в официальном репозитории Catppuccin)
 function Get-TerminalScheme([string]$Flavor) {
     $p = $CatppuccinFlavors[$Flavor]
     [ordered]@{
@@ -58,7 +51,6 @@ function Get-TerminalScheme([string]$Flavor) {
     }
 }
 
-# Оформление окна Windows Terminal (вкладки, заголовок) под вариант
 function Get-TerminalTheme([string]$Flavor) {
     $p = $CatppuccinFlavors[$Flavor]
     [ordered]@{

@@ -1,7 +1,5 @@
-// Подсказки из истории PSReadLine без встроенного лимита в 10 строк.
-// Встроенный источник History жёстко ограничен 10 записями, а плагины получают
-// до 50 — список показывает 10 строк и листается стрелками.
-// Компилируется профилем в ~/.cache/pwsh-predictor при изменении этого файла.
+// History suggestions without PSReadLine's built-in cap: the History source is hard-limited
+// to 10 entries, plugins get up to 50. Compiled by the profile into ~/.cache/pwsh-predictor.
 
 using System;
 using System.Collections.Generic;
@@ -41,7 +39,7 @@ public sealed class DeepHistoryPredictor : ICommandPredictor
 
         var entries = _entries;
         var result = new List<PredictiveSuggestion>();
-        // сначала команды, которые начинаются с набранного, потом — где оно встречается внутри
+        // prefix matches first, then substring matches
         foreach (var e in entries)
         {
             if (e.Length > input.Length && e.StartsWith(input, StringComparison.OrdinalIgnoreCase))
@@ -64,7 +62,7 @@ public sealed class DeepHistoryPredictor : ICommandPredictor
         return result.Count == 0 ? default : new SuggestionPackage(result);
     }
 
-    // PSReadLine ждёт плагин ~20 мс, поэтому файл перечитывается в фоне
+    // PSReadLine gives a plugin ~20 ms, so the file is re-read in the background
     private void RefreshIfChanged()
     {
         long length;
@@ -82,7 +80,7 @@ public sealed class DeepHistoryPredictor : ICommandPredictor
         using (var fs = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
         using (var reader = new StreamReader(fs))
         {
-            // многострочные команды хранятся строками с ` на конце — их пропускаем целиком
+            // multi-line entries are stored as lines ending with a backtick — skipped entirely
             bool continuation = false;
             string line;
             while ((line = reader.ReadLine()) != null)

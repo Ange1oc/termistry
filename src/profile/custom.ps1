@@ -1,21 +1,13 @@
-# ─────────────────────────────────────────────────────────────────────────────
-#  custom.ps1 — моё. Этот файл setup-terminal.ps1 никогда не перезаписывает.
-#  Загружается после toolkit.ps1, до клавиш и промпта. Проверить: reload
+# custom.ps1 — yours. setup-terminal.ps1 never overwrites this file. Loaded after toolkit.ps1; check with: reload
 #
-#  Переключатели:
-#    $TerminalSetup.Abbreviations = $false   # отключить g␣ → git␣
-#    $TerminalSetup.LayoutFix     = $false   # отключить исправление раскладки
-#    $TerminalSetup.Predictions   = 20       # подсказок из истории (0 — стандартные 10)
+#   $TerminalSetup.Abbreviations = $false     # g␣ → git␣
+#   $TerminalSetup.LayoutFix     = $false     # Russian layout fix on Enter
+#   $TerminalSetup.Predictions   = 20         # history suggestions (0 — PSReadLine default 10)
 #
-#  Сокращения (раскрываются по пробелу, % — где оставить курсор):
-#    abbr gcm 'git commit -m "%"'
-#    abbr -Remove d
+#   abbr gcm 'git commit -m "%"'              # % — cursor position
+#   abbr -Remove d
 #
-#  Свои функции — попадут в help и my cmds автоматически:
-#    function deploy { ssh prod 'cd app && git pull && docker compose up -d' }
+#   function deploy { ssh prod 'cd app && git pull && docker compose up -d' }   # shows up in help
 #
-#  Команды на других языках — файлы в bin\ рядом с этим файлом (new имя.py).
-#  Строка «# help: описание» в начале файла — подпись в help.
-#
-#  Чем запускать расширения (первый найденный): $ScriptRunners['.ts'] = @('bun', 'node')
-# ─────────────────────────────────────────────────────────────────────────────
+#   Commands in other languages: files in bin\ next to this file (new name.py); "# help: ..." is the caption.
+#   $ScriptRunners['.ts'] = @('bun', 'node')  # which runner to use per extension

@@ -5,6 +5,8 @@
 Такой же bash на серверах — ещё одной.
 </p>
 
+<p align="center">Русский · <a href="README.en.md">English</a></p>
+
 <p align="center"><img src="docs/hero.png" width="860" alt="PowerShell 7 в Windows Terminal: промпт с веткой git, версией node, контекстом kubernetes, временем долгой команды"></p>
 
 ## Установка
@@ -15,7 +17,7 @@
 irm https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1 | iex
 ```
 
-Закрой все окна Windows Terminal, открой заново, нажми **F1**.
+Спросит язык (`ru`/`en`). Потом закрой все окна Windows Terminal, открой заново, нажми **F1**.
 
 - Работает на голой Windows 11 и 10: сам поставит PowerShell 7 и продолжит в нём.
 - Права администратора попросит один раз — только для шрифта с иконками (иначе Windows Terminal его не видит).
@@ -26,11 +28,12 @@ irm https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1 | 
 <summary>Параметры</summary>
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1))) -Theme latte -SshTabs prod,staging
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1))) -Lang ru -Theme latte -SshTabs prod,staging
 ```
 
 | | |
 |---|---|
+| `-Lang ru\|en` | язык интерфейса (потом: `lang en`) |
 | `-Theme mocha\|macchiato\|frappe\|latte` | вариант палитры (потом: `theme latte`) |
 | `-StartingDirectory D:\code` | где открывается новая вкладка |
 | `-SshTabs host1,host2` | вкладки в меню терминала для хостов из `~/.ssh/config` |
@@ -89,11 +92,13 @@ weather Минск                         # уже команда — без п
 
 `custom.ps1` — свои функции, сокращения и переключатели: он загружается последним и никогда не перезаписывается. Функции из него тоже попадают в `help`. `ep` открывает папку профиля в VS Code; профиль лежит в Документах, так что через OneDrive он уезжает и на другие машины.
 
-## Тема
+## Тема и язык
 
 <p align="center"><img src="docs/themes.png" width="860" alt="theme: mocha, macchiato, frappe, latte"></p>
 
 `theme latte` — и терминал, промпт, подсветка ввода, fzf и диффы переключаются на лету, во всех открытых вкладках. Четыре варианта Catppuccin: `mocha`, `macchiato`, `frappe`, `latte`.
+
+`lang en` / `lang ru` — язык `help`, `my` и всех сообщений; серверы подхватят его при следующем `srv install`.
 
 ## Серверы: `srv`
 
@@ -121,7 +126,7 @@ setup-terminal.ps1    всё в одном файле — собирается �
 build.ps1             .\build.ps1  ·  .\build.ps1 -FromProfile — забрать настройку с этой машины
 src/
   setup-logic.ps1     логика установки
-  profile/            профиль, palette.ps1, toolkit.ps1 (команды), custom.ps1 (шаблон), плагин подсказок
+  profile/            профиль, palette.ps1, lang.ps1, toolkit.ps1 (команды), custom.ps1 (шаблон), плагин подсказок
   ohmyposh/           тема промпта
   server/             bashrc.local, inputrc и установщик для srv
 tools/                make-screenshots.ps1 — картинки в docs/ из настоящего вывода команд

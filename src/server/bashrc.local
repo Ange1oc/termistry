@@ -1,21 +1,71 @@
-# ~/.bashrc.local — один и тот же для всех серверов. Ставится из PowerShell: srv install <хост>
-# version: 2.0.0
-#
-#  Настройки сервера:  ~/.config/bashrc-local.conf   (PROMPT_ENV=prod …)
-#  Своё:               ~/.bashrc.d/*.sh — подключаются в конце, остаются при обновлении
-#                      ~/bin/*          — свои скрипты, строка «# help: …» попадает в help
-#  Проекты находятся сами (docker compose ls) и запоминаются в ~/.config/projects,
-#  для каждого появляется команда с его именем:  myapp · myapp logs web · myapp sh web
-#  Ничего не ставится и ничего не работает в фоне — только функции в этой оболочке.
-#  Откат: srv remove <хост>  (или удалить строку с .bashrc.local в конце ~/.bashrc)
+# ~/.bashrc.local — installed by `srv install <host>` from terminal-setup. Nothing runs in the background.
+# version: 2.1.0
+# Per-server settings: ~/.config/bashrc-local.conf (PROMPT_ENV=prod, LANG_UI=en)
+# Your own: ~/.bashrc.d/*.sh and ~/bin/* (a "# help: ..." line shows up in help)
 
-[[ $- == *i* ]] || return     # для scp/rsync/скриптов — ничего не делаем и ничего не печатаем
+[[ $- == *i* ]] || return
 
-PROMPT_ENV=''                 # метка в промпте: prod — красная, staging/test — жёлтая, dev — зелёная
+PROMPT_ENV=''
+LANG_UI=''
 [[ -f ~/.config/bashrc-local.conf ]] && . ~/.config/bashrc-local.conf
+[[ $LANG_UI == en ]] || LANG_UI=ru
 
-# ── История: большая, без дублей, с датой, общая между вкладками ─────────────
-# Команда, начатая с пробела, в историю не попадает — удобно для паролей/токенов.
+declare -A T_ru=(
+    [help_hint]='help <слово> — поиск · help <встроенная> — справка bash'
+    [projects]='проекты' [own]='Своё  (~/bin, ~/.bashrc.d)' [own_script]='скрипт в ~/bin'
+    [s_proj]='Проекты  (находятся сами: docker compose ls)' [s_docker]='Docker' [s_server]='Сервер' [s_files]='Файлы'
+    [s_hist]='История и ввод' [s_guard]='Подстраховка'
+    [r_proj]='все проекты: статус и папка' [r_status]='статус контейнеров' [r_logs]='логи: 200 строк и дальше поток'
+    [r_sh]='shell внутри контейнера' [r_any]='любая docker compose команда' [r_cd]='перейти в папку проекта'
+    [r_dsh]='shell в контейнере проекта, где ты сейчас' [r_add]='добавить вручную (по умолчанию — текущую)' [r_rm]='скрыть из списка'
+    [r_dps]='все контейнеры: статус и порты' [r_dc]='docker compose / логи в текущей папке'
+    [r_sys]='нагрузка, память, диск, процессы, контейнеры' [r_ports]='кто слушает порты' [r_psg]='процессы по имени'
+    [r_df]='диск · память · размер папок здесь' [r_ll]='подробный список · со скрытыми'
+    [r_bak]='копия рядом: файл.bak-дата — перед правкой на проде' [r_ex]='распаковать: tar.gz, zip, xz, 7z…'
+    [r_up]='вверх · два вверх · создать и зайти' [r_h]='последние 50 команд · поиск' [r_arrows]='листать только подходящие из истории'
+    [r_ctrlr]='поиск по всей истории' [r_tab]='дополнение без учёта регистра (и сервисов)' [r_space]='не сохранится в историю — для паролей'
+    [r_rm_guard]='спрашивают перед массовым удалением' [r_down]='docker требует набрать yes' [r_noguard]='без подтверждения (обход алиаса)'
+    [r_env]='метка сервера: ~/.config/bashrc-local.conf'
+    [k_arrows]='начало команды + ↑/↓' [k_space]=' команда (с пробелом)' [k_env]='● prod в промпте' [k_proj]='<проект>' [k_svc]='сервис' [k_folder]='папка' [k_name]='имя' [k_file]='файл' [k_archive]='архив'
+    [sys_load]='нагрузка' [sys_mem]='память' [sys_disk]='диск /' [sys_cores]='ядер' [sys_top]='топ процессов' [sys_cont]='контейнеры' [sys_nolabel]='без метки' [of]='из'
+    [p_title]='Проекты' [p_hint]='proj add — добавить текущую папку · proj rm <имя> — скрыть'
+    [p_none]='пока нет: запусти docker compose up в папке проекта или proj add' [p_stopped]='не запущен'
+    [p_nodir]='нет папки: %s\n' [p_badname]='плохое имя: %s\n' [p_added]='добавлен: %s → %s\n' [p_rmname]='укажи имя: proj rm <имя>'
+    [p_hidden]='скрыт: %s (вернуть: proj add %s <папка>)\n' [p_unknown]='нет проекта «%s» — список: proj\n' [p_svc]='укажи сервис: %s sh <Tab>\n'
+    [p_cmds]='%s logs <сервис> · %s sh <сервис> · %s restart <сервис> · %s cd' [p_many]='проектов несколько — зайди в папку проекта или: <проект> sh <сервис>'
+    [d_warn]='⚠ %s: «docker %s» удалит данные (тома, базы).' [d_ask]='Напиши yes, чтобы продолжить: ' [d_cancel]='Отменено.'
+    [ex_nofile]='нет файла: %s\n' [ex_unknown]='не знаю, чем распаковать: %s\n'
+    [banner]='help — шпаргалка · sys — состояние сервера'
+)
+declare -A T_en=(
+    [help_hint]='help <word> — search · help <builtin> — bash help'
+    [projects]='projects' [own]='Mine  (~/bin, ~/.bashrc.d)' [own_script]='script in ~/bin'
+    [s_proj]='Projects  (discovered: docker compose ls)' [s_docker]='Docker' [s_server]='Server' [s_files]='Files'
+    [s_hist]='History and input' [s_guard]='Guards'
+    [r_proj]='all projects: status and folder' [r_status]='container status' [r_logs]='logs: last 200 lines, then follow'
+    [r_sh]='shell inside a container' [r_any]='any docker compose command' [r_cd]='go to the project folder'
+    [r_dsh]='shell in a container of the project you are in' [r_add]='add manually (default — current folder)' [r_rm]='hide from the list'
+    [r_dps]='all containers: status and ports' [r_dc]='docker compose / logs in the current folder'
+    [r_sys]='load, memory, disk, processes, containers' [r_ports]='who listens on which port' [r_psg]='processes by name'
+    [r_df]='disk · memory · folder sizes here' [r_ll]='detailed list · with hidden files'
+    [r_bak]='copy next to it: file.bak-date — before editing on prod' [r_ex]='extract: tar.gz, zip, xz, 7z…'
+    [r_up]='up · two up · create and enter' [r_h]='last 50 commands · search' [r_arrows]='scroll only matching history'
+    [r_ctrlr]='search the whole history' [r_tab]='case-insensitive completion (and services)' [r_space]='not saved to history — for passwords'
+    [r_rm_guard]='ask before mass deletion' [r_down]='docker asks you to type yes' [r_noguard]='no confirmation (bypass the alias)'
+    [r_env]='server label: ~/.config/bashrc-local.conf'
+    [k_arrows]='command prefix + ↑/↓' [k_space]=' command (leading space)' [k_env]='● prod in the prompt' [k_proj]='<project>' [k_svc]='service' [k_folder]='folder' [k_name]='name' [k_file]='file' [k_archive]='archive'
+    [sys_load]='load' [sys_mem]='memory' [sys_disk]='disk /' [sys_cores]='cores' [sys_top]='top processes' [sys_cont]='containers' [sys_nolabel]='no label' [of]='of'
+    [p_title]='Projects' [p_hint]='proj add — add the current folder · proj rm <name> — hide'
+    [p_none]='none yet: run docker compose up in a project folder or proj add' [p_stopped]='not running'
+    [p_nodir]='no such folder: %s\n' [p_badname]='bad name: %s\n' [p_added]='added: %s → %s\n' [p_rmname]='give a name: proj rm <name>'
+    [p_hidden]='hidden: %s (restore: proj add %s <folder>)\n' [p_unknown]='no project "%s" — list: proj\n' [p_svc]='give a service: %s sh <Tab>\n'
+    [p_cmds]='%s logs <service> · %s sh <service> · %s restart <service> · %s cd' [p_many]='several projects — enter a project folder or: <project> sh <service>'
+    [d_warn]='⚠ %s: "docker %s" deletes data (volumes, databases).' [d_ask]='Type yes to continue: ' [d_cancel]='Cancelled.'
+    [ex_nofile]='no such file: %s\n' [ex_unknown]='do not know how to extract: %s\n'
+    [banner]='help — cheat sheet · sys — server status'
+)
+__t() { local v="T_${LANG_UI}[$1]"; printf '%s' "${!v}"; }
+
 HISTSIZE=50000
 HISTFILESIZE=100000
 HISTCONTROL=ignoreboth:erasedups
@@ -23,19 +73,15 @@ HISTTIMEFORMAT='%F %T  '
 HISTIGNORE='ls:ll:la:pwd:exit:clear:history:h'
 shopt -s histappend cmdhist checkwinsize globstar
 
-# ── Промпт ───────────────────────────────────────────────────────────────────
-#  ┌─ ● prod deploy@vm1 ~/app ⎇ main*  ⏱ 12s  ✘ 1
-#  └─❯
 __git_branch() {
     local b dirty=
-    # GIT_OPTIONAL_LOCKS=0 — промпт не берёт index.lock и не мешает деплою
     b=$(GIT_OPTIONAL_LOCKS=0 git symbolic-ref --short HEAD 2>/dev/null || GIT_OPTIONAL_LOCKS=0 git rev-parse --short HEAD 2>/dev/null) || return
     [[ -n $(GIT_OPTIONAL_LOCKS=0 git status --porcelain --untracked-files=no 2>/dev/null | head -n1) ]] && dirty='*'
     printf ' ⎇ %s%s' "$b" "$dirty"
 }
 
-# Время долгой команды: ловушка DEBUG запоминает старт первой команды после промпта.
-# Срабатывает только на верхнем уровне (внутри функций — нет), стоит микросекунды.
+# DEBUG trap remembers when the first top-level command after the prompt started;
+# commands that are part of PROMPT_COMMAND are skipped so idle time is never counted.
 __cmd_start() { [[ "${PROMPT_COMMAND[*]}" == *"$BASH_COMMAND"* ]] || __ts=${__ts:-$SECONDS}; }
 trap __cmd_start DEBUG
 
@@ -54,7 +100,7 @@ __prompt() {
     local r='\[\e[0m\]' dim='\[\e[90m\]' red='\[\e[31m\]' green='\[\e[32m\]'
     local yellow='\[\e[33m\]' blue='\[\e[34m\]' mauve='\[\e[35m\]' cyan='\[\e[36m\]'
 
-    local user=$cyan;  (( EUID == 0 )) && user=$red     # root — красным
+    local user=$cyan;  (( EUID == 0 )) && user=$red
     local arrow=$green status= env= venv= took=
     (( code != 0 )) && { arrow=$red; status="  ${red}✘ ${code}${r}"; }
     (( elapsed >= 3 )) && took="  ${dim}⏱ $(__fmt_duration $elapsed)${r}"
@@ -71,11 +117,10 @@ __prompt() {
 }
 [[ "${PROMPT_COMMAND[*]}" == *__prompt* ]] || PROMPT_COMMAND="__prompt${PROMPT_COMMAND:+; ${PROMPT_COMMAND[*]}}"
 
-# ── Цвета в выводе ───────────────────────────────────────────────────────────
 export LESS='-R -F -X -i'
-export LESS_TERMCAP_md=$'\e[1;34m' LESS_TERMCAP_me=$'\e[0m'      # man: заголовки
-export LESS_TERMCAP_us=$'\e[4;32m' LESS_TERMCAP_ue=$'\e[0m'      # man: подчёркнутое
-export LESS_TERMCAP_so=$'\e[30;43m' LESS_TERMCAP_se=$'\e[0m'     # поиск/статус
+export LESS_TERMCAP_md=$'\e[1;34m' LESS_TERMCAP_me=$'\e[0m'
+export LESS_TERMCAP_us=$'\e[4;32m' LESS_TERMCAP_ue=$'\e[0m'
+export LESS_TERMCAP_so=$'\e[30;43m' LESS_TERMCAP_se=$'\e[0m'
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 
 alias ls='ls --color=auto --group-directories-first'
@@ -85,12 +130,10 @@ alias grep='grep --color=auto'
 alias diff='diff --color=auto'
 alias ip='ip -color=auto'
 
-# ── Подстраховка (только для ручного ввода, скрипты не затрагивает) ──────────
-alias rm='rm -I'              # спросит, если удаляется больше 3 файлов или рекурсивно
-alias cp='cp -i'              # спросит перед перезаписью
+alias rm='rm -I'
+alias cp='cp -i'
 alias mv='mv -i'
 
-# ── Удобства ─────────────────────────────────────────────────────────────────
 alias ..='cd ..'
 alias ...='cd ../..'
 alias df='df -h'
@@ -98,47 +141,44 @@ alias free='free -h'
 alias du1='du -h --max-depth=1 2>/dev/null | sort -h'
 alias ports='ss -tulpn'
 mkcd() { mkdir -p "$1" && cd "$1"; }
-psg() { ps aux | grep -i --color=auto -- "[${1:0:1}]${1:1}"; }                 # psg nginx — процессы по имени
-bak() { local f; for f in "$@"; do command cp -a "$f" "$f.bak-$(date +%Y%m%d-%H%M%S)" && echo "→ $f.bak-$(date +%Y%m%d-%H%M%S)"; done; }
-ex() {                                                                       # ex архив — распаковать что угодно
-    [[ -f $1 ]] || { echo "нет файла: $1"; return 1; }
+psg() { ps aux | grep -i --color=auto -- "[${1:0:1}]${1:1}"; }
+bak() { local f s; s=$(date +%Y%m%d-%H%M%S); for f in "$@"; do command cp -a "$f" "$f.bak-$s" && echo "→ $f.bak-$s"; done; }
+ex() {
+    [[ -f $1 ]] || { printf "$(__t ex_nofile)" "$1"; return 1; }
     case $1 in
         *.tar.gz|*.tgz)  tar xzf "$1" ;;   *.tar.xz|*.txz) tar xJf "$1" ;;   *.tar.bz2|*.tbz2) tar xjf "$1" ;;
         *.tar|*.tar.zst) tar xf "$1" ;;    *.gz)  gunzip -k "$1" ;;          *.bz2) bunzip2 -k "$1" ;;
         *.xz)  unxz -k "$1" ;;             *.zip) unzip -q "$1" ;;           *.7z)  7z x "$1" ;;
-        *) echo "не знаю, чем распаковать: $1"; return 1 ;;
+        *) printf "$(__t ex_unknown)" "$1"; return 1 ;;
     esac
 }
-h() {                                                                        # h [текст] — последние команды
+h() {
     if (( $# )); then history | grep -i -- "$*" | tail -n 30
     else history | tail -n 50; fi
 }
 
-# Дополнить строку пробелами до ширины n в символах (printf %-Ns считает байты и ломает кириллицу)
+# printf %-Ns counts bytes, which breaks alignment with Cyrillic — pad by characters instead
 __pad() { local s=$1 n=$(( $2 - ${#1} )); (( n < 1 )) && n=1; printf '%s%*s' "$s" "$n" ''; }
 
-# Цветная точка по статусу контейнера
 __dot() {
     case $1 in
         *unhealthy*|Restarting*) printf '\e[31m●\e[0m' ;;
         Up*starting*)            printf '\e[33m●\e[0m' ;;
         Up*)                     printf '\e[32m●\e[0m' ;;
-        'Exited (0)'*|Created*)  printf '\e[90m●\e[0m' ;;   # завершился штатно (migrate и т.п.)
+        'Exited (0)'*|Created*)  printf '\e[90m●\e[0m' ;;
         *)                       printf '\e[31m●\e[0m' ;;
     esac
 }
 
-# ── Docker ───────────────────────────────────────────────────────────────────
 if command -v docker >/dev/null; then
-    # Команды, которые удаляют тома (а значит базы), требуют набрать yes
     docker() {
         local args=" $* "
         local wipe_volumes=' down .*(-v|--volumes) ' remove_volumes=' volume (rm|prune) ' prune=' system prune '
         if [[ $args =~ $wipe_volumes || $args =~ $remove_volumes || $args =~ $prune ]]; then
-            printf '\e[1;31m⚠ %s: «docker %s» удалит данные (тома, базы).\e[0m\n' "${PROMPT_ENV:-$(hostname)}" "$*"
+            printf "\e[1;31m$(__t d_warn)\e[0m\n" "${PROMPT_ENV:-$(hostname)}" "$*"
             local answer
-            read -r -p 'Напиши yes, чтобы продолжить: ' answer
-            [[ $answer == yes ]] || { echo 'Отменено.'; return 1; }
+            read -r -p "$(__t d_ask)" answer
+            [[ $answer == yes ]] || { __t d_cancel; echo; return 1; }
         fi
         command docker "$@"
     }
@@ -147,16 +187,8 @@ if command -v docker >/dev/null; then
     alias dlogs='docker compose logs -f --tail=200'
 fi
 
-# ── Проекты ──────────────────────────────────────────────────────────────────
-#  proj                     список: статус и папка
-#  <имя> | proj <имя>       статус контейнеров проекта
-#  <имя> logs [сервис]      логи: последние 200 строк и дальше поток
-#  <имя> sh <сервис>        shell внутри контейнера
-#  <имя> cd  ·  app [имя]   перейти в папку проекта
-#  <имя> <что угодно>       docker compose <что угодно> в папке проекта
-#  proj add [имя] [папка]   добавить вручную (по умолчанию — текущая папка)
-#  proj rm <имя>            скрыть из списка
-PROJ_FILE=~/.config/projects                     # строки «имя<TAB>папка», папка «-» — скрыт
+# ── projects: discovered from docker compose, remembered in ~/.config/projects ("name<TAB>dir", "-" = hidden)
+PROJ_FILE=~/.config/projects
 declare -gA PROJ_DIR=() PROJ_STATUS=()
 declare -gA __PROJ_FUNCS __PROJ_SVC
 __PROJ_SUBCOMMANDS='cd sh logs ps up down restart stop start pull build exec run top config images'
@@ -183,13 +215,12 @@ __proj_load() {
         PROJ_STATUS[$name]=${BASH_REMATCH[2]}
         if [[ -z ${PROJ_DIR[$name]} && -d $dir ]]; then
             PROJ_DIR[$name]=$dir
-            # запоминаем — команда останется и после «down»
             mkdir -p "${PROJ_FILE%/*}" && printf '%s\t%s\n' "$name" "$dir" >> "$PROJ_FILE"
         fi
     done
 }
 
-# Команда с именем проекта: myapp ps. Не создаётся, если имя уже занято (git, nginx…) — тогда proj <имя>.
+# A function named after each project, unless the name is already a command (git, nginx…) — then `proj <name>`
 __proj_define() {
     local name
     for name in "${!PROJ_DIR[@]}"; do
@@ -199,13 +230,12 @@ __proj_define() {
         complete -F __proj_complete "$name"
         __PROJ_FUNCS[$name]=1
     done
-    for name in "${!__PROJ_FUNCS[@]}"; do       # проект скрыт или удалён — убираем его команду
+    for name in "${!__PROJ_FUNCS[@]}"; do
         [[ -n ${PROJ_DIR[$name]} ]] && continue
         unset -f "$name"; complete -r "$name" 2>/dev/null; unset "__PROJ_FUNCS[$name]"
     done
 }
 
-# Проект, в папке которого мы сейчас; если проект один — он
 __proj_current() {
     local name best= len=0 d
     for name in "${!PROJ_DIR[@]}"; do
@@ -220,13 +250,13 @@ __proj_cmd() { [[ -n ${__PROJ_FUNCS[$1]} ]] && printf '%s' "$1" || printf 'proj 
 
 __proj_list() {
     local d=$'\e[90m' t=$'\e[1;35m' c=$'\e[34m' r=$'\e[0m' name state dot
-    printf '\n  %sПроекты%s  %sproj add — добавить текущую папку · proj rm <имя> — скрыть%s\n' "$t" "$r" "$d" "$r"
+    printf '\n  %s%s%s  %s%s%s\n' "$t" "$(__t p_title)" "$r" "$d" "$(__t p_hint)" "$r"
     if (( ${#PROJ_DIR[@]} == 0 )); then
-        printf '  %sпока нет: запусти docker compose up в папке проекта или proj add%s\n\n' "$d" "$r"; return
+        printf '  %s%s%s\n\n' "$d" "$(__t p_none)" "$r"; return
     fi
     for name in $(printf '%s\n' "${!PROJ_DIR[@]}" | sort); do
-        state=${PROJ_STATUS[$name]:-не запущен}
-        case $state in *running*) dot=$'\e[32m●' ;; не*) dot=$'\e[90m○' ;; *) dot=$'\e[33m●' ;; esac
+        state=${PROJ_STATUS[$name]:-$(__t p_stopped)}
+        case $state in *running*) dot=$'\e[32m●' ;; "$(__t p_stopped)") dot=$'\e[90m○' ;; *) dot=$'\e[33m●' ;; esac
         printf '  %s%s %s%s%s %s %s%s%s\n' "$dot" "$r" "$c" "$(__pad "$(__proj_cmd "$name")" 16)" "$r" "$(__pad "$state" 24)" "$d" "${PROJ_DIR[$name]/#$HOME/\~}" "$r"
     done
     echo
@@ -240,7 +270,7 @@ __proj_status() {
         while IFS=$'\t' read -r svc state; do
             printf '  %s %-24s %s%s%s\n' "$(__dot "$state")" "$svc" "$d" "$state" "$r"
         done
-    printf '  %s%s logs <сервис> · %s sh <сервис> · %s restart <сервис> · %s cd%s\n\n' "$d" "$cmd" "$cmd" "$cmd" "$cmd" "$r"
+    printf "  %s$(__t p_cmds)%s\n\n" "$d" "$cmd" "$cmd" "$cmd" "$cmd" "$r"
 }
 
 proj() {
@@ -249,40 +279,40 @@ proj() {
         ''|ls) __proj_list; return ;;
         add)
             local dir=${3:-$PWD}
-            dir=$(cd "$dir" 2>/dev/null && pwd) || { echo "нет папки: ${3:-$PWD}"; return 1; }
+            dir=$(cd "$dir" 2>/dev/null && pwd) || { printf "$(__t p_nodir)" "${3:-$PWD}"; return 1; }
             name=${2:-${dir##*/}}
-            [[ $name =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "плохое имя: $name"; return 1; }
+            [[ $name =~ ^[A-Za-z0-9_.-]+$ ]] || { printf "$(__t p_badname)" "$name"; return 1; }
             mkdir -p "${PROJ_FILE%/*}"
             { [[ -f $PROJ_FILE ]] && awk -F'\t' -v n="$name" '$1 != n' "$PROJ_FILE"; printf '%s\t%s\n' "$name" "$dir"; } > "$PROJ_FILE.tmp" &&
                 command mv -f "$PROJ_FILE.tmp" "$PROJ_FILE"
             __proj_load; __proj_define
-            echo "добавлен: $(__proj_cmd "$name") → $dir"; return ;;
+            printf "$(__t p_added)" "$(__proj_cmd "$name")" "$dir"; return ;;
         rm)
             name=$2
-            [[ -n $name ]] || { echo 'укажи имя: proj rm <имя>'; return 1; }
+            [[ -n $name ]] || { __t p_rmname; echo; return 1; }
             mkdir -p "${PROJ_FILE%/*}"
             { [[ -f $PROJ_FILE ]] && awk -F'\t' -v n="$name" '$1 != n' "$PROJ_FILE"; printf '%s\t-\n' "$name"; } > "$PROJ_FILE.tmp" &&
                 command mv -f "$PROJ_FILE.tmp" "$PROJ_FILE"
             __proj_load; __proj_define
-            echo "скрыт: $name (вернуть: proj add $name <папка>)"; return ;;
+            printf "$(__t p_hidden)" "$name" "$name"; return ;;
     esac
 
     local dir=${PROJ_DIR[$name]}
-    [[ -n $dir ]] || { echo "нет проекта «$name» — список: proj"; return 1; }
+    [[ -n $dir ]] || { printf "$(__t p_unknown)" "$name"; return 1; }
     shift
     case $1 in
         '')   __proj_status "$name" ;;
         cd)   cd "$dir" ;;
-        sh)   [[ -n $2 ]] || { echo "укажи сервис: $(__proj_cmd "$name") sh <Tab>"; return 1; }
+        sh)   [[ -n $2 ]] || { printf "$(__t p_svc)" "$(__proj_cmd "$name")"; return 1; }
               (cd "$dir" && command docker compose exec "$2" sh -c 'command -v bash >/dev/null && exec bash || exec sh') ;;
         logs) shift
-              [[ $1 == -* ]] || set -- -f --tail=200 "$@"     # свои флаги — как есть
+              [[ $1 == -* ]] || set -- -f --tail=200 "$@"
               (cd "$dir" && command docker compose logs "$@") ;;
-        *)    (cd "$dir" && docker compose "$@") ;;          # через docker() — с защитой от down -v
+        *)    (cd "$dir" && docker compose "$@") ;;
     esac
 }
 
-__proj_services() {     # кладёт список сервисов в __svc (кэш на сессию)
+__proj_services() {
     local name=$1
     [[ -n ${__PROJ_SVC[$name]} ]] ||
         __PROJ_SVC[$name]=$(cd "${PROJ_DIR[$name]}" && timeout 5 docker compose config --services 2>/dev/null | tr '\n' ' ')
@@ -306,14 +336,14 @@ __proj_complete() {
 }
 complete -F __proj_complete proj
 
-app() {                 # app — в папку текущего/единственного проекта, app <имя> — в папку проекта
+app() {
     local name=${1:-$(__proj_current)}
     [[ -n $name ]] || { __proj_list; return; }
     proj "$name" cd
 }
-dsh() {                 # dsh <сервис> — shell в контейнере текущего/единственного проекта
+dsh() {
     local name; name=$(__proj_current)
-    [[ -n $name ]] || { echo 'проектов несколько — зайди в папку проекта или: <проект> sh <сервис>'; return 1; }
+    [[ -n $name ]] || { __t p_many; echo; return 1; }
     proj "$name" sh "$1"
 }
 __app_complete() { COMPREPLY=($(compgen -W "${!PROJ_DIR[*]}" -- "${COMP_WORDS[COMP_CWORD]}")); }
@@ -324,8 +354,7 @@ __dsh_complete() {
 complete -F __app_complete app
 complete -F __dsh_complete dsh
 
-# ── Состояние сервера ────────────────────────────────────────────────────────
-__bar() {       # __bar 67 → ████████████░░░░░░░░  67%
+__bar() {
     local p=${1%.*} w=${2:-20} c=$'\e[32m'
     (( p >= 90 )) && c=$'\e[31m' || { (( p >= 70 )) && c=$'\e[33m'; }
     local filled=$(( p * w / 100 ))
@@ -333,23 +362,29 @@ __bar() {       # __bar 67 → ████████████░░░░�
     printf '\e[0m %3d%%' "$p"
 }
 
+__bar_line() {   # "label__BAR__pct  note" → label + bar + note
+    local line pct
+    while IFS= read -r line; do
+        pct=${line#*__BAR__}; pct=${pct%%  *}
+        printf '%s%s%s\n' "${line%%__BAR__*}" "$(__bar "$pct")" "${line#*__BAR__$pct}"
+    done
+}
+
 sys() {
     local t=$'\e[1;35m' d=$'\e[90m' r=$'\e[0m' name state
-    printf '\n  %s%s%s  %s%s · %s%s\n' "$t" "$(hostname)" "$r" "$d" "$(uptime -p)" "${PROMPT_ENV:-без метки}" "$r"
+    printf '\n  %s%s%s  %s%s · %s%s\n' "$t" "$(hostname)" "$r" "$d" "$(uptime -p)" "${PROMPT_ENV:-$(__t sys_nolabel)}" "$r"
     local load; load=$(cut -d' ' -f1 /proc/loadavg)
-    printf '  %sнагрузка%s   %s  %s%s · ядер: %s%s\n' "$d" "$r" "$(__bar "$(awk -v l="$load" -v n="$(nproc)" 'BEGIN{printf "%d", l/n*100}')")" "$d" "$(cut -d' ' -f1-3 /proc/loadavg)" "$(nproc)" "$r"
-    # command — иначе подставятся алиасы free -h / df -h, объявленные выше
-    command free -b | awk -v d="$d" -v r="$r" '/^Mem:/ {printf "  %sпамять%s     __BAR__%d  %s%.1f из %.1f ГБ%s\n", d, r, ($2-$7)/$2*100, d, ($2-$7)/1073741824, $2/1073741824, r}' |
-        while IFS= read -r line; do local pct=${line#*__BAR__}; pct=${pct%%  *}; printf '%s%s%s\n' "${line%%__BAR__*}" "$(__bar "$pct")" "${line#*__BAR__$pct}"; done
-    command df -P / | awk -v d="$d" -v r="$r" 'NR==2 {gsub("%","",$5); printf "  %sдиск /%s     __BAR__%d  %s%.0f из %.0f ГБ%s\n", d, r, $5, d, $3/1048576, $2/1048576, r}' |
-        while IFS= read -r line; do local pct=${line#*__BAR__}; pct=${pct%%  *}; printf '%s%s%s\n' "${line%%__BAR__*}" "$(__bar "$pct")" "${line#*__BAR__$pct}"; done
+    printf '  %s%s%s  %s  %s%s · %s: %s%s\n' "$d" "$(__pad "$(__t sys_load)" 9)" "$r" "$(__bar "$(awk -v l="$load" -v n="$(nproc)" 'BEGIN{printf "%d", l/n*100}')")" "$d" "$(cut -d' ' -f1-3 /proc/loadavg)" "$(__t sys_cores)" "$(nproc)" "$r"
+    # `command` — the free/df aliases above would otherwise change the output format
+    command free -b | awk -v d="$d" -v r="$r" -v L="$(__pad "$(__t sys_mem)" 9)" -v of="$(__t of)" '/^Mem:/ {printf "  %s%s%s  __BAR__%d  %s%.1f %s %.1f GB%s\n", d, L, r, ($2-$7)/$2*100, d, ($2-$7)/1073741824, of, $2/1073741824, r}' | __bar_line
+    command df -P / | awk -v d="$d" -v r="$r" -v L="$(__pad "$(__t sys_disk)" 9)" -v of="$(__t of)" 'NR==2 {gsub("%","",$5); printf "  %s%s%s  __BAR__%d  %s%.0f %s %.0f GB%s\n", d, L, r, $5, d, $3/1048576, of, $2/1048576, r}' | __bar_line
 
-    printf '\n  %sтоп процессов%s\n' "$t" "$r"
+    printf '\n  %s%s%s\n' "$t" "$(__t sys_top)" "$r"
     ps -eo comm,%cpu,%mem --sort=-%cpu --no-headers | head -n 5 |
         awk -v c=$'\e[34m' -v d="$d" -v r="$r" '{printf "  %s%-26s%s %scpu %5.1f%%   mem %5.1f%%%s\n", c, $1, r, d, $2, $3, r}'
 
     if command -v docker >/dev/null; then
-        printf '\n  %sконтейнеры%s\n' "$t" "$r"
+        printf '\n  %s%s%s\n' "$t" "$(__t sys_cont)" "$r"
         command docker ps -a --format '{{.Names}}'$'\t''{{.Status}}' | while IFS=$'\t' read -r name state; do
             printf '  %s %-30s %s%s%s\n' "$(__dot "$state")" "$name" "$d" "$state" "$r"
         done
@@ -357,7 +392,6 @@ sys() {
     echo
 }
 
-# ── Шпаргалка: help · help <слово> — поиск · help <встроенная команда> — справка bash
 __help_rows() {
     local f=$1
     __help_section() { __pending_title=$1; }
@@ -368,49 +402,50 @@ __help_rows() {
     }
     local ex; ex=$(__proj_current); ex=${ex:-${!PROJ_DIR[*]}}; ex=${ex%% *}; ex=${ex:-myapp}
     local p; p=$(__proj_cmd "$ex")
+    local P; P=$(__t k_proj)
+    local S; S=$(__t k_svc)
 
-    __help_section 'Проекты  (находятся сами: docker compose ls)'
-    __help_row 'proj' 'все проекты: статус и папка'
-    __help_row '<проект>' 'статус контейнеров' "$p"
-    __help_row '<проект> logs [сервис]' 'логи: 200 строк и дальше поток' "$p logs web"
-    __help_row '<проект> sh <сервис>' 'shell внутри контейнера' "$p sh web"
-    __help_row '<проект> <команда>' 'любая docker compose команда' "$p restart web"
-    __help_row '<проект> cd · app' 'перейти в папку проекта' "app $ex"
-    __help_row 'dsh <сервис>' 'shell в контейнере проекта, где ты сейчас'
-    __help_row 'proj add [имя] [папка]' 'добавить вручную (по умолчанию — текущую)'
-    __help_row 'proj rm <имя>' 'скрыть из списка'
-    __help_section 'Docker'
-    __help_row 'dps' 'все контейнеры: статус и порты'
-    __help_row 'dc · dlogs' 'docker compose / логи в текущей папке'
-    __help_section 'Сервер'
-    __help_row 'sys' 'нагрузка, память, диск, процессы, контейнеры'
-    __help_row 'ports' 'кто слушает порты'
-    __help_row 'psg <имя>' 'процессы по имени' 'psg nginx'
-    __help_row 'df · free · du1' 'диск · память · размер папок здесь'
-    __help_section 'Файлы'
-    __help_row 'll · la' 'подробный список · со скрытыми'
-    __help_row 'bak <файл>' 'копия рядом: файл.bak-дата — перед правкой на проде' 'bak .env'
-    __help_row 'ex <архив>' 'распаковать: tar.gz, zip, xz, 7z…'
-    __help_row '.. · ... · mkcd <папка>' 'вверх · два вверх · создать и зайти'
-    __help_section 'История и ввод'
-    __help_row 'h · h <текст>' 'последние 50 команд · поиск'
-    __help_row 'начало команды + ↑/↓' 'листать только подходящие из истории'
-    __help_row 'Ctrl+R' 'поиск по всей истории'
-    __help_row 'Tab' 'дополнение без учёта регистра (и сервисов)'
-    __help_row ' команда (с пробелом)' 'не сохранится в историю — для паролей'
-    __help_section 'Подстраховка'
-    __help_row 'rm · cp · mv' 'спрашивают перед массовым удалением'
-    __help_row 'down -v · volume rm · prune' 'docker требует набрать yes'
-    __help_row '\rm …' 'без подтверждения (обход алиаса)'
-    __help_row '● prod в промпте' 'метка сервера: ~/.config/bashrc-local.conf'
+    __help_section "$(__t s_proj)"
+    __help_row 'proj' "$(__t r_proj)"
+    __help_row "$P" "$(__t r_status)" "$p"
+    __help_row "$P logs [$S]" "$(__t r_logs)" "$p logs web"
+    __help_row "$P sh <$S>" "$(__t r_sh)" "$p sh web"
+    __help_row "$P <cmd>" "$(__t r_any)" "$p restart web"
+    __help_row "$P cd · app" "$(__t r_cd)" "app $ex"
+    __help_row "dsh <$S>" "$(__t r_dsh)"
+    __help_row "proj add [$(__t k_name)] [$(__t k_folder)]" "$(__t r_add)"
+    __help_row "proj rm <$(__t k_name)>" "$(__t r_rm)"
+    __help_section "$(__t s_docker)"
+    __help_row 'dps' "$(__t r_dps)"
+    __help_row 'dc · dlogs' "$(__t r_dc)"
+    __help_section "$(__t s_server)"
+    __help_row 'sys' "$(__t r_sys)"
+    __help_row 'ports' "$(__t r_ports)"
+    __help_row "psg <$(__t k_name)>" "$(__t r_psg)" 'psg nginx'
+    __help_row 'df · free · du1' "$(__t r_df)"
+    __help_section "$(__t s_files)"
+    __help_row 'll · la' "$(__t r_ll)"
+    __help_row "bak <$(__t k_file)>" "$(__t r_bak)" 'bak .env'
+    __help_row "ex <$(__t k_archive)>" "$(__t r_ex)"
+    __help_row ".. · ... · mkcd <$(__t k_folder)>" "$(__t r_up)"
+    __help_section "$(__t s_hist)"
+    __help_row 'h · h <text>' "$(__t r_h)"
+    __help_row "$(__t k_arrows)" "$(__t r_arrows)"
+    __help_row 'Ctrl+R' "$(__t r_ctrlr)"
+    __help_row 'Tab' "$(__t r_tab)"
+    __help_row "$(__t k_space)" "$(__t r_space)"
+    __help_section "$(__t s_guard)"
+    __help_row 'rm · cp · mv' "$(__t r_rm_guard)"
+    __help_row 'down -v · volume rm · prune' "$(__t r_down)"
+    __help_row '\rm …' "$(__t r_noguard)"
+    __help_row "$(__t k_env)" "$(__t r_env)"
 
-    # Своё: ~/bin/* и ~/.bashrc.d/*.sh со строками «# help: имя — описание»
-    __help_section 'Своё  (~/bin, ~/.bashrc.d)'
+    __help_section "$(__t own)"
     local file line
     for file in ~/bin/*; do
         [[ -f $file && -x $file ]] || continue
         line=$(head -n 15 "$file" | sed -n 's/^[[:space:]]*\(#\|\/\/\|;;\|--\)[[:space:]]*help:[[:space:]]*//p' | head -n1)
-        __help_row "${file##*/}" "${line:-скрипт в ~/bin}"
+        __help_row "${file##*/}" "${line:-$(__t own_script)}"
     done
     for file in ~/.bashrc.d/*.sh; do
         [[ -f $file ]] || continue
@@ -424,22 +459,20 @@ __help_rows() {
 help() {
     local d=$'\e[90m' t=$'\e[1;35m' r=$'\e[0m'
     if (( $# )) && builtin help "$1" >/dev/null 2>&1; then builtin help "$@"; return; fi
-    printf '\n  %s✦ %s%s%s   %shelp <слово> — поиск · help <встроенная> — справка bash%s\n' "$t" "$(hostname)" "${PROMPT_ENV:+ · $PROMPT_ENV}" "$r" "$d" "$r"
-    if (( ${#PROJ_DIR[@]} )); then printf '  %sпроекты: %s%s\n' "$d" "$(for n in "${!PROJ_DIR[@]}"; do printf '%s  ' "$(__proj_cmd "$n")"; done)" "$r"; fi
+    printf '\n  %s✦ %s%s%s   %s%s%s\n' "$t" "$(hostname)" "${PROMPT_ENV:+ · $PROMPT_ENV}" "$r" "$d" "$(__t help_hint)" "$r"
+    if (( ${#PROJ_DIR[@]} )); then printf '  %s%s: %s%s\n' "$d" "$(__t projects)" "$(for n in "${!PROJ_DIR[@]}"; do printf '%s  ' "$(__proj_cmd "$n")"; done)" "$r"; fi
     local __pending_title=
     __help_rows "$*"
     echo
 }
 
-# ── Своё: ~/.bashrc.d/*.sh (уезжают с srv install, остаются при обновлении) ──
 for __f in ~/.bashrc.d/*.sh; do [[ -f $__f ]] && . "$__f"; done; unset __f
 
-# ── Старт ────────────────────────────────────────────────────────────────────
 __proj_load
 __proj_define
 
 if shopt -q login_shell; then
     __names=$(for n in $(printf '%s\n' "${!PROJ_DIR[@]}" | sort); do printf '%s ' "$(__proj_cmd "$n")"; done)
-    printf '\e[90m  %shelp — шпаргалка · sys — состояние сервера\e[0m\n' "${__names:+проекты: $__names· }"
+    printf '\e[90m  %s%s\e[0m\n' "${__names:+$(__t projects): $__names· }" "$(__t banner)"
     unset __names
 fi

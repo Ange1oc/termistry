@@ -1,31 +1,24 @@
-# ─────────────────────────────────────────────────────────────────────────────
-#  PowerShell 7 profile · terminal-setup
-#  Одна палитра на всё (Catppuccin, theme — переключить), промпт oh-my-posh,
-#  подсказки из истории, сокращения, шпаргалка help, свои команды в bin\.
-#  Свои настройки — в custom.ps1 рядом (никогда не перезаписывается).
-#  Обновляется скриптом setup-terminal.ps1 (старые версии — *.bak-<дата>).
-# ─────────────────────────────────────────────────────────────────────────────
-
 $global:ProfileDir = Split-Path $PROFILE
 $env:XDG_CONFIG_HOME = "$HOME\.config"
 $global:isInteractive = -not [Console]::IsOutputRedirected -and $Host.Name -eq 'ConsoleHost'
 
-# Переключатели — можно поменять в custom.ps1
 $global:TerminalSetup = @{
-    Abbreviations = $true    # g␣ → git␣ (abbr — список)
-    LayoutFix     = $true    # «вщслук зы» + Enter → docker ps
-    Predictions   = 50       # подсказок из истории (0 — встроенные 10 от PSReadLine)
+    Abbreviations = $true
+    LayoutFix     = $true
+    Predictions   = 50
 }
 
 . (Join-Path $ProfileDir 'palette.ps1')
+. (Join-Path $ProfileDir 'lang.ps1')
 $global:ThemeName = Get-ThemeName
 $global:Palette = $CatppuccinFlavors[$ThemeName]
 $env:TERMINAL_THEME = $ThemeName
+$global:LangName = Get-LangName
+$global:T = $Strings[$LangName]
 
 . (Join-Path $ProfileDir 'toolkit.ps1')
 Set-TerminalPalette
 
-# ── Своё: custom.ps1 и bin\ ──────────────────────────────────────────────────
 $before = @(Get-ChildItem Function: | Select-Object -ExpandProperty Name)
 $customFile = Join-Path $ProfileDir 'custom.ps1'
 if (Test-Path $customFile) {
@@ -35,7 +28,6 @@ $global:CustomFunctions = @(Get-ChildItem Function: | Where-Object { $_.Name -no
 Remove-Variable before, customFile
 Register-BinCommands (Join-Path $ProfileDir 'bin')
 
-# ── PSReadLine: редактирование, история, подсказки ───────────────────────────
 if ($isInteractive) {
     Set-PSReadLineOption -EditMode Emacs `
         -HistoryNoDuplicates `
@@ -44,23 +36,23 @@ if ($isInteractive) {
         -BellStyle None `
         -PredictionSource History `
         -PredictionViewStyle ListView
-    Set-TerminalPalette    # цвета подсказок — теперь, когда PSReadLine загружен
+    Set-TerminalPalette
 
-    Set-PSReadLineKeyHandler -Key Tab            -Function MenuComplete
-    Set-PSReadLineKeyHandler -Key Ctrl+c         -Function CancelLine
-    Set-PSReadLineKeyHandler -Key UpArrow        -Function HistorySearchBackward   # набрал "git" + ↑ — листаешь только git-команды
-    Set-PSReadLineKeyHandler -Key DownArrow      -Function HistorySearchForward
-    Set-PSReadLineKeyHandler -Key F2             -Function SwitchPredictionView    # список подсказок ⇄ серая подсказка в строке
-    Set-PSReadLineKeyHandler -Key Ctrl+RightArrow -Function ForwardWord            # принять подсказку по словам
-    Set-PSReadLineKeyHandler -Key Ctrl+Backspace -Function BackwardKillWord
-    Set-PSReadLineKeyHandler -Key Ctrl+Delete    -Function KillWord
-    Set-PSReadLineKeyHandler -Key Ctrl+z         -Function Undo
-    Set-PSReadLineKeyHandler -Key Ctrl+y         -Function Redo
-    Set-PSReadLineKeyHandler -Key Shift+Enter    -Function AddLine
-    Set-PSReadLineKeyHandler -Key F1 -BriefDescription 'CheatSheet' -Description 'Шпаргалка с поиском, Enter вставляет команду' -ScriptBlock { Invoke-HelpPicker }
+    Set-PSReadLineKeyHandler -Key Tab             -Function MenuComplete
+    Set-PSReadLineKeyHandler -Key Ctrl+c          -Function CancelLine
+    Set-PSReadLineKeyHandler -Key UpArrow         -Function HistorySearchBackward
+    Set-PSReadLineKeyHandler -Key DownArrow       -Function HistorySearchForward
+    Set-PSReadLineKeyHandler -Key F2              -Function SwitchPredictionView
+    Set-PSReadLineKeyHandler -Key Ctrl+RightArrow -Function ForwardWord
+    Set-PSReadLineKeyHandler -Key Ctrl+Backspace  -Function BackwardKillWord
+    Set-PSReadLineKeyHandler -Key Ctrl+Delete     -Function KillWord
+    Set-PSReadLineKeyHandler -Key Ctrl+z          -Function Undo
+    Set-PSReadLineKeyHandler -Key Ctrl+y          -Function Redo
+    Set-PSReadLineKeyHandler -Key Shift+Enter     -Function AddLine
+    Set-PSReadLineKeyHandler -Key F1 -BriefDescription 'CheatSheet' -ScriptBlock { Invoke-HelpPicker }
 
     if ($TerminalSetup.Abbreviations) {
-        Set-PSReadLineKeyHandler -Key Spacebar -BriefDescription 'ExpandAbbreviation' -Description 'g␣ → git␣' -ScriptBlock {
+        Set-PSReadLineKeyHandler -Key Spacebar -BriefDescription 'ExpandAbbreviation' -ScriptBlock {
             $line = $null; $cursor = $null
             [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
             $exp = Expand-Abbreviation $line $cursor
@@ -72,9 +64,8 @@ if ($isInteractive) {
         }
     }
 
-    # Подсказки из истории: до 50 вместо встроенных 10 (окно 10 строк, листается ↑/↓).
-    # Плагин — DeepHistoryPredictor.cs рядом с профилем. DLL кэшируется под хэшем исходника:
-    # правка .cs даёт новую DLL, а старая может оставаться занятой в открытых вкладках.
+    # History predictor plugin: PSReadLine caps built-in history suggestions at 10, plugins get 50.
+    # The DLL is cached by source hash because a loaded DLL stays locked by open sessions.
     $predictorSrc = Join-Path $ProfileDir 'DeepHistoryPredictor.cs'
     if ($TerminalSetup.Predictions -gt 0 -and (Test-Path $predictorSrc)) {
         try {
@@ -94,19 +85,19 @@ if ($isInteractive) {
             }
             Set-PSReadLineOption -PredictionSource Plugin
         } catch {
-            Write-Warning "Подсказки из истории (DeepHistoryPredictor): $_"
+            Write-Warning "DeepHistoryPredictor: $_"
         }
     }
 }
 
-# ── Промпт ───────────────────────────────────────────────────────────────────
 if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
     oh-my-posh init pwsh --config "$HOME\.config\ohmyposh\soft.omp.json" | Invoke-Expression
 }
 
-# Enter: исправить раскладку, раскрыть сокращение, затем как обычно (с transient-промптом oh-my-posh)
+# Enter: layout fix + abbreviation, then oh-my-posh's transient prompt (its handler is not chainable,
+# so Set-TransientPrompt is called from the module scope) and AcceptLine.
 if ($isInteractive -and ($TerminalSetup.LayoutFix -or $TerminalSetup.Abbreviations)) {
-    Set-PSReadLineKeyHandler -Key Enter -BriefDescription 'TerminalSetupEnter' -Description 'Раскладка и сокращения, затем выполнить' -ScriptBlock {
+    Set-PSReadLineKeyHandler -Key Enter -BriefDescription 'TerminalSetupEnter' -ScriptBlock {
         $line = $null; $cursor = $null; $errors = $null
         [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
         if ($TerminalSetup.LayoutFix -and $line) {
@@ -125,26 +116,22 @@ if ($isInteractive -and ($TerminalSetup.LayoutFix -or $TerminalSetup.Abbreviatio
     }
 }
 
-# ── fzf: Ctrl+R — история, Ctrl+T — файлы, Alt+C — перейти в папку ───────────
 $env:FZF_DEFAULT_COMMAND = 'fd --type f --hidden --exclude .git'
-$env:FZF_CTRL_R_OPTS = '--height=14 --header="Enter — вставить в строку · PgUp/PgDn — листать по 10 · Esc — отмена"'
+$env:FZF_CTRL_R_OPTS = '--height=14'
 if ($isInteractive -and (Get-Command fzf -ErrorAction SilentlyContinue)) {
-    # модуль PSFzf подгрузится сам при первом нажатии — старт быстрее на ~0.3 с
+    # PSFzf auto-loads on first use; importing it eagerly costs ~0.3 s at startup
     Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock { Invoke-FzfPsReadlineHandlerHistory }
     Set-PSReadLineKeyHandler -Key Ctrl+t -ScriptBlock { Invoke-FzfPsReadlineHandlerProvider }
     Set-PSReadLineKeyHandler -Key Alt+c  -ScriptBlock { Invoke-FzfPsReadlineHandlerSetLocation }
 }
 
-# ── zoxide: z <кусок имени> — прыжок в часто используемую папку, zi — с выбором
 if (Get-Command zoxide -ErrorAction SilentlyContinue) {
     Invoke-Expression (& { (zoxide init powershell | Out-String) })
 }
 
-# ── bat / delta ──────────────────────────────────────────────────────────────
-$env:BAT_THEME = 'ansi'          # берёт цвета из схемы терминала
+$env:BAT_THEME = 'ansi'
 $env:BAT_STYLE = 'numbers,changes,header-filename'
 
-# ── Автодополнения CLI (кэшируются; обновить: Update-Completions) ────────────
 $completionCache = "$HOME\.cache\pwsh-completions"
 $completionGenerators = [ordered]@{
     kubectl  = { kubectl completion powershell }
@@ -170,7 +157,6 @@ function Update-Completions {
 if (-not (Test-Path $completionCache)) { Update-Completions | Out-Null }
 foreach ($file in Get-ChildItem $completionCache -Filter *.ps1) { . $file.FullName }
 
-# ── Команды ──────────────────────────────────────────────────────────────────
 $ezaArgs = '--icons=auto', '--group-directories-first', '--color=always'
 function l   { eza @ezaArgs @args }
 function ll  { eza @ezaArgs -la --git --time-style=relative --no-user @args }
