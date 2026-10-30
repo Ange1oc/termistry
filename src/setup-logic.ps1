@@ -18,16 +18,20 @@
   Hosts from ~/.ssh/config that get a tab in the Windows Terminal menu.
 .PARAMETER SkipApps
   Only configs — no programs, no font.
+.PARAMETER Uninstall
+  Remove the managed profile files and caches. custom.ps1, bin\, installed programs and *.bak files stay.
 #>
 param(
     [ValidateSet('', 'ru', 'en')][string]$Lang = '',
     [ValidateSet('', 'mocha', 'macchiato', 'frappe', 'latte')][string]$Theme = '',
     [string]$StartingDirectory,
     [string[]]$SshTabs = @(),
-    [switch]$SkipApps
+    [switch]$SkipApps,
+    [switch]$Uninstall
 )
 
 $ErrorActionPreference = 'Stop'
+$SetupVersion = '__VERSION__'
 $ProgressPreference = 'SilentlyContinue'
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
@@ -72,6 +76,7 @@ $L = @{
         next2 = 'Своё: custom.ps1 и bin\ рядом с профилем (ep) · new имя.py — команда на любом языке · theme latte · lang en'
         next3 = 'Серверы: srv install <хост> -Env prod  — такой же удобный bash на Linux.'
         next4 = 'Скрипт можно запускать повторно — он доустановит недостающее и обновит конфиги.'
+        s_uninstall = 'Удаление'; removed = 'удалён'; uninstall_kept = 'Остались: custom.ps1, bin\, server\custom\, программы, шрифт, настройки Windows Terminal и *.bak'
     }
     en = @{
         title = '✦ Terminal setup'; admin_note = 'running as administrator — better as a regular user; elevation is requested only where needed'
@@ -95,6 +100,7 @@ $L = @{
         next2 = 'Yours: custom.ps1 and bin\ next to the profile (ep) · new name.py — a command in any language · theme latte · lang ru'
         next3 = 'Servers: srv install <host> -Env prod  — the same bash on Linux.'
         next4 = 'Safe to run again — it installs what is missing and updates the configs.'
+        s_uninstall = 'Uninstall'; removed = 'removed'; uninstall_kept = 'Kept: custom.ps1, bin\, server\custom\, programs, font, Windows Terminal settings and *.bak files'
     }
 }[$Lang]
 
@@ -137,7 +143,7 @@ function Install-WingetPackage([string]$Id, [string]$Command, [string]$Title) {
 
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     Write-Host ''
-    Write-Host "  $($L.title)" -ForegroundColor Magenta
+    Write-Host "  $($L.title) $SetupVersion" -ForegroundColor Magenta
     Step 'PowerShell 7'
     $pwsh = Get-Pwsh
     if (-not $pwsh) {
@@ -159,11 +165,24 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 }
 
 Write-Host ''
-Write-Host "  $($L.title)" -ForegroundColor Magenta
+Write-Host "  $($L.title) $SetupVersion" -ForegroundColor Magenta
 Info "PowerShell $($PSVersionTable.PSVersion) · $([Environment]::OSVersion.VersionString)"
 if (Test-Admin) { Info $L.admin_note }
 
 $ProfileDir = Split-Path $PROFILE
+
+if ($Uninstall) {
+    Step $L.s_uninstall
+    $managed = @('Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh' | ForEach-Object { Join-Path $ProfileDir $_ })
+    $managed += (Join-Path $HOME '.config\ohmyposh\soft.omp.json'), (Join-Path $HOME '.config\terminal-setup'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
+    foreach ($p in $managed) {
+        if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) — $($L.removed)" }
+    }
+    Write-Host ''
+    Write-Host "  $($L.uninstall_kept)" -ForegroundColor Gray
+    Write-Host ''
+    exit 0
+}
 $ThemeFile = Join-Path $ConfigDir 'theme'
 $LangFile = Join-Path $ConfigDir 'lang'
 $FontFace = 'JetBrainsMono NF'

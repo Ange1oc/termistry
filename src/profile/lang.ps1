@@ -21,8 +21,8 @@ $Strings = @{
             @{ Key = 'nav'; Title = 'Навигация'; Rows = @(
                 , ('z <часть имени>', 'перейти в папку, где часто бываешь', 'z coding')
                 , ('zi', 'то же, но выбрать из списка')
-                , ('Alt+C', 'выбрать папку через fzf и перейти')
-                , ('.. / ...', 'на уровень / два вверх')
+                , ('Alt+C / nav', 'папки деревом: → войти, ← вверх, Enter — перейти, Ctrl+F — искать вглубь')
+                , ('.. / ... / ....', 'на уровень / два / три вверх')
                 , ('mkcd <папка>', 'создать папку и сразу зайти в неё', 'mkcd new-app')
                 , ('ii .', 'открыть текущую папку в Проводнике')
                 , ('code .', 'открыть папку в VS Code')
@@ -33,6 +33,9 @@ $Strings = @{
                 , ('touch <файл>', 'создать пустой файл / обновить дату')
                 , ('which <команда>', 'где лежит программа', 'which python')
                 , ('tldr <команда>', 'короткая шпаргалка с примерами', 'tldr tar')
+                , ('ex <архив>', 'распаковать zip · tar.gz · 7z · xz в папку рядом', 'ex build.zip')
+                , ('bak <файл>', 'копия рядом: файл.bak-дата — перед правкой', 'bak .env')
+                , ('… | cb', 'вывод команды — в буфер обмена', 'll | cb')
             ) }
             @{ Key = 'search'; Title = 'Поиск'; Rows = @(
                 , ('rg <текст>', 'найти текст во всех файлах папки', 'rg TODO -t py')
@@ -83,6 +86,7 @@ $Strings = @{
                 , ('my docker', 'контейнеры и compose-проекты')
                 , ('my sys', 'процессор, память, диски, топ процессов')
                 , ('my ports [порт]', 'кто слушает порты', 'my ports 5432')
+                , ('psg <имя>', 'процессы по имени: PID, память, запуск', 'psg node')
                 , ('my ip', 'IP-адреса и шлюз · my ip public — внешний IP')
                 , ('my tools', 'версии всех установленных инструментов')
             ) }
@@ -90,12 +94,35 @@ $Strings = @{
                 , ('new имя.py', 'своя команда: py · ps1 · js · ts · sh · go · rs · clj', 'new weather.py')
                 , ('my cmds', 'мои команды, функции и сокращения')
                 , ('ep', 'открыть папку профиля в VS Code: custom.ps1, bin\')
+                , ('my config', 'где лежат все файлы и настройки')
                 , ('theme [вариант]', 'mocha · macchiato · frappe · latte — на лету', 'theme latte')
                 , ('lang [ru|en]', 'язык терминала и серверов')
+                , ('doctor', 'проверить, что всё на месте и работает')
+                , ('update', 'обновить terminal-setup с GitHub')
                 , ('reload', 'перечитать профиль после правок')
                 , ('Update-Completions', 'обновить Tab-дополнения после обновления CLI')
             ) }
         )
+        nav_header = '→ войти  ← вверх  Enter — перейти  Ctrl+F — искать вглубь  Ctrl+O — Проводник  Esc'
+        nav_deep = 'все папки внутри {0}'
+        ex_nofile = 'нет файла: {0}'; ex_unknown = 'не знаю, чем распаковать: {0}'; ex_done = 'распаковано в {0}'
+        cb_done = 'в буфере обмена: {0} строк'
+        config_title = 'Где что лежит'; config_hint = 'ep — открыть папку профиля'
+        config_rows = [ordered]@{
+            profile = 'профиль PowerShell и команды'; custom = 'своё: функции, сокращения, переключатели'; bin = 'свои команды на любом языке'
+            srvcustom = 'свои файлы для серверов (→ ~/.bashrc.d)'; settings = 'тема и язык'; omp = 'тема промпта oh-my-posh'
+            completions = 'кэш Tab-дополнений'; predictor = 'кэш плагина подсказок'; wt = 'настройки Windows Terminal'
+            vscode = 'настройки VS Code'; gitconfig = 'git: delta и имя'; ssh = 'SSH-хосты (my ssh, jump, srv)'
+        }
+        config_missing = 'нет'
+        doctor_title = 'Проверка'; doctor_hint = 'terminal-setup {0}'
+        doctor_tools = 'инструменты'; doctor_files = 'файлы профиля'; doctor_font = 'шрифт для всех пользователей'
+        doctor_wt = 'Windows Terminal: схемы и PowerShell 7 по умолчанию'; doctor_psfzf = 'модуль PSFzf'
+        doctor_predictor = 'подсказки из истории (до 50)'; doctor_custom = 'custom.ps1 без ошибок'
+        doctor_startup = 'старт профиля'; doctor_ok = 'всё в порядке'; doctor_fix = 'починить: update'
+        doctor_missing = 'нет: {0}'
+        update_start = 'обновляю terminal-setup с GitHub…'; update_done = 'готово — reload или новая вкладка'
+        update_fail = 'не удалось скачать установщик: {0}'
         no_insert = '^(Ctrl|Alt|Shift|Win|Tab|F\d|↑|→|начни|набрал|вщслук|g␣)'
 
         my_topics = [ordered]@{
@@ -109,6 +136,7 @@ $Strings = @{
             path   = 'PATH: что есть, чего нет, дубли'
             git    = 'имя, почта, remotes, алиасы git'
             cmds   = 'мои команды из bin, функции из custom.ps1, сокращения'
+            config = 'где лежат все файлы и настройки'
             keys   = 'горячие клавиши'
         }
         my_title = 'my <тема>'; my_hint = 'Tab дополняет тему'
@@ -192,8 +220,8 @@ $Strings = @{
             @{ Key = 'nav'; Title = 'Navigation'; Rows = @(
                 , ('z <part of name>', 'jump to a folder you use often', 'z coding')
                 , ('zi', 'same, but pick from a list')
-                , ('Alt+C', 'pick a folder with fzf and go there')
-                , ('.. / ...', 'one / two levels up')
+                , ('Alt+C / nav', 'folders as a tree: → enter, ← up, Enter — go, Ctrl+F — search deep')
+                , ('.. / ... / ....', 'one / two / three levels up')
                 , ('mkcd <folder>', 'create a folder and enter it', 'mkcd new-app')
                 , ('ii .', 'open the current folder in Explorer')
                 , ('code .', 'open the folder in VS Code')
@@ -204,6 +232,9 @@ $Strings = @{
                 , ('touch <file>', 'create an empty file / update its date')
                 , ('which <command>', 'where a program lives', 'which python')
                 , ('tldr <command>', 'short cheat sheet with examples', 'tldr tar')
+                , ('ex <archive>', 'extract zip · tar.gz · 7z · xz into a folder next to it', 'ex build.zip')
+                , ('bak <file>', 'copy next to it: file.bak-date — before editing', 'bak .env')
+                , ('… | cb', 'command output → clipboard', 'll | cb')
             ) }
             @{ Key = 'search'; Title = 'Search'; Rows = @(
                 , ('rg <text>', 'find text in all files of the folder', 'rg TODO -t py')
@@ -253,6 +284,7 @@ $Strings = @{
                 , ('my docker', 'containers and compose projects')
                 , ('my sys', 'cpu, memory, disks, top processes')
                 , ('my ports [port]', 'who listens on which port', 'my ports 5432')
+                , ('psg <name>', 'processes by name: PID, memory, command line', 'psg node')
                 , ('my ip', 'IP addresses and gateway · my ip public — external IP')
                 , ('my tools', 'versions of all installed tools')
             ) }
@@ -260,12 +292,35 @@ $Strings = @{
                 , ('new name.py', 'your own command: py · ps1 · js · ts · sh · go · rs · clj', 'new weather.py')
                 , ('my cmds', 'my commands, functions and abbreviations')
                 , ('ep', 'open the profile folder in VS Code: custom.ps1, bin\')
+                , ('my config', 'where every file and setting lives')
                 , ('theme [variant]', 'mocha · macchiato · frappe · latte — live', 'theme latte')
                 , ('lang [ru|en]', 'language of the terminal and servers')
+                , ('doctor', 'check that everything is in place and works')
+                , ('update', 'update terminal-setup from GitHub')
                 , ('reload', 're-read the profile after edits')
                 , ('Update-Completions', 'refresh Tab completions after updating a CLI')
             ) }
         )
+        nav_header = '→ enter  ← up  Enter — go  Ctrl+F — search deep  Ctrl+O — Explorer  Esc'
+        nav_deep = 'all folders under {0}'
+        ex_nofile = 'no such file: {0}'; ex_unknown = 'do not know how to extract: {0}'; ex_done = 'extracted to {0}'
+        cb_done = 'in the clipboard: {0} lines'
+        config_title = 'Where things live'; config_hint = 'ep — open the profile folder'
+        config_rows = [ordered]@{
+            profile = 'PowerShell profile and commands'; custom = 'yours: functions, abbreviations, switches'; bin = 'your commands in any language'
+            srvcustom = 'your files for servers (→ ~/.bashrc.d)'; settings = 'theme and language'; omp = 'oh-my-posh prompt theme'
+            completions = 'Tab completion cache'; predictor = 'suggestions plugin cache'; wt = 'Windows Terminal settings'
+            vscode = 'VS Code settings'; gitconfig = 'git: delta and identity'; ssh = 'SSH hosts (my ssh, jump, srv)'
+        }
+        config_missing = 'missing'
+        doctor_title = 'Check-up'; doctor_hint = 'terminal-setup {0}'
+        doctor_tools = 'tools'; doctor_files = 'profile files'; doctor_font = 'font installed for all users'
+        doctor_wt = 'Windows Terminal: schemes and PowerShell 7 as default'; doctor_psfzf = 'PSFzf module'
+        doctor_predictor = 'history suggestions (up to 50)'; doctor_custom = 'custom.ps1 has no errors'
+        doctor_startup = 'profile startup'; doctor_ok = 'all good'; doctor_fix = 'fix: update'
+        doctor_missing = 'missing: {0}'
+        update_start = 'updating terminal-setup from GitHub…'; update_done = 'done — reload or open a new tab'
+        update_fail = 'could not download the installer: {0}'
         no_insert = '^(Ctrl|Alt|Shift|Win|Tab|F\d|↑|→|start|type|g␣)'
 
         my_topics = [ordered]@{
@@ -279,6 +334,7 @@ $Strings = @{
             path   = 'PATH: present, missing, duplicates'
             git    = 'name, email, remotes, git aliases'
             cmds   = 'my commands from bin, functions from custom.ps1, abbreviations'
+            config = 'where every file and setting lives'
             keys   = 'keyboard shortcuts'
         }
         my_title = 'my <topic>'; my_hint = 'Tab completes the topic'

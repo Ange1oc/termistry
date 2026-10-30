@@ -69,8 +69,10 @@ Offline machine: download [`setup-terminal.ps1`](setup-terminal.ps1) and run `po
 | `вщслук зы` ⏎ | typed in the Russian layout — fixed and executed: `docker ps` |
 | start typing | up to 50 suggestions from history (PSReadLine's built-in limit is 10), ↑/↓ to scroll, → to accept |
 | `h` · `h docker` | last 50 commands, 10 per page · filtered |
-| `Ctrl+R` · `Ctrl+T` · `Alt+C` | fzf: history · insert a file path · go to a folder |
+| `Ctrl+R` · `Ctrl+T` | fzf: history search · insert a file path |
+| `Alt+C` · `nav` | folders as a tree: `→` enter, `←` up, Enter — go, `Ctrl+F` — fuzzy search through every folder below, `Ctrl+O` — Explorer |
 | `Ctrl+Backspace` · `Ctrl+Z` · `Shift+Enter` | delete word · undo · new line |
+| `ex archive` · `bak file` · `… \| cb` · `psg name` | extract · copy before editing · output to clipboard · processes by name |
 
 ## `my` — everything about this machine
 
@@ -118,6 +120,25 @@ One ssh connection, backup and a trial load before replacing anything, one line 
 - `sys` — load, memory, disk, processes, containers. `help` — cheat sheet with search. `bak file` — a copy before editing, `ex archive` — extract, `h` — history.
 - **Yours for servers**: files from `server\custom\*.sh` next to the profile go to every server into `~/.bashrc.d/`. Scripts in `~/bin` and `# help: name — description` lines show up in `help` on the server.
 
+## Where things live
+
+`my config` lists everything with check marks, `doctor` verifies that it is all in place and working.
+
+| | |
+|---|---|
+| `~\Documents\PowerShell\` | profile and commands, your `custom.ps1`, `bin\`, `server\custom\` — this is the `$PROFILE` folder; with Documents redirected to OneDrive it lives there and syncs |
+| `~\.config\terminal-setup\` | `theme`, `lang` |
+| `~\.config\ohmyposh\soft.omp.json` | prompt theme |
+| `~\.cache\pwsh-completions\`, `~\.cache\pwsh-predictor\` | caches — safe to delete, rebuilt automatically |
+| `%LOCALAPPDATA%\Packages\Microsoft.WindowsTerminal_*\LocalState\settings.json` | Windows Terminal |
+| `%APPDATA%\Code\User\settings.json`, `~\.gitconfig` | VS Code terminal font, delta for git |
+
+## Update and uninstall
+
+- `update` — downloads the installer from GitHub and updates whatever changed. Running the install command again does the same.
+- `setup-terminal.ps1 -Uninstall` — removes the profile files and caches. `custom.ps1`, `bin\`, programs, the font and `*.bak` files stay.
+- **Rolling back one file**: every changed file has a `*.bak-<date>` next to it; on a server — `srv remove <host>`.
+
 ## How it is built
 
 ```
@@ -133,5 +154,3 @@ tools/                make-screenshots.ps1 — the images in docs/ come from rea
 ```
 
 Make it yours: edit the files in the profile folder (`ep`), then `.\build.ps1 -FromProfile`, commit, push — the next install picks up the new version.
-
-**Rollback**: every changed file has a `*.bak-<date>` next to it; on a server — `srv remove <host>`.

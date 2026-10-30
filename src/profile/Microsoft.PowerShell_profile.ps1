@@ -1,3 +1,4 @@
+$global:TerminalSetupVersion = '2.2.0'
 $global:ProfileDir = Split-Path $PROFILE
 $env:XDG_CONFIG_HOME = "$HOME\.config"
 $global:isInteractive = -not [Console]::IsOutputRedirected -and $Host.Name -eq 'ConsoleHost'
@@ -14,7 +15,7 @@ $global:ThemeName = Get-ThemeName
 $global:Palette = $CatppuccinFlavors[$ThemeName]
 $env:TERMINAL_THEME = $ThemeName
 $global:LangName = Get-LangName
-$global:T = $Strings[$LangName]
+$global:TkStr = $Strings[$LangName]
 
 . (Join-Path $ProfileDir 'toolkit.ps1')
 Set-TerminalPalette
@@ -29,13 +30,15 @@ Remove-Variable before, customFile
 Register-BinCommands (Join-Path $ProfileDir 'bin')
 
 if ($isInteractive) {
-    Set-PSReadLineOption -EditMode Emacs `
-        -HistoryNoDuplicates `
-        -HistorySearchCursorMovesToEnd `
-        -MaximumHistoryCount 20000 `
-        -BellStyle None `
-        -PredictionSource History `
-        -PredictionViewStyle ListView
+    try {
+        Set-PSReadLineOption -EditMode Emacs `
+            -HistoryNoDuplicates `
+            -HistorySearchCursorMovesToEnd `
+            -MaximumHistoryCount 20000 `
+            -BellStyle None `
+            -PredictionSource History `
+            -PredictionViewStyle ListView
+    } catch { Write-Warning "PSReadLine: $_" }
     Set-TerminalPalette
 
     Set-PSReadLineKeyHandler -Key Tab             -Function MenuComplete
@@ -91,7 +94,8 @@ if ($isInteractive) {
 }
 
 if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
-    oh-my-posh init pwsh --config "$HOME\.config\ohmyposh\soft.omp.json" | Invoke-Expression
+    try { oh-my-posh init pwsh --config "$HOME\.config\ohmyposh\soft.omp.json" | Invoke-Expression }
+    catch { Write-Warning "oh-my-posh: $_" }
 }
 
 # Enter: layout fix + abbreviation, then oh-my-posh's transient prompt (its handler is not chainable,
@@ -122,11 +126,11 @@ if ($isInteractive -and (Get-Command fzf -ErrorAction SilentlyContinue)) {
     # PSFzf auto-loads on first use; importing it eagerly costs ~0.3 s at startup
     Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock { Invoke-FzfPsReadlineHandlerHistory }
     Set-PSReadLineKeyHandler -Key Ctrl+t -ScriptBlock { Invoke-FzfPsReadlineHandlerProvider }
-    Set-PSReadLineKeyHandler -Key Alt+c  -ScriptBlock { Invoke-FzfPsReadlineHandlerSetLocation }
+    Set-PSReadLineKeyHandler -Key Alt+c -BriefDescription 'FolderNavigator' -ScriptBlock { nav; [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt() }
 }
 
 if (Get-Command zoxide -ErrorAction SilentlyContinue) {
-    Invoke-Expression (& { (zoxide init powershell | Out-String) })
+    try { Invoke-Expression (& { (zoxide init powershell | Out-String) }) } catch { Write-Warning "zoxide: $_" }
 }
 
 $env:BAT_THEME = 'ansi'
@@ -155,14 +159,17 @@ function Update-Completions {
     }
 }
 if (-not (Test-Path $completionCache)) { Update-Completions | Out-Null }
-foreach ($file in Get-ChildItem $completionCache -Filter *.ps1) { . $file.FullName }
+foreach ($file in Get-ChildItem $completionCache -Filter *.ps1) {
+    try { . $file.FullName } catch { Write-Warning "$($file.Name): $_" }
+}
 
 $ezaArgs = '--icons=auto', '--group-directories-first', '--color=always'
 function l   { eza @ezaArgs @args }
 function ll  { eza @ezaArgs -la --git --time-style=relative --no-user @args }
 function lt  { eza @ezaArgs --tree --level=2 --git-ignore @args }
-function ..  { Set-Location .. }
-function ... { Set-Location ..\.. }
+function ..   { Set-Location .. }
+function ...  { Set-Location ..\.. }
+function .... { Set-Location ..\..\.. }
 function mkcd($path) { New-Item -ItemType Directory -Force $path | Out-Null; Set-Location $path }
 function which($name) { Get-Command $name -All | Select-Object CommandType, Name, Source }
 function touch($path) { if (Test-Path $path) { (Get-Item $path).LastWriteTime = Get-Date } else { New-Item -ItemType File $path | Out-Null } }

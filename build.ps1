@@ -49,7 +49,8 @@ foreach ($key in $files.Keys) {
 }
 $logic = [IO.File]::ReadAllText((Join-Path $root 'src\setup-logic.ps1')) -replace "`r`n", "`n"
 $embedded = $sb.ToString().TrimEnd() -replace "`r`n", "`n"
-$result = $logic.Replace('#@@EMBEDDED_FILES@@', $embedded)
+$version = [regex]::Match([IO.File]::ReadAllText((Join-Path $root 'src\profile\Microsoft.PowerShell_profile.ps1')), "TerminalSetupVersion = '([^']+)'").Groups[1].Value
+$result = $logic.Replace('#@@EMBEDDED_FILES@@', $embedded).Replace('__VERSION__', $version)
 
 $out = Join-Path $root 'setup-terminal.ps1'
 # UTF-8 with BOM: Windows PowerShell 5.1 reads a BOM-less file as cp1251 and breaks on Cyrillic
@@ -58,4 +59,4 @@ $out = Join-Path $root 'setup-terminal.ps1'
 $errors = $null
 [void][System.Management.Automation.Language.Parser]::ParseFile($out, [ref]$null, [ref]$errors)
 if ($errors) { $errors | ForEach-Object { "  ✗ строка $($_.Extent.StartLineNumber): $($_.Message)" }; throw 'setup-terminal.ps1 не разбирается' }
-"  ✓ setup-terminal.ps1 — $([math]::Round((Get-Item $out).Length / 1KB)) КБ, синтаксис в порядке"
+"  ✓ setup-terminal.ps1 v$version — $([math]::Round((Get-Item $out).Length / 1KB)) KB, parses"

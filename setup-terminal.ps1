@@ -18,16 +18,20 @@
   Hosts from ~/.ssh/config that get a tab in the Windows Terminal menu.
 .PARAMETER SkipApps
   Only configs — no programs, no font.
+.PARAMETER Uninstall
+  Remove the managed profile files and caches. custom.ps1, bin\, installed programs and *.bak files stay.
 #>
 param(
     [ValidateSet('', 'ru', 'en')][string]$Lang = '',
     [ValidateSet('', 'mocha', 'macchiato', 'frappe', 'latte')][string]$Theme = '',
     [string]$StartingDirectory,
     [string[]]$SshTabs = @(),
-    [switch]$SkipApps
+    [switch]$SkipApps,
+    [switch]$Uninstall
 )
 
 $ErrorActionPreference = 'Stop'
+$SetupVersion = '2.2.0'
 $ProgressPreference = 'SilentlyContinue'
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
@@ -72,6 +76,7 @@ $L = @{
         next2 = 'Своё: custom.ps1 и bin\ рядом с профилем (ep) · new имя.py — команда на любом языке · theme latte · lang en'
         next3 = 'Серверы: srv install <хост> -Env prod  — такой же удобный bash на Linux.'
         next4 = 'Скрипт можно запускать повторно — он доустановит недостающее и обновит конфиги.'
+        s_uninstall = 'Удаление'; removed = 'удалён'; uninstall_kept = 'Остались: custom.ps1, bin\, server\custom\, программы, шрифт, настройки Windows Terminal и *.bak'
     }
     en = @{
         title = '✦ Terminal setup'; admin_note = 'running as administrator — better as a regular user; elevation is requested only where needed'
@@ -95,6 +100,7 @@ $L = @{
         next2 = 'Yours: custom.ps1 and bin\ next to the profile (ep) · new name.py — a command in any language · theme latte · lang ru'
         next3 = 'Servers: srv install <host> -Env prod  — the same bash on Linux.'
         next4 = 'Safe to run again — it installs what is missing and updates the configs.'
+        s_uninstall = 'Uninstall'; removed = 'removed'; uninstall_kept = 'Kept: custom.ps1, bin\, server\custom\, programs, font, Windows Terminal settings and *.bak files'
     }
 }[$Lang]
 
@@ -137,7 +143,7 @@ function Install-WingetPackage([string]$Id, [string]$Command, [string]$Title) {
 
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     Write-Host ''
-    Write-Host "  $($L.title)" -ForegroundColor Magenta
+    Write-Host "  $($L.title) $SetupVersion" -ForegroundColor Magenta
     Step 'PowerShell 7'
     $pwsh = Get-Pwsh
     if (-not $pwsh) {
@@ -159,11 +165,24 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 }
 
 Write-Host ''
-Write-Host "  $($L.title)" -ForegroundColor Magenta
+Write-Host "  $($L.title) $SetupVersion" -ForegroundColor Magenta
 Info "PowerShell $($PSVersionTable.PSVersion) · $([Environment]::OSVersion.VersionString)"
 if (Test-Admin) { Info $L.admin_note }
 
 $ProfileDir = Split-Path $PROFILE
+
+if ($Uninstall) {
+    Step $L.s_uninstall
+    $managed = @('Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh' | ForEach-Object { Join-Path $ProfileDir $_ })
+    $managed += (Join-Path $HOME '.config\ohmyposh\soft.omp.json'), (Join-Path $HOME '.config\terminal-setup'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
+    foreach ($p in $managed) {
+        if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) — $($L.removed)" }
+    }
+    Write-Host ''
+    Write-Host "  $($L.uninstall_kept)" -ForegroundColor Gray
+    Write-Host ''
+    exit 0
+}
 $ThemeFile = Join-Path $ConfigDir 'theme'
 $LangFile = Join-Path $ConfigDir 'lang'
 $FontFace = 'JetBrainsMono NF'
@@ -173,6 +192,7 @@ $FontBaseUrl = 'https://github.com/ryanoasis/nerd-fonts/raw/v3.4.0/patched-fonts
 # ── Встроенные файлы (собраны build.ps1 из src/) ────────────────────────────
 $EmbeddedFiles = [ordered]@{}
 $EmbeddedFiles['profile'] = @'
+$global:TerminalSetupVersion = '2.2.0'
 $global:ProfileDir = Split-Path $PROFILE
 $env:XDG_CONFIG_HOME = "$HOME\.config"
 $global:isInteractive = -not [Console]::IsOutputRedirected -and $Host.Name -eq 'ConsoleHost'
@@ -189,7 +209,7 @@ $global:ThemeName = Get-ThemeName
 $global:Palette = $CatppuccinFlavors[$ThemeName]
 $env:TERMINAL_THEME = $ThemeName
 $global:LangName = Get-LangName
-$global:T = $Strings[$LangName]
+$global:TkStr = $Strings[$LangName]
 
 . (Join-Path $ProfileDir 'toolkit.ps1')
 Set-TerminalPalette
@@ -204,13 +224,15 @@ Remove-Variable before, customFile
 Register-BinCommands (Join-Path $ProfileDir 'bin')
 
 if ($isInteractive) {
-    Set-PSReadLineOption -EditMode Emacs `
-        -HistoryNoDuplicates `
-        -HistorySearchCursorMovesToEnd `
-        -MaximumHistoryCount 20000 `
-        -BellStyle None `
-        -PredictionSource History `
-        -PredictionViewStyle ListView
+    try {
+        Set-PSReadLineOption -EditMode Emacs `
+            -HistoryNoDuplicates `
+            -HistorySearchCursorMovesToEnd `
+            -MaximumHistoryCount 20000 `
+            -BellStyle None `
+            -PredictionSource History `
+            -PredictionViewStyle ListView
+    } catch { Write-Warning "PSReadLine: $_" }
     Set-TerminalPalette
 
     Set-PSReadLineKeyHandler -Key Tab             -Function MenuComplete
@@ -266,7 +288,8 @@ if ($isInteractive) {
 }
 
 if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
-    oh-my-posh init pwsh --config "$HOME\.config\ohmyposh\soft.omp.json" | Invoke-Expression
+    try { oh-my-posh init pwsh --config "$HOME\.config\ohmyposh\soft.omp.json" | Invoke-Expression }
+    catch { Write-Warning "oh-my-posh: $_" }
 }
 
 # Enter: layout fix + abbreviation, then oh-my-posh's transient prompt (its handler is not chainable,
@@ -297,11 +320,11 @@ if ($isInteractive -and (Get-Command fzf -ErrorAction SilentlyContinue)) {
     # PSFzf auto-loads on first use; importing it eagerly costs ~0.3 s at startup
     Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock { Invoke-FzfPsReadlineHandlerHistory }
     Set-PSReadLineKeyHandler -Key Ctrl+t -ScriptBlock { Invoke-FzfPsReadlineHandlerProvider }
-    Set-PSReadLineKeyHandler -Key Alt+c  -ScriptBlock { Invoke-FzfPsReadlineHandlerSetLocation }
+    Set-PSReadLineKeyHandler -Key Alt+c -BriefDescription 'FolderNavigator' -ScriptBlock { nav; [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt() }
 }
 
 if (Get-Command zoxide -ErrorAction SilentlyContinue) {
-    Invoke-Expression (& { (zoxide init powershell | Out-String) })
+    try { Invoke-Expression (& { (zoxide init powershell | Out-String) }) } catch { Write-Warning "zoxide: $_" }
 }
 
 $env:BAT_THEME = 'ansi'
@@ -330,14 +353,17 @@ function Update-Completions {
     }
 }
 if (-not (Test-Path $completionCache)) { Update-Completions | Out-Null }
-foreach ($file in Get-ChildItem $completionCache -Filter *.ps1) { . $file.FullName }
+foreach ($file in Get-ChildItem $completionCache -Filter *.ps1) {
+    try { . $file.FullName } catch { Write-Warning "$($file.Name): $_" }
+}
 
 $ezaArgs = '--icons=auto', '--group-directories-first', '--color=always'
 function l   { eza @ezaArgs @args }
 function ll  { eza @ezaArgs -la --git --time-style=relative --no-user @args }
 function lt  { eza @ezaArgs --tree --level=2 --git-ignore @args }
-function ..  { Set-Location .. }
-function ... { Set-Location ..\.. }
+function ..   { Set-Location .. }
+function ...  { Set-Location ..\.. }
+function .... { Set-Location ..\..\.. }
 function mkcd($path) { New-Item -ItemType Directory -Force $path | Out-Null; Set-Location $path }
 function which($name) { Get-Command $name -All | Select-Object CommandType, Name, Source }
 function touch($path) { if (Test-Path $path) { (Get-Item $path).LastWriteTime = Get-Date } else { New-Item -ItemType File $path | Out-Null } }
@@ -433,8 +459,8 @@ $Strings = @{
             @{ Key = 'nav'; Title = 'Навигация'; Rows = @(
                 , ('z <часть имени>', 'перейти в папку, где часто бываешь', 'z coding')
                 , ('zi', 'то же, но выбрать из списка')
-                , ('Alt+C', 'выбрать папку через fzf и перейти')
-                , ('.. / ...', 'на уровень / два вверх')
+                , ('Alt+C / nav', 'папки деревом: → войти, ← вверх, Enter — перейти, Ctrl+F — искать вглубь')
+                , ('.. / ... / ....', 'на уровень / два / три вверх')
                 , ('mkcd <папка>', 'создать папку и сразу зайти в неё', 'mkcd new-app')
                 , ('ii .', 'открыть текущую папку в Проводнике')
                 , ('code .', 'открыть папку в VS Code')
@@ -445,6 +471,9 @@ $Strings = @{
                 , ('touch <файл>', 'создать пустой файл / обновить дату')
                 , ('which <команда>', 'где лежит программа', 'which python')
                 , ('tldr <команда>', 'короткая шпаргалка с примерами', 'tldr tar')
+                , ('ex <архив>', 'распаковать zip · tar.gz · 7z · xz в папку рядом', 'ex build.zip')
+                , ('bak <файл>', 'копия рядом: файл.bak-дата — перед правкой', 'bak .env')
+                , ('… | cb', 'вывод команды — в буфер обмена', 'll | cb')
             ) }
             @{ Key = 'search'; Title = 'Поиск'; Rows = @(
                 , ('rg <текст>', 'найти текст во всех файлах папки', 'rg TODO -t py')
@@ -495,6 +524,7 @@ $Strings = @{
                 , ('my docker', 'контейнеры и compose-проекты')
                 , ('my sys', 'процессор, память, диски, топ процессов')
                 , ('my ports [порт]', 'кто слушает порты', 'my ports 5432')
+                , ('psg <имя>', 'процессы по имени: PID, память, запуск', 'psg node')
                 , ('my ip', 'IP-адреса и шлюз · my ip public — внешний IP')
                 , ('my tools', 'версии всех установленных инструментов')
             ) }
@@ -502,12 +532,35 @@ $Strings = @{
                 , ('new имя.py', 'своя команда: py · ps1 · js · ts · sh · go · rs · clj', 'new weather.py')
                 , ('my cmds', 'мои команды, функции и сокращения')
                 , ('ep', 'открыть папку профиля в VS Code: custom.ps1, bin\')
+                , ('my config', 'где лежат все файлы и настройки')
                 , ('theme [вариант]', 'mocha · macchiato · frappe · latte — на лету', 'theme latte')
                 , ('lang [ru|en]', 'язык терминала и серверов')
+                , ('doctor', 'проверить, что всё на месте и работает')
+                , ('update', 'обновить terminal-setup с GitHub')
                 , ('reload', 'перечитать профиль после правок')
                 , ('Update-Completions', 'обновить Tab-дополнения после обновления CLI')
             ) }
         )
+        nav_header = '→ войти  ← вверх  Enter — перейти  Ctrl+F — искать вглубь  Ctrl+O — Проводник  Esc'
+        nav_deep = 'все папки внутри {0}'
+        ex_nofile = 'нет файла: {0}'; ex_unknown = 'не знаю, чем распаковать: {0}'; ex_done = 'распаковано в {0}'
+        cb_done = 'в буфере обмена: {0} строк'
+        config_title = 'Где что лежит'; config_hint = 'ep — открыть папку профиля'
+        config_rows = [ordered]@{
+            profile = 'профиль PowerShell и команды'; custom = 'своё: функции, сокращения, переключатели'; bin = 'свои команды на любом языке'
+            srvcustom = 'свои файлы для серверов (→ ~/.bashrc.d)'; settings = 'тема и язык'; omp = 'тема промпта oh-my-posh'
+            completions = 'кэш Tab-дополнений'; predictor = 'кэш плагина подсказок'; wt = 'настройки Windows Terminal'
+            vscode = 'настройки VS Code'; gitconfig = 'git: delta и имя'; ssh = 'SSH-хосты (my ssh, jump, srv)'
+        }
+        config_missing = 'нет'
+        doctor_title = 'Проверка'; doctor_hint = 'terminal-setup {0}'
+        doctor_tools = 'инструменты'; doctor_files = 'файлы профиля'; doctor_font = 'шрифт для всех пользователей'
+        doctor_wt = 'Windows Terminal: схемы и PowerShell 7 по умолчанию'; doctor_psfzf = 'модуль PSFzf'
+        doctor_predictor = 'подсказки из истории (до 50)'; doctor_custom = 'custom.ps1 без ошибок'
+        doctor_startup = 'старт профиля'; doctor_ok = 'всё в порядке'; doctor_fix = 'починить: update'
+        doctor_missing = 'нет: {0}'
+        update_start = 'обновляю terminal-setup с GitHub…'; update_done = 'готово — reload или новая вкладка'
+        update_fail = 'не удалось скачать установщик: {0}'
         no_insert = '^(Ctrl|Alt|Shift|Win|Tab|F\d|↑|→|начни|набрал|вщслук|g␣)'
 
         my_topics = [ordered]@{
@@ -521,6 +574,7 @@ $Strings = @{
             path   = 'PATH: что есть, чего нет, дубли'
             git    = 'имя, почта, remotes, алиасы git'
             cmds   = 'мои команды из bin, функции из custom.ps1, сокращения'
+            config = 'где лежат все файлы и настройки'
             keys   = 'горячие клавиши'
         }
         my_title = 'my <тема>'; my_hint = 'Tab дополняет тему'
@@ -604,8 +658,8 @@ $Strings = @{
             @{ Key = 'nav'; Title = 'Navigation'; Rows = @(
                 , ('z <part of name>', 'jump to a folder you use often', 'z coding')
                 , ('zi', 'same, but pick from a list')
-                , ('Alt+C', 'pick a folder with fzf and go there')
-                , ('.. / ...', 'one / two levels up')
+                , ('Alt+C / nav', 'folders as a tree: → enter, ← up, Enter — go, Ctrl+F — search deep')
+                , ('.. / ... / ....', 'one / two / three levels up')
                 , ('mkcd <folder>', 'create a folder and enter it', 'mkcd new-app')
                 , ('ii .', 'open the current folder in Explorer')
                 , ('code .', 'open the folder in VS Code')
@@ -616,6 +670,9 @@ $Strings = @{
                 , ('touch <file>', 'create an empty file / update its date')
                 , ('which <command>', 'where a program lives', 'which python')
                 , ('tldr <command>', 'short cheat sheet with examples', 'tldr tar')
+                , ('ex <archive>', 'extract zip · tar.gz · 7z · xz into a folder next to it', 'ex build.zip')
+                , ('bak <file>', 'copy next to it: file.bak-date — before editing', 'bak .env')
+                , ('… | cb', 'command output → clipboard', 'll | cb')
             ) }
             @{ Key = 'search'; Title = 'Search'; Rows = @(
                 , ('rg <text>', 'find text in all files of the folder', 'rg TODO -t py')
@@ -665,6 +722,7 @@ $Strings = @{
                 , ('my docker', 'containers and compose projects')
                 , ('my sys', 'cpu, memory, disks, top processes')
                 , ('my ports [port]', 'who listens on which port', 'my ports 5432')
+                , ('psg <name>', 'processes by name: PID, memory, command line', 'psg node')
                 , ('my ip', 'IP addresses and gateway · my ip public — external IP')
                 , ('my tools', 'versions of all installed tools')
             ) }
@@ -672,12 +730,35 @@ $Strings = @{
                 , ('new name.py', 'your own command: py · ps1 · js · ts · sh · go · rs · clj', 'new weather.py')
                 , ('my cmds', 'my commands, functions and abbreviations')
                 , ('ep', 'open the profile folder in VS Code: custom.ps1, bin\')
+                , ('my config', 'where every file and setting lives')
                 , ('theme [variant]', 'mocha · macchiato · frappe · latte — live', 'theme latte')
                 , ('lang [ru|en]', 'language of the terminal and servers')
+                , ('doctor', 'check that everything is in place and works')
+                , ('update', 'update terminal-setup from GitHub')
                 , ('reload', 're-read the profile after edits')
                 , ('Update-Completions', 'refresh Tab completions after updating a CLI')
             ) }
         )
+        nav_header = '→ enter  ← up  Enter — go  Ctrl+F — search deep  Ctrl+O — Explorer  Esc'
+        nav_deep = 'all folders under {0}'
+        ex_nofile = 'no such file: {0}'; ex_unknown = 'do not know how to extract: {0}'; ex_done = 'extracted to {0}'
+        cb_done = 'in the clipboard: {0} lines'
+        config_title = 'Where things live'; config_hint = 'ep — open the profile folder'
+        config_rows = [ordered]@{
+            profile = 'PowerShell profile and commands'; custom = 'yours: functions, abbreviations, switches'; bin = 'your commands in any language'
+            srvcustom = 'your files for servers (→ ~/.bashrc.d)'; settings = 'theme and language'; omp = 'oh-my-posh prompt theme'
+            completions = 'Tab completion cache'; predictor = 'suggestions plugin cache'; wt = 'Windows Terminal settings'
+            vscode = 'VS Code settings'; gitconfig = 'git: delta and identity'; ssh = 'SSH hosts (my ssh, jump, srv)'
+        }
+        config_missing = 'missing'
+        doctor_title = 'Check-up'; doctor_hint = 'terminal-setup {0}'
+        doctor_tools = 'tools'; doctor_files = 'profile files'; doctor_font = 'font installed for all users'
+        doctor_wt = 'Windows Terminal: schemes and PowerShell 7 as default'; doctor_psfzf = 'PSFzf module'
+        doctor_predictor = 'history suggestions (up to 50)'; doctor_custom = 'custom.ps1 has no errors'
+        doctor_startup = 'profile startup'; doctor_ok = 'all good'; doctor_fix = 'fix: update'
+        doctor_missing = 'missing: {0}'
+        update_start = 'updating terminal-setup from GitHub…'; update_done = 'done — reload or open a new tab'
+        update_fail = 'could not download the installer: {0}'
         no_insert = '^(Ctrl|Alt|Shift|Win|Tab|F\d|↑|→|start|type|g␣)'
 
         my_topics = [ordered]@{
@@ -691,6 +772,7 @@ $Strings = @{
             path   = 'PATH: present, missing, duplicates'
             git    = 'name, email, remotes, git aliases'
             cmds   = 'my commands from bin, functions from custom.ps1, abbreviations'
+            config = 'where every file and setting lives'
             keys   = 'keyboard shortcuts'
         }
         my_title = 'my <topic>'; my_hint = 'Tab completes the topic'
@@ -841,7 +923,7 @@ function Write-TkTable($Rows, $Columns) {
         $max
     }
     $head = for ($i = 0; $i -lt $Columns.Count; $i++) { $Columns[$i].N.PadRight($widths[$i]) }
-    Write-Host ('  ' + $TK.dim + ($head -join '   ') + $TK.R)
+    if (($head -join '').Trim()) { Write-Host ('  ' + $TK.dim + ($head -join '   ') + $TK.R) }
     foreach ($r in $Rows) {
         $cells = for ($i = 0; $i -lt $Columns.Count; $i++) {
             $col = $Columns[$i]
@@ -859,8 +941,8 @@ function Get-TkBar([double]$Percent, [int]$Width = 20) {
 }
 
 function Format-TkSize([double]$Bytes) {
-    foreach ($u in $T.units) { if ($Bytes -lt 1024) { return ('{0:N1} {1}' -f $Bytes, $u) -replace '[.,]0 ', ' ' }; $Bytes /= 1024 }
-    '{0:N1} {1}' -f $Bytes, $T.units[-1]
+    foreach ($u in $TkStr.units) { if ($Bytes -lt 1024) { return ('{0:N1} {1}' -f $Bytes, $u) -replace '[.,]0 ', ' ' }; $Bytes /= 1024 }
+    '{0:N1} {1}' -f $Bytes, $TkStr.units[-1]
 }
 
 # docker/kubectl can hang for a long time when their daemon is down
@@ -881,22 +963,22 @@ function Invoke-WithTimeout([string]$Command, [string[]]$Arguments, [int]$Millis
 function Get-TkUserSection {
     $rows = @()
     foreach ($c in $global:UserCommands) { $rows += , ($c.Name, $c.Help, ("bin\" + $c.File)) }
-    foreach ($f in $global:CustomFunctions) { $rows += , ($f, $T.help_custom) }
+    foreach ($f in $global:CustomFunctions) { $rows += , ($f, $TkStr.help_custom) }
     if ($global:Abbreviations.Count) {
-        $list = ($global:Abbreviations.GetEnumerator() | Select-Object -First 6 | ForEach-Object { "$($_.Key)→$($_.Value)" }) -join '  '
-        if ($global:Abbreviations.Count -gt 6) { $list += '  ' + ($T.help_more -f ($global:Abbreviations.Count - 6)) }
-        $rows += , ('abbr', $list, $T.help_abbr_all)
+        $list = ($global:Abbreviations.GetEnumerator() | Select-Object -First 5 | ForEach-Object { "$($_.Key)→$($_.Value)" }) -join '  '
+        if ($global:Abbreviations.Count -gt 5) { $list += '  ' + ($TkStr.help_more -f ($global:Abbreviations.Count - 5)) }
+        $rows += , ('abbr', $list, $TkStr.help_abbr_all)
     }
-    if ($rows) { @{ Key = 'my'; Title = $T.help_user; Rows = $rows } }
+    if ($rows) { @{ Key = 'my'; Title = $TkStr.help_user; Rows = $rows } }
 }
 
-function Get-TkAllSections { @($T.sections) + @(Get-TkUserSection) }
+function Get-TkAllSections { @($TkStr.sections) + @(Get-TkUserSection) }
 
 function Show-TkHelp($Sections) {
     if (-not $Sections) { $Sections = Get-TkAllSections }
     Write-Host ''
-    Write-Host ("  {0}{1}{2}{3}  {4}{5}: {6}{7}" -f $TK.title, $TK.B, $T.help_title, $TK.R, $TK.dim, $T.help_theme, $global:ThemeName, $TK.R)
-    Write-Host ("  {0}{1}{2}" -f $TK.dim, $T.help_hint, $TK.R)
+    Write-Host ("  {0}{1}{2}{3}  {4}{5}: {6}{7}" -f $TK.title, $TK.B, $TkStr.help_title, $TK.R, $TK.dim, $TkStr.help_theme, $global:ThemeName, $TK.R)
+    Write-Host ("  {0}{1}{2}" -f $TK.dim, $TkStr.help_hint, $TK.R)
     foreach ($s in $Sections) {
         Write-Host ''
         Write-Host ("  {0}{1}{2}{3}  {4}help {5}{6}" -f $TK.title, $TK.B, $s.Title, $TK.R, $TK.dim, $s.Key, $TK.R)
@@ -918,7 +1000,7 @@ function help {
     $isCmdlet = Get-Command $query -CommandType Cmdlet, Alias -ErrorAction SilentlyContinue
     if ($hits -and $args.Count -eq 1 -and -not $isCmdlet) {
         Write-Host ''
-        Write-Host ("  {0}{1}{2}: {3}{4}" -f $TK.title, $TK.B, $T.help_found, $query, $TK.R)
+        Write-Host ("  {0}{1}{2}: {3}{4}" -f $TK.title, $TK.B, $TkStr.help_found, $query, $TK.R)
         foreach ($r in $hits) { Write-TkRow @r }
         Write-Host ''
         return
@@ -932,11 +1014,11 @@ function Invoke-HelpPicker {
             $cmd = $r[0]; $desc = $r[1]
             $shown = '{0,-28} {1}' -f $cmd, $desc
             if ($r.Count -gt 2 -and $r[2]) { $shown += "   $($r[2])" }
-            $insert = if ($cmd -match $T.no_insert) { '' } else { ($cmd -split ' / | · | \[| <')[0].Trim() }
+            $insert = if ($cmd -match $TkStr.no_insert) { '' } else { ($cmd -split ' / | · | \[| <')[0].Trim() }
             "{0,-12}  {1}`t{2}" -f $s.Title, $shown, $insert
         }
     }
-    $pick = $lines | fzf --height=60% --prompt='help ❯ ' --header=$T.picker_header --delimiter="`t" --with-nth=1 --tabstop=4
+    $pick = $lines | fzf --height=60% --prompt='help ❯ ' --header=$TkStr.picker_header --delimiter="`t" --with-nth=1 --tabstop=4
     [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
     if ($pick) {
         $insert = ($pick -split "`t")[1]
@@ -979,7 +1061,7 @@ function Get-SshHost {
 
 function Select-SshHost([string]$Query, [string]$Header) {
     $hosts = @(Get-SshHost)
-    if (-not $hosts) { Write-Host "  $($T.ssh_empty)"; return }
+    if (-not $hosts) { Write-Host "  $($TkStr.ssh_empty)"; return }
     $width = ($hosts.Name | Measure-Object Length -Maximum).Maximum
     $pick = $hosts | ForEach-Object { '{0}  {1}@{2}' -f $_.Name.PadRight($width), $_.User, $_.HostName } |
         fzf --query=$Query --select-1 --height=14 --header=$Header
@@ -987,7 +1069,7 @@ function Select-SshHost([string]$Query, [string]$Header) {
 }
 
 function jump([string]$Query) {
-    $name = Select-SshHost $Query $T.jump_header
+    $name = Select-SshHost $Query $TkStr.jump_header
     if ($name) {
         Write-Host ("  {0}→ ssh {1}{2}" -f $TK.dim, $name, $TK.R)
         ssh $name
@@ -1015,11 +1097,11 @@ function srv {
     $dir = Join-Path $global:ProfileDir 'server'
     if ($Action -eq 'help') { Show-SrvHelp $dir; return }
     foreach ($f in 'bashrc.local', 'inputrc', 'install.sh') {
-        if (-not (Test-Path (Join-Path $dir $f))) { Write-Host "  $($TK.err)$($T.srv_missing -f "$dir\$f")$($TK.R)"; return }
+        if (-not (Test-Path (Join-Path $dir $f))) { Write-Host "  $($TK.err)$($TkStr.srv_missing -f "$dir\$f")$($TK.R)"; return }
     }
-    if ($Env -and $Env -notmatch '^[A-Za-z0-9_-]{1,20}$') { Write-Host "  $($TK.err)$($T.srv_env)$($TK.R)"; return }
+    if ($Env -and $Env -notmatch '^[A-Za-z0-9_-]{1,20}$') { Write-Host "  $($TK.err)$($TkStr.srv_env)$($TK.R)"; return }
     if (-not $Hosts) {
-        $picked = Select-SshHost '' ($T.srv_pick -f $Action)
+        $picked = Select-SshHost '' ($TkStr.srv_pick -f $Action)
         if (-not $picked) { return }
         $Hosts = @($picked)
     }
@@ -1040,24 +1122,24 @@ function srv {
     foreach ($h in $Hosts) {
         Write-TkTitle "srv $Action → $h" ''
         $script | ssh $h 'bash -s'
-        if ($LASTEXITCODE -eq 0 -and $Action -eq 'remove') { Write-Host "  $($TK.ok)$($T.srv_removed)$($TK.R) $($TK.dim)$($T.srv_restore -f $h)$($TK.R)" }
-        elseif ($LASTEXITCODE -eq 0) { Write-Host "  $($TK.ok)$($T.srv_done)$($TK.R) $($TK.dim)$($T.srv_relogin -f $h)$($TK.R)" }
-        else { Write-Host "  $($TK.err)$($T.srv_error -f $LASTEXITCODE)$($TK.R)" }
+        if ($LASTEXITCODE -eq 0 -and $Action -eq 'remove') { Write-Host "  $($TK.ok)$($TkStr.srv_removed)$($TK.R) $($TK.dim)$($TkStr.srv_restore -f $h)$($TK.R)" }
+        elseif ($LASTEXITCODE -eq 0) { Write-Host "  $($TK.ok)$($TkStr.srv_done)$($TK.R) $($TK.dim)$($TkStr.srv_relogin -f $h)$($TK.R)" }
+        else { Write-Host "  $($TK.err)$($TkStr.srv_error -f $LASTEXITCODE)$($TK.R)" }
         Write-Host ''
     }
 }
 
 function Show-SrvHelp([string]$Dir) {
-    Write-TkTitle $T.srv_title ($T.srv_templates -f $Dir)
-    foreach ($r in $T.srv_rows) { Write-TkRow @r }
+    Write-TkTitle $TkStr.srv_title ($TkStr.srv_templates -f $Dir)
+    foreach ($r in $TkStr.srv_rows) { Write-TkRow @r }
     Write-Host ''
-    Write-Host "  $($TK.title)$($T.srv_gets)$($TK.R)"
-    foreach ($line in $T.srv_gets_rows) { Write-Host "    $line" }
+    Write-Host "  $($TK.title)$($TkStr.srv_gets)$($TK.R)"
+    foreach ($line in $TkStr.srv_gets_rows) { Write-Host "    $line" }
     Write-Host ''
-    Write-Host "  $($TK.title)$($T.srv_custom)$($TK.R)"
-    foreach ($line in $T.srv_custom_rows) { Write-Host "    $($line -f $Dir)" }
+    Write-Host "  $($TK.title)$($TkStr.srv_custom)$($TK.R)"
+    foreach ($line in $TkStr.srv_custom_rows) { Write-Host "    $($line -f $Dir)" }
     Write-Host ''
-    Write-Host "  $($TK.dim)$($T.srv_note)$($TK.R)"
+    Write-Host "  $($TK.dim)$($TkStr.srv_note)$($TK.R)"
     Write-Host ''
 }
 
@@ -1065,7 +1147,7 @@ function Show-SrvHelp([string]$Dir) {
 function my {
     param(
         [Parameter(Position = 0)][ArgumentCompleter({
-            param($c, $p, $word) $T.my_topics.get_Keys() | Where-Object { $_ -like "$word*" }
+            param($c, $p, $word) $TkStr.my_topics.get_Keys() | Where-Object { $_ -like "$word*" }
         })][string]$Topic,
         [Parameter(Position = 1)][string]$Filter
     )
@@ -1080,11 +1162,12 @@ function my {
         'path'   { Show-MyPath }
         'git'    { Show-MyGit }
         'cmds'   { Show-MyCommands }
-        'keys'   { Show-TkHelp ($T.sections | Where-Object { $_.Key -in 'keys', 'input' }) }
+        'config' { Show-MyConfig }
+        'keys'   { Show-TkHelp ($TkStr.sections | Where-Object { $_.Key -in 'keys', 'input' }) }
         default {
-            Write-TkTitle $T.my_title $T.my_hint
+            Write-TkTitle $TkStr.my_title $TkStr.my_hint
             # get_Keys(): the dictionary has a 'keys' entry, so .Keys would return it
-            foreach ($k in $T.my_topics.get_Keys()) { Write-TkRow "my $k" $T.my_topics[$k] }
+            foreach ($k in $TkStr.my_topics.get_Keys()) { Write-TkRow "my $k" $TkStr.my_topics[$k] }
             Write-Host ''
         }
     }
@@ -1094,21 +1177,21 @@ function Show-MySys {
     $os = Get-CimInstance Win32_OperatingSystem
     $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
     $up = (Get-Date) - $os.LastBootUpTime
-    Write-TkTitle $env:COMPUTERNAME (($T.sys_uptime -f [int]$up.TotalDays, $up.Hours, $up.Minutes) + ' · ' + $os.Caption.Replace('Microsoft ', ''))
+    Write-TkTitle $env:COMPUTERNAME (($TkStr.sys_uptime -f [int]$up.TotalDays, $up.Hours, $up.Minutes) + ' · ' + $os.Caption.Replace('Microsoft ', ''))
     $cpuName = ($cpu.Name -replace '\s+', ' ' -replace '\(R\)|\(TM\)|CPU|Processor', '').Trim()
     $row = { param($label, $percent, $note) Write-Host ("  {0}{1}{2}  {3}  {4}{5}{6}" -f $TK.dim, $label.PadRight(10), $TK.R, (Get-TkBar $percent), $TK.dim, $note, $TK.R) }
-    & $row $T.sys_cpu $cpu.LoadPercentage "$cpuName · $($T.sys_cores): $([Environment]::ProcessorCount)"
+    & $row $TkStr.sys_cpu $cpu.LoadPercentage "$cpuName · $($TkStr.sys_cores): $([Environment]::ProcessorCount)"
     $memUsed = ($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) * 1KB
     $memTotal = $os.TotalVisibleMemorySize * 1KB
-    & $row $T.sys_mem ($memUsed / $memTotal * 100) "$(Format-TkSize $memUsed) $($T.of) $(Format-TkSize $memTotal)"
+    & $row $TkStr.sys_mem ($memUsed / $memTotal * 100) "$(Format-TkSize $memUsed) $($TkStr.of) $(Format-TkSize $memTotal)"
     foreach ($d in Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Sort-Object DeviceID) {
         if (-not $d.Size) { continue }
         $used = $d.Size - $d.FreeSpace
-        & $row "$($T.sys_disk) $($d.DeviceID)" ($used / $d.Size * 100) "$(Format-TkSize $used) $($T.of) $(Format-TkSize $d.Size)$(if ($d.VolumeName) { " · $($d.VolumeName)" })"
+        & $row "$($TkStr.sys_disk) $($d.DeviceID)" ($used / $d.Size * 100) "$(Format-TkSize $used) $($TkStr.of) $(Format-TkSize $d.Size)$(if ($d.VolumeName) { " · $($d.VolumeName)" })"
     }
 
     Write-Host ''
-    Write-Host ("  {0}{1}{2}" -f $TK.title, $T.sys_bymem, $TK.R)
+    Write-Host ("  {0}{1}{2}" -f $TK.title, $TkStr.sys_bymem, $TK.R)
     $top = Get-Process | Group-Object ProcessName | ForEach-Object {
         [pscustomobject]@{ Name = $_.Name; Memory = ($_.Group | Measure-Object WorkingSet64 -Sum).Sum; Count = $_.Count }
     } | Sort-Object Memory -Descending | Select-Object -First 6
@@ -1118,10 +1201,10 @@ function Show-MySys {
 
     if (Get-Command docker -ErrorAction SilentlyContinue) {
         Write-Host ''
-        Write-Host ("  {0}{1}{2}" -f $TK.title, $T.sys_containers, $TK.R)
+        Write-Host ("  {0}{1}{2}" -f $TK.title, $TkStr.sys_containers, $TK.R)
         $rows = Invoke-WithTimeout docker @('ps', '-a', '--format', '{{.Names}}\t{{.Status}}')
-        if ($null -eq $rows) { Write-Host "  $($TK.dim)$($T.docker_down)$($TK.R)" }
-        elseif (-not $rows) { Write-Host "  $($TK.dim)$($T.docker_none)$($TK.R)" }
+        if ($null -eq $rows) { Write-Host "  $($TK.dim)$($TkStr.docker_down)$($TK.R)" }
+        elseif (-not $rows) { Write-Host "  $($TK.dim)$($TkStr.docker_none)$($TK.R)" }
         foreach ($r in $rows) {
             $name, $state = $r -split "`t"
             $dot = if ($state -match 'unhealthy|Restarting') { $TK.err } elseif ($state -like 'Up*') { $TK.ok } elseif ($state -like 'Exited (0)*') { $TK.dim } else { $TK.err }
@@ -1132,10 +1215,10 @@ function Show-MySys {
 }
 
 function Show-MyK8s {
-    if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) { Write-Host "  $($TK.dim)$($T.k8s_missing)$($TK.R)"; return }
+    if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
     $rows = Invoke-WithTimeout kubectl @('config', 'get-contexts', '--no-headers') 5000
-    Write-TkTitle 'Kubernetes' $T.k8s_hint
-    if (-not $rows) { Write-Host "  $($TK.dim)$($T.k8s_none)$($TK.R)"; Write-Host ''; return }
+    Write-TkTitle 'Kubernetes' $TkStr.k8s_hint
+    if (-not $rows) { Write-Host "  $($TK.dim)$($TkStr.k8s_none)$($TK.R)"; Write-Host ''; return }
     $list = foreach ($r in $rows) {
         $f = $r -split '\s+'
         $cur = $f[0] -eq '*'
@@ -1144,36 +1227,36 @@ function Show-MyK8s {
     }
     Write-TkTable $list @(
         @{ N = ' '; P = 'Mark'; C = 'ok' }
-        @{ N = $T.col_context; P = 'Name'; C = { param($r) if ($r.Mark -eq '●') { 'cmd' } else { 'text' } } }
-        @{ N = $T.col_cluster; P = 'Cluster'; C = 'dim' }
+        @{ N = $TkStr.col_context; P = 'Name'; C = { param($r) if ($r.Mark -eq '●') { 'cmd' } else { 'text' } } }
+        @{ N = $TkStr.col_cluster; P = 'Cluster'; C = 'dim' }
         @{ N = 'Namespace'; P = 'Namespace'; C = 'accent' }
     )
     Write-Host ''
 }
 
 function Show-MyDocker {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Write-Host "  $($TK.dim)$($T.docker_missing)$($TK.R)"; return }
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Write-Host "  $($TK.dim)$($TkStr.docker_missing)$($TK.R)"; return }
     $rows = Invoke-WithTimeout docker @('ps', '-a', '--format', '{{.Names}}\t{{.Status}}\t{{.Ports}}')
-    Write-TkTitle 'Docker' $T.docker_hint
-    if ($null -eq $rows) { Write-Host "  $($TK.dim)$($T.docker_down)$($TK.R)"; Write-Host ''; return }
+    Write-TkTitle 'Docker' $TkStr.docker_hint
+    if ($null -eq $rows) { Write-Host "  $($TK.dim)$($TkStr.docker_down)$($TK.R)"; Write-Host ''; return }
     $list = foreach ($r in $rows) {
         $name, $state, $ports = $r -split "`t"
         $ports = ($ports -replace '0\.0\.0\.0:|\[::\]:|/tcp', '' -split ', ' | Sort-Object -Unique) -join ' '
         [pscustomobject]@{ Dot = '●'; Name = $name; State = $state; Ports = $ports }
     }
-    if (-not $list) { Write-Host "  $($TK.dim)$($T.docker_none)$($TK.R)" }
+    if (-not $list) { Write-Host "  $($TK.dim)$($TkStr.docker_none)$($TK.R)" }
     else {
         Write-TkTable $list @(
             @{ N = ' '; P = 'Dot'; C = { param($r) if ($r.State -match 'unhealthy|Restarting') { 'err' } elseif ($r.State -like 'Up*') { 'ok' } elseif ($r.State -like 'Exited (0)*') { 'dim' } else { 'err' } } }
-            @{ N = $T.col_container; P = 'Name'; C = 'cmd' }
-            @{ N = $T.col_status; P = 'State'; C = 'dim' }
-            @{ N = $T.col_ports; P = 'Ports'; C = 'accent' }
+            @{ N = $TkStr.col_container; P = 'Name'; C = 'cmd' }
+            @{ N = $TkStr.col_status; P = 'State'; C = 'dim' }
+            @{ N = $TkStr.col_ports; P = 'Ports'; C = 'accent' }
         )
     }
     $projects = Invoke-WithTimeout docker @('compose', 'ls', '-a', '--format', '{{.Name}}\t{{.Status}}\t{{.ConfigFiles}}') 5000
     if ($projects) {
         Write-Host ''
-        Write-Host ("  {0}{1}{2}" -f $TK.title, $T.docker_projects, $TK.R)
+        Write-Host ("  {0}{1}{2}" -f $TK.title, $TkStr.docker_projects, $TK.R)
         foreach ($p in $projects) {
             $name, $state, $files = $p -split "`t"
             Write-Host ("  {0}{1,-20}{2} {3,-24} {4}{5}{6}" -f $TK.cmd, $name, $TK.R, $state, $TK.dim, (Split-Path ($files -split ',')[0]), $TK.R)
@@ -1184,16 +1267,16 @@ function Show-MyDocker {
 
 function Show-MySsh([string]$Filter) {
     $hosts = @(Get-SshHost | Where-Object { -not $Filter -or "$($_.Name) $($_.HostName) $($_.User)" -like "*$Filter*" })
-    Write-TkTitle $T.ssh_title $T.ssh_hint
-    if (-not $hosts) { Write-Host "  $($TK.dim)$($T.nothing_found)$($TK.R)"; Write-Host ''; return }
+    Write-TkTitle $TkStr.ssh_title $TkStr.ssh_hint
+    if (-not $hosts) { Write-Host "  $($TK.dim)$($TkStr.nothing_found)$($TK.R)"; Write-Host ''; return }
     Write-TkTable $hosts @(
-        @{ N = $T.col_name; P = 'Name'; C = 'cmd' }
-        @{ N = $T.col_address; P = 'HostName'; C = 'text' }
-        @{ N = $T.col_user; P = 'User'; C = { param($r) if ($r.User -eq 'root') { 'err' } else { 'ok' } } }
-        @{ N = $T.col_port; P = 'Port'; C = 'dim' }
-        @{ N = $T.col_key; P = 'IdentityFile'; C = 'dim' }
+        @{ N = $TkStr.col_name; P = 'Name'; C = 'cmd' }
+        @{ N = $TkStr.col_address; P = 'HostName'; C = 'text' }
+        @{ N = $TkStr.col_user; P = 'User'; C = { param($r) if ($r.User -eq 'root') { 'err' } else { 'ok' } } }
+        @{ N = $TkStr.col_port; P = 'Port'; C = 'dim' }
+        @{ N = $TkStr.col_key; P = 'IdentityFile'; C = 'dim' }
     )
-    foreach ($d in $hosts | Where-Object Duplicate) { Write-Host ("  {0}{1}{2}" -f $TK.warn, ($T.ssh_dup -f $d.Name, $d.User), $TK.R) }
+    foreach ($d in $hosts | Where-Object Duplicate) { Write-Host ("  {0}{1}{2}" -f $TK.warn, ($TkStr.ssh_dup -f $d.Name, $d.User), $TK.R) }
     Write-Host ''
 }
 
@@ -1202,13 +1285,13 @@ function Show-MyIp([string]$Mode) {
         Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
         Sort-Object InterfaceMetric |
         ForEach-Object { [pscustomobject]@{ Interface = $_.InterfaceAlias; Address = "$($_.IPAddress)/$($_.PrefixLength)" } }
-    Write-TkTitle $T.ip_title $T.ip_hint
-    Write-TkTable $rows @(@{ N = $T.col_iface; P = 'Interface'; C = 'text' }, @{ N = $T.col_address; P = 'Address'; C = 'cmd' })
+    Write-TkTitle $TkStr.ip_title $TkStr.ip_hint
+    Write-TkTable $rows @(@{ N = $TkStr.col_iface; P = 'Interface'; C = 'text' }, @{ N = $TkStr.col_address; P = 'Address'; C = 'cmd' })
     $gw = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1
-    if ($gw) { Write-Host ("  {0}{1}{2}  {3} {4}({5}){6}" -f $TK.dim, $T.ip_gateway, $TK.R, $gw.NextHop, $TK.dim, $gw.InterfaceAlias, $TK.R) }
+    if ($gw) { Write-Host ("  {0}{1}{2}  {3} {4}({5}){6}" -f $TK.dim, $TkStr.ip_gateway, $TK.R, $gw.NextHop, $TK.dim, $gw.InterfaceAlias, $TK.R) }
     if ($Mode -eq 'public') {
-        try { $ip = Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 5; Write-Host ("  {0}{1}{2}  {3}{4}{5}" -f $TK.dim, $T.ip_public, $TK.R, $TK.accent, $ip, $TK.R) }
-        catch { Write-Host "  $($TK.err)$($T.ip_public_fail)$($TK.R)" }
+        try { $ip = Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 5; Write-Host ("  {0}{1}{2}  {3}{4}{5}" -f $TK.dim, $TkStr.ip_public, $TK.R, $TK.accent, $ip, $TK.R) }
+        catch { Write-Host "  $($TK.err)$($TkStr.ip_public_fail)$($TK.R)" }
     }
     Write-Host ''
 }
@@ -1227,12 +1310,12 @@ function Show-MyPorts([string]$Filter) {
     $rows = if ($Filter -eq 'all') { $all }
             elseif ($Filter) { $all | Where-Object { "$($_.Port)" -eq $Filter -or $_.Process -like "*$Filter*" } }
             else { $all | Where-Object Port -lt 49152 }
-    Write-TkTitle $T.ports_title $T.ports_hint
+    Write-TkTitle $TkStr.ports_title $TkStr.ports_hint
     Write-TkTable $rows @(
-        @{ N = $T.col_port; P = 'Port'; C = 'accent' }
-        @{ N = $T.col_process; P = 'Process'; C = 'cmd' }
+        @{ N = $TkStr.col_port; P = 'Port'; C = 'accent' }
+        @{ N = $TkStr.col_process; P = 'Process'; C = 'cmd' }
         @{ N = 'PID'; P = 'PID'; C = 'dim' }
-        @{ N = $T.col_address; P = 'Address'; C = 'dim' }
+        @{ N = $TkStr.col_address; P = 'Address'; C = 'dim' }
     )
     Write-Host ''
 }
@@ -1240,14 +1323,14 @@ function Show-MyPorts([string]$Filter) {
 function Show-MyPath {
     $seen = @{}
     $rows = foreach ($p in $env:PATH -split ';' | Where-Object { $_ }) {
-        $state = if ($seen.ContainsKey($p.TrimEnd('\'))) { $T.path_dup } elseif (-not (Test-Path $p)) { $T.path_missing } else { '' }
+        $state = if ($seen.ContainsKey($p.TrimEnd('\'))) { $TkStr.path_dup } elseif (-not (Test-Path $p)) { $TkStr.path_missing } else { '' }
         $seen[$p.TrimEnd('\')] = $true
         [pscustomobject]@{ Path = $p; State = $state }
     }
-    Write-TkTitle $T.path_title $T.path_hint
+    Write-TkTitle $TkStr.path_title $TkStr.path_hint
     Write-TkTable $rows @(
-        @{ N = $T.col_folder; P = 'Path'; C = { param($r) if ($r.State) { 'dim' } else { 'text' } } }
-        @{ N = ''; P = 'State'; C = { param($r) if ($r.State -eq $T.path_dup) { 'warn' } else { 'err' } } }
+        @{ N = $TkStr.col_folder; P = 'Path'; C = { param($r) if ($r.State) { 'dim' } else { 'text' } } }
+        @{ N = ''; P = 'State'; C = { param($r) if ($r.State -eq $TkStr.path_dup) { 'warn' } else { 'err' } } }
     )
     Write-Host ''
 }
@@ -1266,29 +1349,29 @@ function Show-MyTools {
         $out = (& $name ($argLine -split ' ') 2>&1 | Select-Object -First 3) -join ' '
         [pscustomobject]@{ Name = $name; Version = ([regex]::Match($out, '\d+\.\d+(\.\d+)?')).Value; Path = $cmd.Source }
     } | Sort-Object Name
-    Write-TkTitle $T.tools_title $T.tools_hint
+    Write-TkTitle $TkStr.tools_title $TkStr.tools_hint
     Write-TkTable $rows @(
-        @{ N = $T.col_program; P = 'Name'; C = 'cmd' }
-        @{ N = $T.col_version; P = 'Version'; C = 'ok' }
-        @{ N = $T.col_where; P = 'Path'; C = 'dim' }
+        @{ N = $TkStr.col_program; P = 'Name'; C = 'cmd' }
+        @{ N = $TkStr.col_version; P = 'Version'; C = 'ok' }
+        @{ N = $TkStr.col_where; P = 'Path'; C = 'dim' }
     )
     Write-Host ''
 }
 
 function Show-MyGit {
     Write-TkTitle 'Git' ''
-    Write-TkRow $T.git_name (git config --global user.name)
-    Write-TkRow $T.git_email (git config --global user.email)
+    Write-TkRow $TkStr.git_name (git config --global user.name)
+    Write-TkRow $TkStr.git_email (git config --global user.email)
     $root = git rev-parse --show-toplevel 2>$null
     if ($root) {
-        Write-TkRow $T.git_repo $root
-        Write-TkRow $T.git_branch (git branch --show-current)
+        Write-TkRow $TkStr.git_repo $root
+        Write-TkRow $TkStr.git_branch (git branch --show-current)
         foreach ($r in git remote -v | Where-Object { $_ -like '*(fetch)' }) {
             $name, $url = $r -split '\s+'
             Write-TkRow "remote $name" $url
         }
     } else {
-        Write-Host "    $($TK.dim)$($T.git_none)$($TK.R)"
+        Write-Host "    $($TK.dim)$($TkStr.git_none)$($TK.R)"
     }
     $aliases = git config --global --get-regexp '^alias\.' 2>$null
     foreach ($a in $aliases) { $k, $v = $a -split ' ', 2; Write-TkRow ('git ' + $k.Substring(6)) $v }
@@ -1296,12 +1379,12 @@ function Show-MyGit {
 }
 
 function Show-MyCommands {
-    Write-TkTitle $T.cmds_title ($T.cmds_hint -f $global:ProfileDir)
+    Write-TkTitle $TkStr.cmds_title ($TkStr.cmds_hint -f $global:ProfileDir)
     if ($global:UserCommands) {
         Write-Host ("  {0}bin\{1}" -f $TK.title, $TK.R)
         foreach ($c in $global:UserCommands) { Write-TkRow $c.Name $c.Help "$($c.File) · $($c.Runner)" }
     } else {
-        Write-Host ("  {0}{1}{2}" -f $TK.dim, $T.cmds_empty, $TK.R)
+        Write-Host ("  {0}{1}{2}" -f $TK.dim, $TkStr.cmds_empty, $TK.R)
     }
     if ($global:CustomFunctions) {
         Write-Host ''
@@ -1310,7 +1393,7 @@ function Show-MyCommands {
     }
     if ($global:Abbreviations.Count) {
         Write-Host ''
-        Write-Host ("  {0}{1}{2}  {3}{4}{5}" -f $TK.title, $T.cmds_abbr, $TK.R, $TK.dim, $T.cmds_abbr_hint, $TK.R)
+        Write-Host ("  {0}{1}{2}  {3}{4}{5}" -f $TK.title, $TkStr.cmds_abbr, $TK.R, $TK.dim, $TkStr.cmds_abbr_hint, $TK.R)
         foreach ($a in $global:Abbreviations.GetEnumerator()) { Write-TkRow "$($a.Key)␣" $a.Value }
     }
     Write-Host ''
@@ -1340,23 +1423,23 @@ function h {
         if ($seen.Add($e)) { $list.Add($e) }
     }
 
-    Write-TkTitle $(if ($Filter) { $T.hist_filtered -f $Filter } else { $T.hist_title }) $T.hist_hint
+    Write-TkTitle $(if ($Filter) { $TkStr.hist_filtered -f $Filter } else { $TkStr.hist_title }) $TkStr.hist_hint
     $paging = -not [Console]::IsInputRedirected
     for ($i = 0; $i -lt $list.Count; $i++) {
         $lines = $list[$i] -split "`n"
         $text = $lines[0]
         if ($Filter) { $text = $text -ireplace [regex]::Escape($Filter), ($TK.accent + '$0' + $TK.R) }
-        if ($lines.Count -gt 1) { $text += "  $($TK.dim)$($T.hist_more -f ($lines.Count - 1))$($TK.R)" }
+        if ($lines.Count -gt 1) { $text += "  $($TK.dim)$($TkStr.hist_more -f ($lines.Count - 1))$($TK.R)" }
         Write-Host ("  {0}{1,3}{2}  {3}" -f $TK.dim, ($i + 1), $TK.R, $text)
 
         if ($paging -and ($i + 1) % $PageSize -eq 0 -and $i + 1 -lt $list.Count) {
-            Write-Host -NoNewline ("  {0}{1}{2}" -f $TK.dim, ($T.hist_page -f ($i + 1), $list.Count), $TK.R)
+            Write-Host -NoNewline ("  {0}{1}{2}" -f $TK.dim, ($TkStr.hist_page -f ($i + 1), $list.Count), $TK.R)
             $key = [Console]::ReadKey($true).Key
             Write-Host -NoNewline "`r$([char]27)[2K"
             if ($key -in 'Q', 'Escape') { break }
         }
     }
-    if (-not $list.Count) { Write-Host "  $($TK.dim)$($T.nothing_found)$($TK.R)" }
+    if (-not $list.Count) { Write-Host "  $($TK.dim)$($TkStr.nothing_found)$($TK.R)" }
     Write-Host ''
 }
 
@@ -1375,19 +1458,19 @@ function abbr {
         return
     }
     if (-not $Name) {
-        Write-TkTitle $T.abbr_title $T.abbr_hint
+        Write-TkTitle $TkStr.abbr_title $TkStr.abbr_hint
         foreach ($a in $global:Abbreviations.GetEnumerator()) { Write-TkRow "$($a.Key)␣" $a.Value }
         Write-Host ''
         return
     }
-    if (-not $Expansion) { Write-Host "  $($TK.err)$($T.abbr_usage)$($TK.R)"; return }
+    if (-not $Expansion) { Write-Host "  $($TK.err)$($TkStr.abbr_usage)$($TK.R)"; return }
     $global:Abbreviations[$Name] = $Expansion
     # typed interactively (not sourced from a file) → persist to custom.ps1
     if ($MyInvocation.ScriptName -eq '' -and $global:isInteractive) {
         $line = "abbr $Name '$($Expansion.Replace("'", "''"))'"
         if (-not (Test-Path $custom) -or -not (Select-String -Path $custom -SimpleMatch $line -Quiet)) {
             Add-Content $custom "`n$line" -Encoding utf8
-            Write-Host ("  {0}{1}{2}" -f $TK.dim, ($T.abbr_saved -f $line), $TK.R)
+            Write-Host ("  {0}{1}{2}" -f $TK.dim, ($TkStr.abbr_saved -f $line), $TK.R)
         }
     }
 }
@@ -1482,7 +1565,7 @@ function Register-BinCommands([string]$Dir) {
             $parts = ($runner -split ' ') | ForEach-Object { "'$_'" }
             "# UserCommand`n& $($parts -join ' ') '$($f.FullName)' @args"
         } else {
-            "# UserCommand`nWrite-Host '  $($T.bin_norunner -f $f.Name, ($global:ScriptRunners[$ext] -join ' / '))'"
+            "# UserCommand`nWrite-Host '  $($TkStr.bin_norunner -f $f.Name, ($global:ScriptRunners[$ext] -join ' / '))'"
         }
         Set-Item "Function:global:$name" -Value ([scriptblock]::Create($body))
         $global:UserCommands += [pscustomobject]@{ Name = $name; File = $f.Name; Help = $help; Runner = $(if ($runner) { $runner } else { '— ' + ($global:ScriptRunners[$ext] -join '/') }); Path = $f.FullName }
@@ -1505,24 +1588,24 @@ $TkTemplates = @{
 
 function new {
     param([Parameter(Position = 0)][string]$FileName, [Parameter(Position = 1)][string]$Description)
-    if (-not $Description) { $Description = $T.new_default }
+    if (-not $Description) { $Description = $TkStr.new_default }
     $bin = Join-Path $global:ProfileDir 'bin'
     if (-not $FileName) {
-        Write-TkTitle $T.new_title ($T.new_hint -f $bin)
+        Write-TkTitle $TkStr.new_title ($TkStr.new_hint -f $bin)
         foreach ($ext in $global:ScriptRunners.Keys) {
             $runner = Get-ScriptRunner $ext
-            Write-TkRow "new name$ext" $(if ($runner) { $T.new_run -f $runner } else { $T.new_need -f ($global:ScriptRunners[$ext] -join ' / ') }) $(if ($runner) { '' } else { $T.new_missing })
+            Write-TkRow "new name$ext" $(if ($runner) { $TkStr.new_run -f $runner } else { $TkStr.new_need -f ($global:ScriptRunners[$ext] -join ' / ') }) $(if ($runner) { '' } else { $TkStr.new_missing })
         }
         Write-Host ''
         return
     }
     $ext = [IO.Path]::GetExtension($FileName).ToLower()
     $name = [IO.Path]::GetFileNameWithoutExtension($FileName)
-    if (-not $TkTemplates.ContainsKey($ext)) { Write-Host "  $($TK.err)$($T.new_bad_ext -f $ext)$($TK.R)"; return }
-    if ($name -notmatch '^[A-Za-z_][\w-]*$') { Write-Host "  $($TK.err)$($T.new_bad_name)$($TK.R)"; return }
+    if (-not $TkTemplates.ContainsKey($ext)) { Write-Host "  $($TK.err)$($TkStr.new_bad_ext -f $ext)$($TK.R)"; return }
+    if ($name -notmatch '^[A-Za-z_][\w-]*$') { Write-Host "  $($TK.err)$($TkStr.new_bad_name)$($TK.R)"; return }
     $taken = Get-Command $name -All -ErrorAction SilentlyContinue |
         Where-Object { $_.Source -notlike "$bin\*" -and $_.ScriptBlock -notlike '*UserCommand*' } | Select-Object -First 1
-    if ($taken) { Write-Host "  $($TK.err)$($T.new_taken -f $name, $taken.CommandType, $taken.Source)$($TK.R)"; return }
+    if ($taken) { Write-Host "  $($TK.err)$($TkStr.new_taken -f $name, $taken.CommandType, $taken.Source)$($TK.R)"; return }
     New-Item -ItemType Directory -Force $bin | Out-Null
     $path = Join-Path $bin "$name$ext"
     if (-not (Test-Path $path)) {
@@ -1532,8 +1615,8 @@ function new {
     }
     Register-BinCommands $bin
     $runner = Get-ScriptRunner $ext
-    if ($runner) { Write-Host ("  {0}{1}{2}{3}{4} {5}{6}  {7}{8}{9}" -f $TK.dim, $T.new_ready, $TK.cmd, $name, $TK.R, $TK.dim, $T.new_args, $TK.dim, ($T.new_via -f $runner), $TK.R) }
-    else { Write-Host ("  {0}{1}{2}" -f $TK.warn, ($T.new_norunner -f ($global:ScriptRunners[$ext] -join ' / ')), $TK.R) }
+    if ($runner) { Write-Host ("  {0}{1}{2}{3}{4} {5}{6}  {7}{8}{9}" -f $TK.dim, $TkStr.new_ready, $TK.cmd, $name, $TK.R, $TK.dim, $TkStr.new_args, $TK.dim, ($TkStr.new_via -f $runner), $TK.R) }
+    else { Write-Host ("  {0}{1}{2}" -f $TK.warn, ($TkStr.new_norunner -f ($global:ScriptRunners[$ext] -join ' / ')), $TK.R) }
     if (Get-Command code -ErrorAction SilentlyContinue) { code $path }
 }
 
@@ -1549,18 +1632,18 @@ function Get-TerminalSettingsPaths {
 function theme {
     param([Parameter(Position = 0)][ArgumentCompleter({ param($c, $p, $word) $CatppuccinFlavors.Keys | Where-Object { $_ -like "$word*" } })][string]$Name)
     if (-not $Name) {
-        Write-TkTitle $T.theme_title $T.theme_hint
+        Write-TkTitle $TkStr.theme_title $TkStr.theme_hint
         foreach ($f in $CatppuccinFlavors.Keys) {
             $p = $CatppuccinFlavors[$f]
             $swatch = ($p.red, $p.peach, $p.yellow, $p.green, $p.teal, $p.blue, $p.mauve | ForEach-Object { (_tkRgb $_) + '●' }) -join ' '
             $mark = if ($f -eq $global:ThemeName) { $TK.ok + '● ' } else { '  ' }
-            Write-Host ("  {0}{1}{2,-10}{3} {4}{5}  {6}{7}{8}" -f $mark, $TK.cmd, $f, $TK.R, $swatch, $TK.R, $TK.dim, $(if ($p.dark) { $T.theme_dark } else { $T.theme_light }), $TK.R)
+            Write-Host ("  {0}{1}{2,-10}{3} {4}{5}  {6}{7}{8}" -f $mark, $TK.cmd, $f, $TK.R, $swatch, $TK.R, $TK.dim, $(if ($p.dark) { $TkStr.theme_dark } else { $TkStr.theme_light }), $TK.R)
         }
         Write-Host ''
         return
     }
     $Name = $Name.ToLower()
-    if (-not $CatppuccinFlavors.Contains($Name)) { Write-Host "  $($TK.err)$($T.theme_only -f ($CatppuccinFlavors.Keys -join ', '))$($TK.R)"; return }
+    if (-not $CatppuccinFlavors.Contains($Name)) { Write-Host "  $($TK.err)$($TkStr.theme_only -f ($CatppuccinFlavors.Keys -join ', '))$($TK.R)"; return }
     New-Item -ItemType Directory -Force (Split-Path $ThemeFile) | Out-Null
     [IO.File]::WriteAllText($ThemeFile, "$Name`n")
     $global:ThemeName = $Name
@@ -1573,16 +1656,16 @@ function theme {
         $new = $raw -replace '("colorScheme"\s*:\s*)"Catppuccin [A-Za-z]+"', "`$1`"$title`"" -replace '("theme"\s*:\s*)"Catppuccin [A-Za-z]+"', "`$1`"$title`""
         if ($new -ne $raw) { [IO.File]::WriteAllText($path, $new, [Text.UTF8Encoding]::new($false)) }
     }
-    Write-Host ("  {0}✓ {1}{2}  {3}{4}{5}" -f $TK.ok, $title, $TK.R, $TK.dim, $T.theme_done, $TK.R)
+    Write-Host ("  {0}✓ {1}{2}  {3}{4}{5}" -f $TK.ok, $title, $TK.R, $TK.dim, $TkStr.theme_done, $TK.R)
 }
 
 function lang {
     param([Parameter(Position = 0)][ValidateSet('', 'ru', 'en')][string]$Name = '')
     if (-not $Name) {
-        Write-TkTitle $T.lang_title $T.lang_hint
+        Write-TkTitle $TkStr.lang_title $TkStr.lang_hint
         foreach ($l in 'ru', 'en') {
             $mark = if ($l -eq $global:LangName) { $TK.ok + '● ' } else { '  ' }
-            Write-Host ("  {0}{1}{2,-6}{3} {4}{5}{6}" -f $mark, $TK.cmd, $l, $TK.R, $TK.dim, $T["lang_$l"], $TK.R)
+            Write-Host ("  {0}{1}{2,-6}{3} {4}{5}{6}" -f $mark, $TK.cmd, $l, $TK.R, $TK.dim, $TkStr["lang_$l"], $TK.R)
         }
         Write-Host ''
         return
@@ -1590,11 +1673,160 @@ function lang {
     New-Item -ItemType Directory -Force (Split-Path $LangFile) | Out-Null
     [IO.File]::WriteAllText($LangFile, "$Name`n")
     $global:LangName = $Name
-    $global:T = $Strings[$Name]
-    Write-Host ("  {0}✓ {1}{2}" -f $TK.ok, ($T.lang_done -f $T["lang_$Name"]), $TK.R)
+    $global:TkStr = $Strings[$Name]
+    Write-Host ("  {0}✓ {1}{2}" -f $TK.ok, ($TkStr.lang_done -f $TkStr["lang_$Name"]), $TK.R)
 }
 
 function ep { code $global:ProfileDir }
+
+# ── nav: folder navigator on fzf (→ enter, ← up, Enter go, Ctrl+F deep search) ──
+function nav {
+    param([string]$Start = (Get-Location).Path)
+    if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) { return }
+    $dir = (Resolve-Path -LiteralPath $Start).Path
+    $preview = if (Get-Command eza -ErrorAction SilentlyContinue) { 'eza --icons=always --color=always --group-directories-first -1 {2}' } else { 'dir /b {2}' }
+    while ($true) {
+        $parent = Split-Path $dir -Parent
+        $entries = @()
+        if ($parent) { $entries += "..`t$parent" }
+        $entries += Get-ChildItem -LiteralPath $dir -Directory -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name)`t$($_.FullName)" }
+        $out = @($entries | fzf --expect=right,left,ctrl-f,ctrl-o --delimiter="`t" --with-nth=1 --cycle --height=60% `
+            --header=$TkStr.nav_header --prompt="$($dir.Replace($HOME, '~')) ❯ " --preview=$preview --preview-window='right:45%')
+        if (-not $out) { return }
+        $key = $out[0]
+        $sel = if ($out.Count -gt 1) { ($out[1] -split "`t")[1] } else { $null }
+        switch ($key) {
+            'left'   { if ($parent) { $dir = $parent } }
+            'right'  { if ($sel -and (Test-Path -LiteralPath $sel)) { $dir = $sel } }
+            'ctrl-o' { Invoke-Item $dir }
+            'ctrl-f' {
+                $pick = fd --type d --hidden --exclude .git --exclude node_modules . $dir |
+                    fzf --height=60% --prompt="$($TkStr.nav_deep -f $dir.Replace($HOME, '~')) ❯ " --preview=$preview.Replace('{2}', '{}')
+                if ($pick) { Set-Location -LiteralPath $pick }
+                return
+            }
+            default  { Set-Location -LiteralPath $(if ($sel) { $sel } else { $dir }); return }
+        }
+    }
+}
+
+# ── small helpers, same names as on the server ───────────────────────────────
+function ex([string]$Archive) {
+    if (-not (Test-Path -LiteralPath $Archive)) { Write-Host "  $($TK.err)$($TkStr.ex_nofile -f $Archive)$($TK.R)"; return }
+    $file = Get-Item -LiteralPath $Archive
+    $name = $file.Name -replace '\.(tar\.(gz|xz|bz2|zst)|tgz|txz|zip|7z|tar|rar)$', ''
+    $dest = Join-Path $file.DirectoryName $name
+    if ($file.Name -notmatch '\.(tar\.(gz|xz|bz2|zst)|tgz|txz|zip|7z|tar)$') { Write-Host "  $($TK.err)$($TkStr.ex_unknown -f $file.Name)$($TK.R)"; return }
+    New-Item -ItemType Directory -Force $dest | Out-Null
+    tar -xf $file.FullName -C $dest
+    if ($LASTEXITCODE -eq 0) { Write-Host "  $($TK.ok)✓ $($TkStr.ex_done -f $dest)$($TK.R)" }
+}
+
+function bak {
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    foreach ($f in $args) {
+        if (-not (Test-Path -LiteralPath $f)) { Write-Host "  $($TK.err)$($TkStr.ex_nofile -f $f)$($TK.R)"; continue }
+        Copy-Item -LiteralPath $f "$f.bak-$stamp" -Recurse
+        Write-Host "  → $f.bak-$stamp"
+    }
+}
+
+function psg([string]$Name) {
+    Get-Process | Where-Object { $_.ProcessName -like "*$Name*" } | Sort-Object WorkingSet64 -Descending |
+        Select-Object Id, @{ N = 'Memory'; E = { Format-TkSize $_.WorkingSet64 } }, @{ N = 'CPU(s)'; E = { [math]::Round($_.CPU, 1) } }, ProcessName, @{ N = 'Path'; E = { $_.Path } } |
+        Format-Table -AutoSize
+}
+
+function cb {
+    $lines = @($input | ForEach-Object { "$_" -replace "`e\[[0-9;]*m", '' })
+    $lines | Set-Clipboard
+    Write-Host ("  {0}{1}{2}" -f $TK.dim, ($TkStr.cb_done -f $lines.Count), $TK.R)
+}
+
+# ── my config / doctor / update ──────────────────────────────────────────────
+function Get-ConfigLocations {
+    $wt = Get-TerminalSettingsPaths | Select-Object -First 1
+    [ordered]@{
+        profile     = $global:ProfileDir
+        custom      = Join-Path $global:ProfileDir 'custom.ps1'
+        bin         = Join-Path $global:ProfileDir 'bin'
+        srvcustom   = Join-Path $global:ProfileDir 'server\custom'
+        settings    = Join-Path $HOME '.config\terminal-setup'
+        omp         = Join-Path $HOME '.config\ohmyposh\soft.omp.json'
+        completions = Join-Path $HOME '.cache\pwsh-completions'
+        predictor   = Join-Path $HOME '.cache\pwsh-predictor'
+        wt          = $(if ($wt) { $wt } else { Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json' })
+        vscode      = Join-Path $env:APPDATA 'Code\User\settings.json'
+        gitconfig   = Join-Path $HOME '.gitconfig'
+        ssh         = Join-Path $HOME '.ssh\config'
+    }
+}
+
+function Show-MyConfig {
+    Write-TkTitle $TkStr.config_title $TkStr.config_hint
+    $loc = Get-ConfigLocations
+    $rows = foreach ($k in $loc.Keys) {
+        [pscustomobject]@{ What = $TkStr.config_rows[$k]; Path = $loc[$k].Replace($HOME, '~'); State = $(if (Test-Path -LiteralPath $loc[$k]) { '✓' } else { $TkStr.config_missing }) }
+    }
+    Write-TkTable $rows @(
+        @{ N = ' '; P = 'State'; C = { param($r) if ($r.State -eq '✓') { 'ok' } else { 'dim' } } }
+        @{ N = ''; P = 'What'; C = 'text' }
+        @{ N = ''; P = 'Path'; C = 'cmd' }
+    )
+    Write-Host ''
+}
+
+function doctor {
+    Write-TkTitle $TkStr.doctor_title ($TkStr.doctor_hint -f $global:TerminalSetupVersion)
+    $state = @{ problems = 0 }
+    $check = { param($ok, $label, $detail) if ($ok) { Write-Host "  $($TK.ok)✓$($TK.R) $label $($TK.dim)$detail$($TK.R)" } else { $state.problems++; Write-Host "  $($TK.err)✗$($TK.R) $label $($TK.dim)$detail$($TK.R)" } }
+
+    $tools = 'git', 'oh-my-posh', 'fzf', 'zoxide', 'eza', 'bat', 'rg', 'fd', 'delta', 'lazygit', 'tldr', 'gh'
+    $missing = @($tools | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) })
+    & $check (-not $missing) $TkStr.doctor_tools $(if ($missing) { $TkStr.doctor_missing -f ($missing -join ', ') } else { $tools -join ' ' })
+
+    $files = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\install.sh', 'server\inputrc'
+    $lost = @($files | Where-Object { -not (Test-Path (Join-Path $global:ProfileDir $_)) })
+    if (-not (Test-Path "$HOME\.config\ohmyposh\soft.omp.json")) { $lost += 'soft.omp.json' }
+    & $check (-not $lost) $TkStr.doctor_files $(if ($lost) { $TkStr.doctor_missing -f ($lost -join ', ') } else { $global:ProfileDir.Replace($HOME, '~') })
+
+    & $check (Test-Path "$env:windir\Fonts\JetBrainsMonoNerdFont-Regular.ttf") $TkStr.doctor_font 'JetBrainsMono NF'
+
+    $wtOk = $false
+    foreach ($path in Get-TerminalSettingsPaths) {
+        try { $s = Get-Content $path -Raw | ConvertFrom-Json; $wtOk = ($s.schemes.name -contains 'Catppuccin Mocha') -and ($s.defaultProfile -eq '{574e775e-4f2a-5b96-ac1e-a2962a402336}') } catch {}
+    }
+    & $check $wtOk $TkStr.doctor_wt ''
+    & $check ([bool](Get-Module -ListAvailable PSFzf)) $TkStr.doctor_psfzf 'Ctrl+R · Ctrl+T'
+    if ($global:isInteractive) {
+        $pred = (Get-PSSubsystem -Kind CommandPredictor).Implementations | Where-Object Name -eq 'History'
+        & $check ([bool]$pred) $TkStr.doctor_predictor ''
+    }
+
+    $customFile = Join-Path $global:ProfileDir 'custom.ps1'
+    $customOk = $true; $detail = ''
+    if (Test-Path $customFile) {
+        $errors = $null
+        [void][System.Management.Automation.Language.Parser]::ParseFile($customFile, [ref]$null, [ref]$errors)
+        if ($errors) { $customOk = $false; $detail = "$($errors[0].Extent.StartLineNumber): $($errors[0].Message)" }
+    }
+    & $check $customOk $TkStr.doctor_custom $detail
+
+    $ms = [int](Measure-Command { & (Get-Process -Id $PID).Path -NoLogo -Command 'exit' }).TotalMilliseconds
+    & $check ($ms -lt 3500) $TkStr.doctor_startup "$ms ms"
+
+    Write-Host ''
+    if ($state.problems) { Write-Host "  $($TK.warn)$($TkStr.doctor_fix)$($TK.R)" } else { Write-Host "  $($TK.ok)$($TkStr.doctor_ok)$($TK.R)" }
+    Write-Host ''
+}
+
+function update {
+    Write-Host "  $($TK.dim)$($TkStr.update_start)$($TK.R)"
+    try { $installer = Invoke-RestMethod 'https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1' -TimeoutSec 20 }
+    catch { Write-Host "  $($TK.err)$($TkStr.update_fail -f $_.Exception.Message)$($TK.R)"; return }
+    & ([scriptblock]::Create($installer)) -Lang $global:LangName
+    Write-Host "  $($TK.ok)$($TkStr.update_done)$($TK.R)"
+}
 '@
 $EmbeddedFiles['custom'] = @'
 # custom.ps1 — yours. setup-terminal.ps1 never overwrites this file. Loaded after toolkit.ps1; check with: reload

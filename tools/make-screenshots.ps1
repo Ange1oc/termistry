@@ -106,7 +106,7 @@ Set-Location '$demo'
 ) -join "``n"
 Scene 'hero' `$hero
 
-Scene 'help' (Capture { Show-TkHelp (@(`$TkSections | Where-Object { `$_.Key -in 'input', 'git', 'ssh', 'mine' }) + @(Get-TkUserSection)) })
+Scene 'help' (Capture { Show-TkHelp (@(`$TkStr.sections | Where-Object { `$_.Key -in 'input', 'git', 'ssh', 'mine' }) + @(Get-TkUserSection)) })
 
 `$sys = Capture { my sys }
 `$cut = `$sys.IndexOf('контейнеры'); if (`$cut -gt 0) { `$sys = `$sys.Substring(0, `$sys.LastIndexOf("``n", `$cut)).TrimEnd() }
@@ -117,13 +117,13 @@ Scene 'my-cmds' ((Prompt-Line '$demo') + (Typed 'my cmds') + "``n" + (Capture { 
 
 foreach (`$f in 'mocha', 'macchiato', 'frappe', 'latte') {
     `$env:TERMINAL_THEME = `$f; `$global:ThemeName = `$f; `$global:Palette = `$CatppuccinFlavors[`$f]; Set-TerminalPalette
-    `$t = @(
+    `$sceneText = @(
         (Prompt-Line '$demo') + (Typed 'theme')
         (Capture { theme })
         (Prompt-Line '$demo') + (Typed 'help git')
-        (Capture { Show-TkHelp (`$TkSections | Where-Object Key -eq 'git') })
+        (Capture { Show-TkHelp (`$TkStr.sections | Where-Object Key -eq 'git') })
     ) -join "``n"
-    Scene "theme-`$f" `$t
+    Scene "theme-`$f" `$sceneText
 }
 "@
 [IO.File]::WriteAllText("$work\capture.ps1", $capture, [Text.UTF8Encoding]::new($false))
