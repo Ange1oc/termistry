@@ -328,7 +328,8 @@ if ($isInteractive) {
 
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 . (Join-Path $ProfileDir 'prompt.ps1')
-if ($isInteractive) { Set-PSReadLineOption -ContinuationPrompt '❯❯ ' }
+# ExtraPromptLineCount: the prompt is 3 lines (blank, path, arrow), InvokePrompt must redraw all of them in place
+if ($isInteractive) { Set-PSReadLineOption -ContinuationPrompt '❯❯ ' -ExtraPromptLineCount 2 }
 
 # Enter: layout fix + abbreviation, redraw the prompt in its transient form, then run
 if ($isInteractive) {
@@ -2068,11 +2069,13 @@ $EmbeddedFiles['prompt'] = @'
 # The prompt is rendered in PowerShell itself (a few ms) instead of spawning oh-my-posh (~140 ms + git).
 # Branch comes from .git/HEAD, k8s context from kubeconfig; git status counts are fetched on PowerShell.OnIdle
 # and the prompt is redrawn in place, so a slow `git status` never delays the prompt.
-$global:TsGit = @{ Root = ''; Text = ''; Time = [datetime]::MinValue; Pending = '' }
+$global:TsGit = @{ Root = ''; Text = ''; Shown = ''; Time = [datetime]::MinValue; Pending = '' }
 $global:TsGitRoots = @{}
 $global:TsVersions = @{}
 $global:TsKube = @{ Stamp = ''; Text = ''; Prod = $false }
 $global:TsTransient = $false
+$global:TsRedraw = $false
+$global:TsLast = @{ Status = 0; Ms = 0 }
 $global:TsLastHistoryId = 0
 
 function global:Get-TsGitRoot([string]$Dir) {
@@ -2126,7 +2129,8 @@ function global:Update-TsGitStatus([string]$Root) {
     if ($ahead) { $parts += "$($c.teal)⇡$ahead" }
     if ($behind) { $parts += "$($c.teal)⇣$behind" }
     if ($stash) { $parts += "$($c.dim)≡$stash" }
-    $global:TsGit = @{ Root = $Root; Text = $(if ($parts) { ' ' + ($parts -join ' ') } else { '' }); Time = Get-Date; Pending = '' }
+    $g = $global:TsGit
+    $g.Root = $Root; $g.Text = $(if ($parts) { ' ' + ($parts -join ' ') } else { '' }); $g.Time = [datetime]::Now; $g.Pending = ''
 }
 
 function global:Get-TsKubeText {
@@ -2179,7 +2183,7 @@ function global:Get-TsPrompt {
     $c = $global:TK
     $leaf = Split-Path $Dir -Leaf; if (-not $leaf) { $leaf = $Dir }
     $title = "$([char]27)]0;$leaf$([char]7)"
-    if ($Transient) { return "$title$($c.dim)$leaf $($c.ok)❯$($c.R) " }
+    if ($Transient) { return "$title`n$($c.dim)$leaf $($c.ok)❯$($c.R) " }
 
     $left = "$($c.dim)╭─$($c.R) $($c.cmd) $(Get-TsShortPath $Dir)$($c.R)"
     $root = Get-TsGitRoot $Dir
@@ -2187,8 +2191,11 @@ function global:Get-TsPrompt {
         $branch = Get-TsGitBranch $root
         $gitText = ''
         if ($global:TerminalSetup.GitStatus) {
-            if ($global:TsGit.Root -eq $root -and ((Get-Date) - $global:TsGit.Time).TotalSeconds -lt 2) { $gitText = $global:TsGit.Text }
-            else { $global:TsGit.Pending = $root }
+            $g = $global:TsGit
+            # Stale counts stay on screen while OnIdle refreshes them; a redraw happens only if they changed
+            if ($g.Root -eq $root) { $gitText = $g.Text }
+            if ($g.Root -ne $root -or ([datetime]::Now - $g.Time).TotalSeconds -ge 2) { $g.Pending = $root }
+            $g.Shown = $gitText
         }
         $left += "  $($c.title) $branch$gitText$($c.R)"
     }
@@ -2219,6 +2226,11 @@ function global:Get-TsPrompt {
 
 function global:prompt {
     $ok = $?
+    $width = $Host.UI.RawUI.WindowSize.Width
+    # Redraw from OnIdle: $? and history belong to the handler, so reuse what the real prompt saw
+    if ($global:TsRedraw) { $global:TsRedraw = $false; return Get-TsPrompt -Status $global:TsLast.Status -Ms $global:TsLast.Ms -Width $width }
+    $transient = $global:TsTransient; $global:TsTransient = $false
+    if ($transient) { return Get-TsPrompt -Width $width -Transient }
     $code = if ($ok) { 0 } elseif ($global:LASTEXITCODE) { $global:LASTEXITCODE } else { 1 }
     $ms = 0
     $last = Get-History -Count 1
@@ -2226,15 +2238,18 @@ function global:prompt {
         $global:TsLastHistoryId = $last.Id
         $ms = [int]($last.EndExecutionTime - $last.StartExecutionTime).TotalMilliseconds
     }
-    $transient = $global:TsTransient; $global:TsTransient = $false
-    Get-TsPrompt -Status $code -Ms $ms -Width $Host.UI.RawUI.WindowSize.Width -Transient:$transient
+    $global:TsLast = @{ Status = $code; Ms = $ms }
+    Get-TsPrompt -Status $code -Ms $ms -Width $width
 }
 
 if ($global:isInteractive) {
     $null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -SupportEvent -Action {
         if ($global:TsGit.Pending) {
             Update-TsGitStatus $global:TsGit.Pending
-            try { [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt() } catch {}
+            if ($global:TsGit.Text -ne $global:TsGit.Shown) {
+                $global:TsRedraw = $true
+                try { [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt() } catch {} finally { $global:TsRedraw = $false }
+            }
         }
     }
 }

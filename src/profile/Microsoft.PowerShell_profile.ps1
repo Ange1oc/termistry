@@ -134,7 +134,8 @@ if ($isInteractive) {
 
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 . (Join-Path $ProfileDir 'prompt.ps1')
-if ($isInteractive) { Set-PSReadLineOption -ContinuationPrompt '❯❯ ' }
+# ExtraPromptLineCount: the prompt is 3 lines (blank, path, arrow), InvokePrompt must redraw all of them in place
+if ($isInteractive) { Set-PSReadLineOption -ContinuationPrompt '❯❯ ' -ExtraPromptLineCount 2 }
 
 # Enter: layout fix + abbreviation, redraw the prompt in its transient form, then run
 if ($isInteractive) {
