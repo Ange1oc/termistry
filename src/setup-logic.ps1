@@ -35,12 +35,16 @@
 .PARAMETER SshTabs
   Хосты из ~/.ssh/config, для которых добавить вкладку в меню Windows Terminal (через запятую).
 
+.PARAMETER Theme
+  Вариант Catppuccin: mocha (по умолчанию), macchiato, frappe или latte (светлая). Потом: theme latte
+
 .PARAMETER SkipApps
   Не ставить программы и шрифт — только конфиги.
 #>
 param(
     [string]$StartingDirectory,
     [string[]]$SshTabs = @(),
+    [ValidateSet('', 'mocha', 'macchiato', 'frappe', 'latte')][string]$Theme = '',
     [switch]$SkipApps
 )
 
@@ -110,6 +114,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
     if ($StartingDirectory) { $argList += @('-StartingDirectory', $StartingDirectory) }
     if ($SshTabs) { $argList += @('-SshTabs', ($SshTabs -join ',')) }
+    if ($Theme) { $argList += @('-Theme', $Theme) }
     if ($SkipApps) { $argList += '-SkipApps' }
     & $pwsh @argList
     exit $LASTEXITCODE
@@ -122,6 +127,7 @@ Info "PowerShell $($PSVersionTable.PSVersion) · $([Environment]::OSVersion.Vers
 if (Test-Admin) { Info 'запущено от администратора — лучше от обычного пользователя, права попрошу сам, где нужно' }
 
 $ProfileDir = Split-Path $PROFILE
+$ThemeFile = Join-Path $HOME '.config\terminal-setup\theme'
 $FontFace = 'JetBrainsMono NF'
 $FontStyles = [ordered]@{ Regular = 'Regular'; Bold = 'Bold'; Italic = 'Italic'; BoldItalic = 'Bold Italic' }
 $FontBaseUrl = 'https://github.com/ryanoasis/nerd-fonts/raw/v3.4.0/patched-fonts/JetBrainsMono/Ligatures'
@@ -144,7 +150,10 @@ if (-not $SkipApps) {
             @('sharkdp.bat', 'bat', 'bat — просмотр файлов'),
             @('BurntSushi.ripgrep.MSVC', 'rg', 'ripgrep — rg'),
             @('sharkdp.fd', 'fd', 'fd — поиск файлов'),
-            @('dandavison.delta', 'delta', 'delta — диффы git')
+            @('dandavison.delta', 'delta', 'delta — диффы git'),
+            @('JesseDuffield.lazygit', 'lazygit', 'lazygit — git в полноэкранном интерфейсе'),
+            @('tldr-pages.tlrc', 'tldr', 'tldr — короткие шпаргалки по командам'),
+            @('GitHub.cli', 'gh', 'gh — GitHub из терминала')
         )
         foreach ($a in $apps) { Install-WingetPackage $a[0] $a[1] $a[2] }
     }
@@ -223,6 +232,7 @@ function Write-ManagedFile([string]$Path, [string]$Content) {
 Step 'Профиль PowerShell и шаблоны'
 $targets = [ordered]@{
     'profile'     = $PROFILE
+    'palette'     = Join-Path $ProfileDir 'palette.ps1'
     'toolkit'     = Join-Path $ProfileDir 'toolkit.ps1'
     'predictor'   = Join-Path $ProfileDir 'DeepHistoryPredictor.cs'
     'omp-theme'   = Join-Path $HOME '.config\ohmyposh\soft.omp.json'
@@ -231,6 +241,25 @@ $targets = [ordered]@{
     'srv-install' = Join-Path $ProfileDir 'server\install.sh'
 }
 foreach ($key in $targets.Keys) { Write-ManagedFile $targets[$key] $EmbeddedFiles[$key] }
+
+# custom.ps1 — только если его ещё нет: это файл пользователя, его никогда не перезаписываем
+$customFile = Join-Path $ProfileDir 'custom.ps1'
+if (Test-Path $customFile) { Ok "$(Short $customFile) — твой, не трогаю" }
+else { [IO.File]::WriteAllText($customFile, ($EmbeddedFiles['custom'] -replace "`r`n", "`n"), $Utf8NoBom); Ok "$(Short $customFile) — создан (для своих настроек и команд)" }
+foreach ($d in 'bin', 'server\custom') {
+    $p = Join-Path $ProfileDir $d
+    if (-not (Test-Path $p)) { New-Item -ItemType Directory -Force $p | Out-Null; Ok "$(Short $p)\ — создана" }
+}
+
+# Тема: файл ~/.config/terminal-setup/theme (одно слово), по умолчанию mocha
+. ([scriptblock]::Create($EmbeddedFiles['palette']))
+if ($Theme) {
+    New-Item -ItemType Directory -Force (Split-Path $ThemeFile) | Out-Null
+    [IO.File]::WriteAllText($ThemeFile, "$Theme`n")
+}
+$ThemeName = Get-ThemeName
+$ThemeTitle = "Catppuccin $((Get-Culture).TextInfo.ToTitleCase($ThemeName))"
+Ok "тема: $ThemeName $([char]0x00B7) сменить: theme latte"
 
 # ── 5. Windows Terminal ──────────────────────────────────────────────────────
 function Set-Key($Table, [string]$Key, $Value) { $Table[$Key] = $Value }
@@ -254,7 +283,7 @@ function Update-TerminalSettings([string]$Path) {
     foreach ($p in $s.profiles.list) { $list.Add($p) }
 
     $d = $s.profiles.defaults
-    Set-Key $d 'colorScheme' 'Catppuccin Mocha'
+    Set-Key $d 'colorScheme' $ThemeTitle
     if (-not $d.Contains('font') -or -not ($d.font -is [Collections.IDictionary])) { $d['font'] = [ordered]@{} }
     Set-Key $d.font 'face' $FontFace
     Set-Key $d.font 'size' 11
@@ -294,24 +323,20 @@ function Update-TerminalSettings([string]$Path) {
     }
     $s.profiles['list'] = $list.ToArray()
 
-    $scheme = [ordered]@{
-        name = 'Catppuccin Mocha'
-        background = '#1E1E2E'; foreground = '#CDD6F4'; cursorColor = '#F5E0DC'; selectionBackground = '#45475A'
-        black = '#45475A'; red = '#F38BA8'; green = '#A6E3A1'; yellow = '#F9E2AF'
-        blue = '#89B4FA'; purple = '#CBA6F7'; cyan = '#94E2D5'; white = '#BAC2DE'
-        brightBlack = '#585B70'; brightRed = '#F38BA8'; brightGreen = '#A6E3A1'; brightYellow = '#F9E2AF'
-        brightBlue = '#89B4FA'; brightPurple = '#CBA6F7'; brightCyan = '#94E2D5'; brightWhite = '#A6ADC8'
-    }
-    $s['schemes'] = @(@($s.schemes | Where-Object { $_ -and $_.name -ne 'Catppuccin Mocha' }) + $scheme)
+    # Все четыре варианта Catppuccin — чтобы theme переключал на лету
+    $s['schemes'] = @(@($s.schemes | Where-Object { $_ -and $_.name -notlike 'Catppuccin *' }) + @($CatppuccinFlavors.Keys | ForEach-Object { Get-TerminalScheme $_ }))
+    $s['themes'] = @(@($s.themes | Where-Object { $_ -and $_.name -notlike 'Catppuccin *' }) + @($CatppuccinFlavors.Keys | ForEach-Object { Get-TerminalTheme $_ }))
+    Set-Key $s 'theme' $ThemeTitle
 
-    $theme = [ordered]@{
-        name = 'Catppuccin Mocha'
-        tab = [ordered]@{ background = '#1E1E2EFF'; unfocusedBackground = $null; showCloseButton = 'hover' }
-        tabRow = [ordered]@{ background = '#181825FF'; unfocusedBackground = '#11111BFF' }
-        window = [ordered]@{ applicationTheme = 'dark'; useMica = $false }
+    # Win+` — терминал выпадает сверху поверх всего (quake mode)
+    if (-not $s.Contains('actions')) { $s['actions'] = @() }
+    if (-not $s.Contains('keybindings')) { $s['keybindings'] = @() }
+    if (-not ($s.actions | Where-Object { $_.id -eq 'User.quakeMode' })) {
+        $s['actions'] = @($s.actions) + [ordered]@{ command = 'quakeMode'; id = 'User.quakeMode' }
     }
-    $s['themes'] = @(@($s.themes | Where-Object { $_ -and $_.name -ne 'Catppuccin Mocha' }) + $theme)
-    Set-Key $s 'theme' 'Catppuccin Mocha'
+    if (-not ($s.keybindings | Where-Object { $_.id -eq 'User.quakeMode' -or $_.keys -eq 'win+`' })) {
+        $s['keybindings'] = @($s.keybindings) + [ordered]@{ id = 'User.quakeMode'; keys = 'win+`' }
+    }
 
     $after = $s | ConvertTo-Json -Depth 32
     if ($after -eq $before) { Ok "$(Short $Path) — без изменений"; return }
@@ -360,6 +385,7 @@ Step 'git: диффы через delta'
 if (-not (Test-Command git)) { Warn 'git не найден — пропускаю' }
 elseif (-not (Test-Command delta)) { Warn 'delta не найден — пропускаю' }
 else {
+    # Только ANSI-цвета — тогда диффы следуют за темой терминала (theme latte — и дифф светлый)
     $gitSettings = [ordered]@{
         'core.pager'                         = 'delta'
         'interactive.diffFilter'             = 'delta --color-only'
@@ -367,22 +393,22 @@ else {
         'delta.navigate'                     = 'true'
         'delta.line-numbers'                 = 'true'
         'delta.syntax-theme'                 = 'ansi'
-        'delta.file-style'                   = '#CBA6F7 bold'
-        'delta.file-decoration-style'        = '#585B70 ul'
+        'delta.file-style'                   = 'magenta bold'
+        'delta.file-decoration-style'        = 'brightblack ul'
         'delta.hunk-header-style'            = 'file line-number syntax'
-        'delta.hunk-header-decoration-style' = '#585B70 box'
-        'delta.minus-style'                  = 'syntax "#3E2E40"'
-        'delta.minus-emph-style'             = 'syntax "#5E3F53"'
-        'delta.plus-style'                   = 'syntax "#323C3F"'
-        'delta.plus-emph-style'              = 'syntax "#475950"'
-        'delta.line-numbers-minus-style'     = '#F38BA8'
-        'delta.line-numbers-plus-style'      = '#A6E3A1'
-        'delta.line-numbers-zero-style'      = '#585B70'
+        'delta.hunk-header-decoration-style' = 'brightblack box'
+        'delta.line-numbers-minus-style'     = 'red'
+        'delta.line-numbers-plus-style'      = 'green'
+        'delta.line-numbers-zero-style'      = 'brightblack'
     }
     $changed = 0
     foreach ($k in $gitSettings.Keys) {
         $current = git config --global --get $k 2>$null
         if ($current -ne $gitSettings[$k]) { git config --global $k $gitSettings[$k]; $changed++ }
+    }
+    # фиксированные hex-цвета фона из прошлой версии ломают светлую тему — убираем
+    foreach ($k in 'delta.minus-style', 'delta.minus-emph-style', 'delta.plus-style', 'delta.plus-emph-style') {
+        if (git config --global --get $k 2>$null) { git config --global --unset $k; $changed++ }
     }
     if ($changed) { Ok "~/.gitconfig — изменено настроек: $changed" } else { Ok '~/.gitconfig — без изменений' }
 }
@@ -398,7 +424,8 @@ else { Warn "ошибок при загрузке профиля: $errCount"; $c
 Write-Host ''
 if ($Warnings) { Write-Host "  Готово, предупреждений: $Warnings (см. выше, жёлтым)." -ForegroundColor Yellow }
 else { Write-Host '  Готово.' -ForegroundColor Green }
-Write-Host '  Закрой все окна Windows Terminal и открой заново, затем набери: help' -ForegroundColor Gray
+Write-Host '  Закрой все окна Windows Terminal и открой заново, затем набери: help  (или F1)' -ForegroundColor Gray
+Write-Host '  Своё: custom.ps1 и bin\ рядом с профилем (ep) · new имя.py — команда на любом языке · theme latte' -ForegroundColor DarkGray
 Write-Host '  Серверы: srv install <хост> -Env prod  — такой же удобный bash на Linux.' -ForegroundColor DarkGray
 Write-Host '  Скрипт можно запускать повторно — он доустановит недостающее и обновит конфиги.' -ForegroundColor DarkGray
 Write-Host ''

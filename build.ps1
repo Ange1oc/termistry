@@ -15,7 +15,9 @@ $profileDir = Split-Path $PROFILE
 # ключ во встроенных файлах → файл в src/ → где он живёт на машине
 $files = [ordered]@{
     'profile'     = @('src\profile\Microsoft.PowerShell_profile.ps1', $PROFILE)
+    'palette'     = @('src\profile\palette.ps1', (Join-Path $profileDir 'palette.ps1'))
     'toolkit'     = @('src\profile\toolkit.ps1', (Join-Path $profileDir 'toolkit.ps1'))
+    'custom'      = @('src\profile\custom.ps1', $null)     # шаблон: ставится один раз, с машины не забирается
     'predictor'   = @('src\profile\DeepHistoryPredictor.cs', (Join-Path $profileDir 'DeepHistoryPredictor.cs'))
     'omp-theme'   = @('src\ohmyposh\soft.omp.json', (Join-Path $HOME '.config\ohmyposh\soft.omp.json'))
     'srv-bashrc'  = @('src\server\bashrc.local', (Join-Path $profileDir 'server\bashrc.local'))
@@ -27,6 +29,7 @@ $utf8 = [Text.UTF8Encoding]::new($false)
 if ($FromProfile) {
     foreach ($key in $files.Keys) {
         $src, $live = $files[$key]
+        if (-not $live) { continue }
         $text = [IO.File]::ReadAllText($live) -replace "`r`n", "`n"
         [IO.File]::WriteAllText((Join-Path $root $src), $text, $utf8)
         "  ← $src"

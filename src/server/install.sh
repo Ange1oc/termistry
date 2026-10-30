@@ -26,9 +26,20 @@ if [ "$action" = remove ]; then
         mv ~/.inputrc ~/.inputrc.off-$ts
         echo "$ok ~/.inputrc → ~/.inputrc.off-$ts"
     fi
-    echo "${dim}~/.config/projects и ~/.config/bashrc-local.conf оставлены${r}"
+    echo "${dim}~/.config/projects, ~/.config/bashrc-local.conf и ~/.bashrc.d оставлены${r}"
     exit 0
 fi
+
+# __put <путь от ~> <base64> — записать файл, если он отличается (свои файлы из server\custom)
+__put() {
+    local target=~/"$1" tmp
+    tmp=$(mktemp)
+    printf '%s' "$2" | base64 -d > "$tmp"
+    mkdir -p "${target%/*}"
+    if [ -f "$target" ] && cmp -s "$tmp" "$target"; then rm -f "$tmp"; echo "$ok ~/$1 уже актуален"; return; fi
+    cat "$tmp" > "$target"; rm -f "$tmp"
+    echo "$ok ~/$1"
+}
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -100,7 +111,11 @@ else
     echo "$ok ~/.bashrc: добавлена строка подключения ${dim}(бэкап ~/.bashrc.bak-$ts)${r}"
 fi
 
-# 6. при входе по ssh bash читает .bash_profile/.profile — они должны подтягивать .bashrc
+# 6. свои файлы для серверов: server\custom\*.sh → ~/.bashrc.d/
+mkdir -p ~/.bashrc.d
+__CUSTOM_FILES__
+
+# 7. при входе по ssh bash читает .bash_profile/.profile — они должны подтягивать .bashrc
 if [ -f ~/.bash_profile ]; then
     grep -q 'bashrc' ~/.bash_profile || echo "$warn ~/.bash_profile не подключает ~/.bashrc — добавь: [ -f ~/.bashrc ] && . ~/.bashrc"
 elif [ ! -f ~/.bash_login ] && [ ! -f ~/.profile ]; then
@@ -108,7 +123,7 @@ elif [ ! -f ~/.bash_login ] && [ ! -f ~/.profile ]; then
     echo "$ok создан ~/.bash_profile (подключает ~/.bashrc при входе)"
 fi
 
-# 7. итог
+# 8. итог
 projects=$(bash --norc -i -c '. ~/.bashrc.local; printf "%s " "${!PROJ_DIR[@]}"' </dev/null 2>/dev/null || true)
 echo "${dim}проекты: ${projects:-нет} · перезайди по ssh, затем help${r}"
 # end

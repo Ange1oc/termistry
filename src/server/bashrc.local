@@ -1,9 +1,12 @@
 # ~/.bashrc.local — один и тот же для всех серверов. Ставится из PowerShell: srv install <хост>
-# version: 2026-10-30.3
+# version: 2.0.0
 #
-#  Настройки конкретного сервера:  ~/.config/bashrc-local.conf   (PROMPT_ENV=prod …)
+#  Настройки сервера:  ~/.config/bashrc-local.conf   (PROMPT_ENV=prod …)
+#  Своё:               ~/.bashrc.d/*.sh — подключаются в конце, остаются при обновлении
+#                      ~/bin/*          — свои скрипты, строка «# help: …» попадает в help
 #  Проекты находятся сами (docker compose ls) и запоминаются в ~/.config/projects,
-#  для каждого появляется команда с его именем:  myapp ps · myapp logs web · myapp sh web
+#  для каждого появляется команда с его именем:  myapp · myapp logs web · myapp sh web
+#  Ничего не ставится и ничего не работает в фоне — только функции в этой оболочке.
 #  Откат: srv remove <хост>  (или удалить строку с .bashrc.local в конце ~/.bashrc)
 
 [[ $- == *i* ]] || return     # для scp/rsync/скриптов — ничего не делаем и ничего не печатаем
@@ -17,11 +20,11 @@ HISTSIZE=50000
 HISTFILESIZE=100000
 HISTCONTROL=ignoreboth:erasedups
 HISTTIMEFORMAT='%F %T  '
-HISTIGNORE='ls:ll:la:pwd:exit:clear:history'
+HISTIGNORE='ls:ll:la:pwd:exit:clear:history:h'
 shopt -s histappend cmdhist checkwinsize globstar
 
 # ── Промпт ───────────────────────────────────────────────────────────────────
-#  ┌─ ● prod deploy@vm1 ~/myapp ⎇ main*  ✘ 1
+#  ┌─ ● prod deploy@vm1 ~/app ⎇ main*  ⏱ 12s  ✘ 1
 #  └─❯
 __git_branch() {
     local b dirty=
@@ -31,16 +34,30 @@ __git_branch() {
     printf ' ⎇ %s%s' "$b" "$dirty"
 }
 
+# Время долгой команды: ловушка DEBUG запоминает старт первой команды после промпта.
+# Срабатывает только на верхнем уровне (внутри функций — нет), стоит микросекунды.
+__cmd_start() { [[ "${PROMPT_COMMAND[*]}" == *"$BASH_COMMAND"* ]] || __ts=${__ts:-$SECONDS}; }
+trap __cmd_start DEBUG
+
+__fmt_duration() {
+    local s=$1
+    if (( s >= 3600 )); then printf '%dh %dm' $((s/3600)) $((s%3600/60))
+    elif (( s >= 60 )); then printf '%dm %ds' $((s/60)) $((s%60))
+    else printf '%ds' "$s"; fi
+}
+
 __prompt() {
     local code=$?
+    local elapsed=$(( SECONDS - ${__ts:-$SECONDS} )); unset __ts
     history -a
 
     local r='\[\e[0m\]' dim='\[\e[90m\]' red='\[\e[31m\]' green='\[\e[32m\]'
     local yellow='\[\e[33m\]' blue='\[\e[34m\]' mauve='\[\e[35m\]' cyan='\[\e[36m\]'
 
     local user=$cyan;  (( EUID == 0 )) && user=$red     # root — красным
-    local arrow=$green status= env= venv=
+    local arrow=$green status= env= venv= took=
     (( code != 0 )) && { arrow=$red; status="  ${red}✘ ${code}${r}"; }
+    (( elapsed >= 3 )) && took="  ${dim}⏱ $(__fmt_duration $elapsed)${r}"
     if [[ -n $PROMPT_ENV ]]; then
         local envc=$blue
         case $PROMPT_ENV in prod*) envc=$red ;; stag*|test*|qa*) envc=$yellow ;; dev*) envc=$green ;; esac
@@ -49,10 +66,10 @@ __prompt() {
     [[ -n $VIRTUAL_ENV ]] && venv="  ${yellow}($(basename "$VIRTUAL_ENV"))${r}"
 
     PS1="\[\e]0;${PROMPT_ENV:+[$PROMPT_ENV] }\u@\h: \w\a\]"
-    PS1+="\n${dim}┌─${r} ${env}${user}\u${dim}@${r}${yellow}\h${r} ${blue}\w${r}${mauve}$(__git_branch)${r}${venv}${status}"
+    PS1+="\n${dim}┌─${r} ${env}${user}\u${dim}@${r}${yellow}\h${r} ${blue}\w${r}${mauve}$(__git_branch)${r}${venv}${took}${status}"
     PS1+="\n${dim}└─${arrow}❯${r} "
 }
-[[ $PROMPT_COMMAND == *__prompt* ]] || PROMPT_COMMAND="__prompt${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+[[ "${PROMPT_COMMAND[*]}" == *__prompt* ]] || PROMPT_COMMAND="__prompt${PROMPT_COMMAND:+; ${PROMPT_COMMAND[*]}}"
 
 # ── Цвета в выводе ───────────────────────────────────────────────────────────
 export LESS='-R -F -X -i'
@@ -81,6 +98,21 @@ alias free='free -h'
 alias du1='du -h --max-depth=1 2>/dev/null | sort -h'
 alias ports='ss -tulpn'
 mkcd() { mkdir -p "$1" && cd "$1"; }
+psg() { ps aux | grep -i --color=auto -- "[${1:0:1}]${1:1}"; }                 # psg nginx — процессы по имени
+bak() { local f; for f in "$@"; do command cp -a "$f" "$f.bak-$(date +%Y%m%d-%H%M%S)" && echo "→ $f.bak-$(date +%Y%m%d-%H%M%S)"; done; }
+ex() {                                                                       # ex архив — распаковать что угодно
+    [[ -f $1 ]] || { echo "нет файла: $1"; return 1; }
+    case $1 in
+        *.tar.gz|*.tgz)  tar xzf "$1" ;;   *.tar.xz|*.txz) tar xJf "$1" ;;   *.tar.bz2|*.tbz2) tar xjf "$1" ;;
+        *.tar|*.tar.zst) tar xf "$1" ;;    *.gz)  gunzip -k "$1" ;;          *.bz2) bunzip2 -k "$1" ;;
+        *.xz)  unxz -k "$1" ;;             *.zip) unzip -q "$1" ;;           *.7z)  7z x "$1" ;;
+        *) echo "не знаю, чем распаковать: $1"; return 1 ;;
+    esac
+}
+h() {                                                                        # h [текст] — последние команды
+    if (( $# )); then history | grep -i -- "$*" | tail -n 30
+    else history | tail -n 50; fi
+}
 
 # Дополнить строку пробелами до ширины n в символах (printf %-Ns считает байты и ломает кириллицу)
 __pad() { local s=$1 n=$(( $2 - ${#1} )); (( n < 1 )) && n=1; printf '%s%*s' "$s" "$n" ''; }
@@ -293,12 +325,29 @@ complete -F __app_complete app
 complete -F __dsh_complete dsh
 
 # ── Состояние сервера ────────────────────────────────────────────────────────
+__bar() {       # __bar 67 → ████████████░░░░░░░░  67%
+    local p=${1%.*} w=${2:-20} c=$'\e[32m'
+    (( p >= 90 )) && c=$'\e[31m' || { (( p >= 70 )) && c=$'\e[33m'; }
+    local filled=$(( p * w / 100 ))
+    printf '%s' "$c"; printf '█%.0s' $(seq 1 $filled 2>/dev/null); printf '\e[90m'; printf '░%.0s' $(seq 1 $((w - filled)) 2>/dev/null)
+    printf '\e[0m %3d%%' "$p"
+}
+
 sys() {
     local t=$'\e[1;35m' d=$'\e[90m' r=$'\e[0m' name state
-    printf '\n  %s%s%s  %s%s%s\n' "$t" "$(hostname)" "$r" "$d" "$(uptime -p)" "$r"
-    printf '  нагрузка   %s  %s(ядер: %s)%s\n' "$(cut -d' ' -f1-3 /proc/loadavg)" "$d" "$(nproc)" "$r"
-    free -h | awk '/^Mem:/ {printf "  память     %s из %s, доступно %s\n", $3, $2, $7}'
-    df -h / | awk 'NR==2 {printf "  диск /     %s из %s (%s)\n", $3, $2, $5}'
+    printf '\n  %s%s%s  %s%s · %s%s\n' "$t" "$(hostname)" "$r" "$d" "$(uptime -p)" "${PROMPT_ENV:-без метки}" "$r"
+    local load; load=$(cut -d' ' -f1 /proc/loadavg)
+    printf '  %sнагрузка%s   %s  %s%s · ядер: %s%s\n' "$d" "$r" "$(__bar "$(awk -v l="$load" -v n="$(nproc)" 'BEGIN{printf "%d", l/n*100}')")" "$d" "$(cut -d' ' -f1-3 /proc/loadavg)" "$(nproc)" "$r"
+    # command — иначе подставятся алиасы free -h / df -h, объявленные выше
+    command free -b | awk -v d="$d" -v r="$r" '/^Mem:/ {printf "  %sпамять%s     __BAR__%d  %s%.1f из %.1f ГБ%s\n", d, r, ($2-$7)/$2*100, d, ($2-$7)/1073741824, $2/1073741824, r}' |
+        while IFS= read -r line; do local pct=${line#*__BAR__}; pct=${pct%%  *}; printf '%s%s%s\n' "${line%%__BAR__*}" "$(__bar "$pct")" "${line#*__BAR__$pct}"; done
+    command df -P / | awk -v d="$d" -v r="$r" 'NR==2 {gsub("%","",$5); printf "  %sдиск /%s     __BAR__%d  %s%.0f из %.0f ГБ%s\n", d, r, $5, d, $3/1048576, $2/1048576, r}' |
+        while IFS= read -r line; do local pct=${line#*__BAR__}; pct=${pct%%  *}; printf '%s%s%s\n' "${line%%__BAR__*}" "$(__bar "$pct")" "${line#*__BAR__$pct}"; done
+
+    printf '\n  %sтоп процессов%s\n' "$t" "$r"
+    ps -eo comm,%cpu,%mem --sort=-%cpu --no-headers | head -n 5 |
+        awk -v c=$'\e[34m' -v d="$d" -v r="$r" '{printf "  %s%-26s%s %scpu %5.1f%%   mem %5.1f%%%s\n", c, $1, r, d, $2, $3, r}'
+
     if command -v docker >/dev/null; then
         printf '\n  %sконтейнеры%s\n' "$t" "$r"
         command docker ps -a --format '{{.Names}}'$'\t''{{.Status}}' | while IFS=$'\t' read -r name state; do
@@ -308,17 +357,19 @@ sys() {
     echo
 }
 
-# ── Шпаргалка: help (help <команда> — обычная справка bash) ──────────────────
-help() {
-    if (( $# )); then builtin help "$@"; return; fi
-    local t=$'\e[1;35m' c=$'\e[34m' d=$'\e[90m' r=$'\e[0m'
+# ── Шпаргалка: help · help <слово> — поиск · help <встроенная команда> — справка bash
+__help_rows() {
+    local f=$1
+    __help_section() { __pending_title=$1; }
+    __help_row() {
+        [[ -n $f && "${1,,} ${2,,}" != *"${f,,}"* ]] && return
+        if [[ -n $__pending_title ]]; then printf '\n  \e[1;35m%s\e[0m\n' "$__pending_title"; __pending_title=; fi
+        printf '    \e[34m%s\e[0m %s \e[90m%s\e[0m\n' "$(__pad "$1" 27)" "$(__pad "$2" 44)" "$3"
+    }
     local ex; ex=$(__proj_current); ex=${ex:-${!PROJ_DIR[*]}}; ex=${ex%% *}; ex=${ex:-myapp}
     local p; p=$(__proj_cmd "$ex")
-    __help_section() { printf '\n  %s%s%s\n' "$t" "$1" "$r"; }
-    __help_row() { printf '    %s%s%s %s %s%s%s\n' "$c" "$(__pad "$1" 27)" "$r" "$(__pad "$2" 44)" "$d" "$3" "$r"; }
 
-    printf '\n  %s✦ %s%s%s   %shelp <команда> — справка bash%s\n' "$t" "$(hostname)" "${PROMPT_ENV:+ · $PROMPT_ENV}" "$r" "$d" "$r"
-    __help_section "Проекты  ${d}(находятся сами: docker compose ls)${r}"
+    __help_section 'Проекты  (находятся сами: docker compose ls)'
     __help_row 'proj' 'все проекты: статус и папка'
     __help_row '<проект>' 'статус контейнеров' "$p"
     __help_row '<проект> logs [сервис]' 'логи: 200 строк и дальше поток' "$p logs web"
@@ -328,18 +379,21 @@ help() {
     __help_row 'dsh <сервис>' 'shell в контейнере проекта, где ты сейчас'
     __help_row 'proj add [имя] [папка]' 'добавить вручную (по умолчанию — текущую)'
     __help_row 'proj rm <имя>' 'скрыть из списка'
-    (( ${#PROJ_DIR[@]} )) && printf '    %sздесь: %s%s\n' "$d" "$(for n in "${!PROJ_DIR[@]}"; do printf '%s  ' "$(__proj_cmd "$n")"; done)" "$r"
     __help_section 'Docker'
     __help_row 'dps' 'все контейнеры: статус и порты'
     __help_row 'dc · dlogs' 'docker compose / логи в текущей папке'
     __help_section 'Сервер'
-    __help_row 'sys' 'нагрузка, память, диск, контейнеры'
+    __help_row 'sys' 'нагрузка, память, диск, процессы, контейнеры'
     __help_row 'ports' 'кто слушает порты'
+    __help_row 'psg <имя>' 'процессы по имени' 'psg nginx'
     __help_row 'df · free · du1' 'диск · память · размер папок здесь'
-    __help_section 'Файлы и навигация'
+    __help_section 'Файлы'
     __help_row 'll · la' 'подробный список · со скрытыми'
+    __help_row 'bak <файл>' 'копия рядом: файл.bak-дата — перед правкой на проде' 'bak .env'
+    __help_row 'ex <архив>' 'распаковать: tar.gz, zip, xz, 7z…'
     __help_row '.. · ... · mkcd <папка>' 'вверх · два вверх · создать и зайти'
     __help_section 'История и ввод'
+    __help_row 'h · h <текст>' 'последние 50 команд · поиск'
     __help_row 'начало команды + ↑/↓' 'листать только подходящие из истории'
     __help_row 'Ctrl+R' 'поиск по всей истории'
     __help_row 'Tab' 'дополнение без учёта регистра (и сервисов)'
@@ -348,8 +402,37 @@ help() {
     __help_row 'rm · cp · mv' 'спрашивают перед массовым удалением'
     __help_row 'down -v · volume rm · prune' 'docker требует набрать yes'
     __help_row '\rm …' 'без подтверждения (обход алиаса)'
+    __help_row '● prod в промпте' 'метка сервера: ~/.config/bashrc-local.conf'
+
+    # Своё: ~/bin/* и ~/.bashrc.d/*.sh со строками «# help: имя — описание»
+    __help_section 'Своё  (~/bin, ~/.bashrc.d)'
+    local file line
+    for file in ~/bin/*; do
+        [[ -f $file && -x $file ]] || continue
+        line=$(head -n 15 "$file" | sed -n 's/^[[:space:]]*\(#\|\/\/\|;;\|--\)[[:space:]]*help:[[:space:]]*//p' | head -n1)
+        __help_row "${file##*/}" "${line:-скрипт в ~/bin}"
+    done
+    for file in ~/.bashrc.d/*.sh; do
+        [[ -f $file ]] || continue
+        while IFS= read -r line; do
+            __help_row "${line%% — *}" "${line#* — }" "${file##*/}"
+        done < <(sed -n 's/^[[:space:]]*#[[:space:]]*help:[[:space:]]*//p' "$file")
+    done
+    unset -f __help_section __help_row
+}
+
+help() {
+    local d=$'\e[90m' t=$'\e[1;35m' r=$'\e[0m'
+    if (( $# )) && builtin help "$1" >/dev/null 2>&1; then builtin help "$@"; return; fi
+    printf '\n  %s✦ %s%s%s   %shelp <слово> — поиск · help <встроенная> — справка bash%s\n' "$t" "$(hostname)" "${PROMPT_ENV:+ · $PROMPT_ENV}" "$r" "$d" "$r"
+    if (( ${#PROJ_DIR[@]} )); then printf '  %sпроекты: %s%s\n' "$d" "$(for n in "${!PROJ_DIR[@]}"; do printf '%s  ' "$(__proj_cmd "$n")"; done)" "$r"; fi
+    local __pending_title=
+    __help_rows "$*"
     echo
 }
+
+# ── Своё: ~/.bashrc.d/*.sh (уезжают с srv install, остаются при обновлении) ──
+for __f in ~/.bashrc.d/*.sh; do [[ -f $__f ]] && . "$__f"; done; unset __f
 
 # ── Старт ────────────────────────────────────────────────────────────────────
 __proj_load
