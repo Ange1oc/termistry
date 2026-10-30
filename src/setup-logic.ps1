@@ -17,13 +17,13 @@
 .PARAMETER SshTabs
   Hosts from ~/.ssh/config that get a tab in the Windows Terminal menu.
 .PARAMETER SkipApps
-  Only configs — no programs, no font.
+  Only configs - no programs, no font.
 .PARAMETER Uninstall
   Remove the managed profile files and caches. custom.ps1, bin\, installed programs and *.bak files stay.
 #>
 param(
     [ValidateSet('', 'ru', 'en')][string]$Lang = '',
-    [ValidateSet('', 'mocha', 'macchiato', 'frappe', 'latte')][string]$Theme = '',
+    [string]$Theme = '',
     [string]$StartingDirectory,
     [string[]]$SshTabs = @(),
     [switch]$SkipApps,
@@ -55,51 +55,51 @@ if ($Lang -notin 'ru', 'en') {
 
 $L = @{
     ru = @{
-        title = '✦ Настройка терминала'; admin_note = 'запущено от администратора — лучше от обычного пользователя, права попрошу сам, где нужно'
+        title = '✦ Настройка терминала'; admin_note = 'запущено от администратора - лучше от обычного пользователя, права попрошу сам, где нужно'
         continue7 = 'продолжаю в PowerShell 7…'; no_winget = 'Нет winget. Установи «Установщик приложений» (App Installer) из Microsoft Store и запусти скрипт снова.'
-        no_pwsh = 'PowerShell 7 не установился — поставь вручную: winget install Microsoft.PowerShell'
+        no_pwsh = 'PowerShell 7 не установился - поставь вручную: winget install Microsoft.PowerShell'
         present = 'уже есть'; installing = 'устанавливаю…'; installed = 'установлен'; winget_code = 'winget вернул {0}'
-        s_apps = 'Программы'; skip_apps = 'нет winget — программы пропускаю (App Installer из Microsoft Store)'
+        s_apps = 'Программы'; skip_apps = 'нет winget - программы пропускаю (App Installer из Microsoft Store)'
         s_font = 'Шрифт JetBrainsMono Nerd Font'; font_present = 'уже установлен для всех пользователей'; font_downloaded = 'скачано: {0}'
-        font_uac = 'нужны права администратора — подтверди запрос Windows (UAC)'; font_failed = 'не установились: {0}'; font_done = 'установлен для всех пользователей'
-        font_error = 'шрифт не установлен: {0}'; font_notfont = 'скачался не шрифт: {0}'; font_fallback = 'Nerd Font нет — в терминале будет Cascadia Mono (иконки не покажутся)'
+        font_uac = 'нужны права администратора - подтверди запрос Windows (UAC)'; font_failed = 'не установились: {0}'; font_done = 'установлен для всех пользователей'
+        font_error = 'шрифт не установлен: {0}'; font_notfont = 'скачался не шрифт: {0}'; font_fallback = 'Nerd Font нет - в терминале будет Cascadia Mono (иконки не покажутся)'
         s_psfzf = 'Модуль PSFzf'; psfzf_failed = 'не установился: {0}'
         s_profile = 'Профиль PowerShell и шаблоны'; unchanged = 'без изменений'; updated = 'обновлён'; old = 'старый'; created = 'создан'
         custom_yours = 'твой, не трогаю'; custom_created = 'создан (для своих настроек и команд)'; dir_created = 'создана'
         theme_set = 'тема: {0} · сменить: theme latte'; lang_set = 'язык: {0} · сменить: lang en'
-        s_wt = 'Windows Terminal'; wt_badjson = 'не разобрал JSON, пропускаю: {0}'; wt_never = 'Windows Terminal ещё ни разу не запускался — открой его один раз и запусти скрипт снова'
-        s_vscode = 'Терминал VS Code'; vscode_none = 'VS Code не найден — пропускаю'; vscode_font = 'шрифт терминала: {0}'
-        s_git = 'git: диффы через delta'; git_none = 'git не найден — пропускаю'; delta_none = 'delta не найден — пропускаю'; git_changed = '~/.gitconfig — изменено настроек: {0}'; git_same = '~/.gitconfig — без изменений'
+        s_wt = 'Windows Terminal'; wt_badjson = 'не разобрал JSON, пропускаю: {0}'; wt_never = 'Windows Terminal ещё ни разу не запускался - открой его один раз и запусти скрипт снова'
+        s_vscode = 'Терминал VS Code'; vscode_none = 'VS Code не найден - пропускаю'; vscode_font = 'шрифт терминала: {0}'
+        s_git = 'git: диффы через delta'; git_none = 'git не найден - пропускаю'; delta_none = 'delta не найден - пропускаю'; git_changed = '~/.gitconfig - изменено настроек: {0}'; git_same = '~/.gitconfig - без изменений'
         s_check = 'Проверка профиля'; profile_ok = 'профиль загружается без ошибок'; profile_errors = 'ошибок при загрузке профиля: {0}'
         done_warn = 'Готово, предупреждений: {0} (см. выше, жёлтым).'; done = 'Готово.'
         next1 = 'Закрой все окна Windows Terminal и открой заново, затем набери: help  (или F1)'
-        next2 = 'Своё: custom.ps1 и bin\ рядом с профилем (ep) · new имя.py — команда на любом языке · theme latte · lang en'
-        next3 = 'Серверы: srv install <хост> -Env prod  — такой же удобный bash на Linux.'
-        next4 = 'Скрипт можно запускать повторно — он доустановит недостающее и обновит конфиги.'
+        next2 = 'Своё: custom.ps1 и bin\ рядом с профилем (ep) · new имя.py - команда на любом языке · theme latte · lang en'
+        next3 = 'Серверы: srv install <хост> -Env prod  - такой же удобный bash на Linux.'
+        next4 = 'Скрипт можно запускать повторно - он доустановит недостающее и обновит конфиги.'
         s_uninstall = 'Удаление'; removed = 'удалён'; uninstall_kept = 'Остались: custom.ps1, bin\, server\custom\, программы, шрифт, настройки Windows Terminal и *.bak'
     }
     en = @{
-        title = '✦ Terminal setup'; admin_note = 'running as administrator — better as a regular user; elevation is requested only where needed'
+        title = '✦ Terminal setup'; admin_note = 'running as administrator - better as a regular user; elevation is requested only where needed'
         continue7 = 'continuing in PowerShell 7…'; no_winget = 'No winget. Install "App Installer" from the Microsoft Store and run the script again.'
-        no_pwsh = 'PowerShell 7 did not install — install it manually: winget install Microsoft.PowerShell'
+        no_pwsh = 'PowerShell 7 did not install - install it manually: winget install Microsoft.PowerShell'
         present = 'already installed'; installing = 'installing…'; installed = 'installed'; winget_code = 'winget returned {0}'
-        s_apps = 'Programs'; skip_apps = 'no winget — skipping programs (App Installer from the Microsoft Store)'
+        s_apps = 'Programs'; skip_apps = 'no winget - skipping programs (App Installer from the Microsoft Store)'
         s_font = 'JetBrainsMono Nerd Font'; font_present = 'already installed for all users'; font_downloaded = 'downloaded: {0}'
-        font_uac = 'administrator rights needed — confirm the Windows prompt (UAC)'; font_failed = 'not installed: {0}'; font_done = 'installed for all users'
-        font_error = 'font not installed: {0}'; font_notfont = 'downloaded file is not a font: {0}'; font_fallback = 'no Nerd Font — the terminal will use Cascadia Mono (no icons)'
+        font_uac = 'administrator rights needed - confirm the Windows prompt (UAC)'; font_failed = 'not installed: {0}'; font_done = 'installed for all users'
+        font_error = 'font not installed: {0}'; font_notfont = 'downloaded file is not a font: {0}'; font_fallback = 'no Nerd Font - the terminal will use Cascadia Mono (no icons)'
         s_psfzf = 'PSFzf module'; psfzf_failed = 'failed to install: {0}'
         s_profile = 'PowerShell profile and templates'; unchanged = 'unchanged'; updated = 'updated'; old = 'old'; created = 'created'
         custom_yours = 'yours, left alone'; custom_created = 'created (for your own settings and commands)'; dir_created = 'created'
         theme_set = 'theme: {0} · change: theme latte'; lang_set = 'language: {0} · change: lang ru'
-        s_wt = 'Windows Terminal'; wt_badjson = 'could not parse JSON, skipping: {0}'; wt_never = 'Windows Terminal has never been started — open it once and run the script again'
-        s_vscode = 'VS Code terminal'; vscode_none = 'VS Code not found — skipping'; vscode_font = 'terminal font: {0}'
-        s_git = 'git: diffs via delta'; git_none = 'git not found — skipping'; delta_none = 'delta not found — skipping'; git_changed = '~/.gitconfig — settings changed: {0}'; git_same = '~/.gitconfig — unchanged'
+        s_wt = 'Windows Terminal'; wt_badjson = 'could not parse JSON, skipping: {0}'; wt_never = 'Windows Terminal has never been started - open it once and run the script again'
+        s_vscode = 'VS Code terminal'; vscode_none = 'VS Code not found - skipping'; vscode_font = 'terminal font: {0}'
+        s_git = 'git: diffs via delta'; git_none = 'git not found - skipping'; delta_none = 'delta not found - skipping'; git_changed = '~/.gitconfig - settings changed: {0}'; git_same = '~/.gitconfig - unchanged'
         s_check = 'Profile check'; profile_ok = 'profile loads without errors'; profile_errors = 'errors while loading the profile: {0}'
         done_warn = 'Done, warnings: {0} (see above, in yellow).'; done = 'Done.'
         next1 = 'Close all Windows Terminal windows, open it again and type: help  (or F1)'
-        next2 = 'Yours: custom.ps1 and bin\ next to the profile (ep) · new name.py — a command in any language · theme latte · lang ru'
-        next3 = 'Servers: srv install <host> -Env prod  — the same bash on Linux.'
-        next4 = 'Safe to run again — it installs what is missing and updates the configs.'
+        next2 = 'Yours: custom.ps1 and bin\ next to the profile (ep) · new name.py - a command in any language · theme latte · lang ru'
+        next3 = 'Servers: srv install <host> -Env prod  - the same bash on Linux.'
+        next4 = 'Safe to run again - it installs what is missing and updates the configs.'
         s_uninstall = 'Uninstall'; removed = 'removed'; uninstall_kept = 'Kept: custom.ps1, bin\, server\custom\, programs, font, Windows Terminal settings and *.bak files'
     }
 }[$Lang]
@@ -131,14 +131,14 @@ function Get-Pwsh {
 
 function Install-WingetPackage([string]$Id, [string]$Command, [string]$Title) {
     if (-not $Title) { $Title = $Id }
-    if ($Command -and (Test-Command $Command)) { Ok "$Title — $($L.present)"; return }
-    Info "$Title — $($L.installing)"
+    if ($Command -and (Test-Command $Command)) { Ok "$Title - $($L.present)"; return }
+    Info "$Title - $($L.installing)"
     $out = winget install --id $Id -e --source winget --accept-package-agreements --accept-source-agreements --silent --disable-interactivity 2>&1
     $code = $LASTEXITCODE
     Update-SessionPath
     # 0x8A15002B = already installed
-    if ($code -eq 0 -or $code -eq -1978335189 -or ($Command -and (Test-Command $Command))) { Ok "$Title — $($L.installed)" }
-    else { Warn "$Title — $($L.winget_code -f $code)"; $out | Select-Object -Last 5 | ForEach-Object { Info "$_" } }
+    if ($code -eq 0 -or $code -eq -1978335189 -or ($Command -and (Test-Command $Command))) { Ok "$Title - $($L.installed)" }
+    else { Warn "$Title - $($L.winget_code -f $code)"; $out | Select-Object -Last 5 | ForEach-Object { Info "$_" } }
 }
 
 if ($PSVersionTable.PSVersion.Major -lt 7) {
@@ -152,7 +152,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
         $pwsh = Get-Pwsh
         if (-not $pwsh) { throw $L.no_pwsh }
     } else {
-        Ok "PowerShell 7 — $($L.present)"
+        Ok "PowerShell 7 - $($L.present)"
     }
     Info $L.continue7
     $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Lang', $Lang)
@@ -176,7 +176,7 @@ if ($Uninstall) {
     $managed = @('Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh' | ForEach-Object { Join-Path $ProfileDir $_ })
     $managed += (Join-Path $HOME '.config\ohmyposh\soft.omp.json'), (Join-Path $HOME '.config\terminal-setup'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
     foreach ($p in $managed) {
-        if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) — $($L.removed)" }
+        if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) - $($L.removed)" }
     }
     Write-Host ''
     Write-Host "  $($L.uninstall_kept)" -ForegroundColor Gray
@@ -272,45 +272,50 @@ function Write-ManagedFile([string]$Path, [string]$Content) {
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }
     if (Test-Path $Path) {
         $old = [IO.File]::ReadAllText($Path) -replace "`r`n", "`n"
-        if ($old -eq $Content) { Ok "$(Short $Path) — $($L.unchanged)"; return }
+        if ($old -eq $Content) { Ok "$(Short $Path) - $($L.unchanged)"; return }
         Copy-Item $Path "$Path.bak-$Stamp" -Force
         [IO.File]::WriteAllText($Path, $Content, $Utf8NoBom)
-        Ok "$(Short $Path) — $($L.updated) $([char]0x00B7) $($L.old): $(Split-Path $Path -Leaf).bak-$Stamp"
+        Ok "$(Short $Path) - $($L.updated) $([char]0x00B7) $($L.old): $(Split-Path $Path -Leaf).bak-$Stamp"
     } else {
         [IO.File]::WriteAllText($Path, $Content, $Utf8NoBom)
-        Ok "$(Short $Path) — $($L.created)"
+        Ok "$(Short $Path) - $($L.created)"
     }
 }
 
 Step $L.s_profile
+. ([scriptblock]::Create($EmbeddedFiles['palette']))
+if ($Theme -and -not $Themes.Contains($Theme.ToLower())) { throw "-Theme: $($Themes.Keys -join ', ')" }
+if ($Theme) { New-Item -ItemType Directory -Force $ConfigDir | Out-Null; [IO.File]::WriteAllText($ThemeFile, "$($Theme.ToLower())`n") }
+$ThemeName = Get-ThemeName
+$ThemeTitle = $Themes[$ThemeName].title
+$EmbeddedFiles['omp-theme'] = Set-OmpPalettes $EmbeddedFiles['omp-theme'] $ThemeName
+
 $targets = [ordered]@{
-    'profile'     = $PROFILE
-    'palette'     = Join-Path $ProfileDir 'palette.ps1'
-    'lang'        = Join-Path $ProfileDir 'lang.ps1'
-    'toolkit'     = Join-Path $ProfileDir 'toolkit.ps1'
-    'predictor'   = Join-Path $ProfileDir 'DeepHistoryPredictor.cs'
-    'omp-theme'   = Join-Path $HOME '.config\ohmyposh\soft.omp.json'
-    'srv-bashrc'  = Join-Path $ProfileDir 'server\bashrc.local'
-    'srv-inputrc' = Join-Path $ProfileDir 'server\inputrc'
-    'srv-install' = Join-Path $ProfileDir 'server\install.sh'
+    'profile'      = $PROFILE
+    'palette'      = Join-Path $ProfileDir 'palette.ps1'
+    'lang'         = Join-Path $ProfileDir 'lang.ps1'
+    'toolkit'      = Join-Path $ProfileDir 'toolkit.ps1'
+    'toolkit-lazy' = Join-Path $ProfileDir 'toolkit-lazy.ps1'
+    'predictor'    = Join-Path $ProfileDir 'DeepHistoryPredictor.cs'
+    'omp-theme'    = Join-Path $HOME '.config\ohmyposh\soft.omp.json'
+    'srv-bashrc'   = Join-Path $ProfileDir 'server\bashrc.local'
+    'srv-inputrc'  = Join-Path $ProfileDir 'server\inputrc'
+    'srv-install'  = Join-Path $ProfileDir 'server\install.sh'
 }
 foreach ($key in $targets.Keys) { Write-ManagedFile $targets[$key] $EmbeddedFiles[$key] }
+Remove-Item "$HOME\.cache\terminal-setup\omp-init.txt" -ErrorAction SilentlyContinue
 
 $customFile = Join-Path $ProfileDir 'custom.ps1'
-if (Test-Path $customFile) { Ok "$(Short $customFile) — $($L.custom_yours)" }
-else { [IO.File]::WriteAllText($customFile, ($EmbeddedFiles['custom'] -replace "`r`n", "`n"), $Utf8NoBom); Ok "$(Short $customFile) — $($L.custom_created)" }
+if (Test-Path $customFile) { Ok "$(Short $customFile) - $($L.custom_yours)" }
+else { [IO.File]::WriteAllText($customFile, ($EmbeddedFiles['custom'] -replace "`r`n", "`n"), $Utf8NoBom); Ok "$(Short $customFile) - $($L.custom_created)" }
 foreach ($d in 'bin', 'server\custom') {
     $p = Join-Path $ProfileDir $d
-    if (-not (Test-Path $p)) { New-Item -ItemType Directory -Force $p | Out-Null; Ok "$(Short $p)\ — $($L.dir_created)" }
+    if (-not (Test-Path $p)) { New-Item -ItemType Directory -Force $p | Out-Null; Ok "$(Short $p)\ - $($L.dir_created)" }
 }
 
 New-Item -ItemType Directory -Force $ConfigDir | Out-Null
 [IO.File]::WriteAllText($LangFile, "$Lang`n")
 Ok ($L.lang_set -f $Lang)
-. ([scriptblock]::Create($EmbeddedFiles['palette']))
-if ($Theme) { [IO.File]::WriteAllText($ThemeFile, "$Theme`n") }
-$ThemeName = Get-ThemeName
-$ThemeTitle = "Catppuccin $((Get-Culture).TextInfo.ToTitleCase($ThemeName))"
 Ok ($L.theme_set -f $ThemeName)
 
 function Set-Key($Table, [string]$Key, $Value) { $Table[$Key] = $Value }
@@ -323,7 +328,7 @@ function Get-StableGuid([string]$Text) {
 function Update-TerminalSettings([string]$Path) {
     $raw = if (Test-Path $Path) { [IO.File]::ReadAllText($Path) } else { '' }
     try { $s = if ($raw.Trim()) { $raw | ConvertFrom-Json -AsHashtable } else { [ordered]@{} } }
-    catch { Warn "$(Short $Path) — $($L.wt_badjson -f $_.Exception.Message)"; return }
+    catch { Warn "$(Short $Path) - $($L.wt_badjson -f $_.Exception.Message)"; return }
     $before = if ($raw.Trim()) { $s | ConvertTo-Json -Depth 32 } else { '' }
 
     if (-not $s.Contains('profiles')) { $s['profiles'] = [ordered]@{} }
@@ -371,8 +376,9 @@ function Update-TerminalSettings([string]$Path) {
     }
     $s.profiles['list'] = $list.ToArray()
 
-    $s['schemes'] = @(@($s.schemes | Where-Object { $_ -and $_.name -notlike 'Catppuccin *' }) + @($CatppuccinFlavors.Keys | ForEach-Object { Get-TerminalScheme $_ }))
-    $s['themes'] = @(@($s.themes | Where-Object { $_ -and $_.name -notlike 'Catppuccin *' }) + @($CatppuccinFlavors.Keys | ForEach-Object { Get-TerminalTheme $_ }))
+    $ours = @($Themes.Values.title)
+    $s['schemes'] = @(@($s.schemes | Where-Object { $_ -and $_.name -notin $ours -and $_.name -notlike 'Catppuccin *' }) + @($Themes.Keys | ForEach-Object { Get-TerminalScheme $_ }))
+    $s['themes'] = @(@($s.themes | Where-Object { $_ -and $_.name -notin $ours -and $_.name -notlike 'Catppuccin *' }) + @($Themes.Keys | ForEach-Object { Get-TerminalTheme $_ }))
     Set-Key $s 'theme' $ThemeTitle
 
     if (-not $s.Contains('actions')) { $s['actions'] = @() }
@@ -385,11 +391,11 @@ function Update-TerminalSettings([string]$Path) {
     }
 
     $after = $s | ConvertTo-Json -Depth 32
-    if ($after -eq $before) { Ok "$(Short $Path) — $($L.unchanged)"; return }
+    if ($after -eq $before) { Ok "$(Short $Path) - $($L.unchanged)"; return }
     if (Test-Path $Path) { Copy-Item $Path "$Path.bak-$Stamp" -Force }
     else { New-Item -ItemType Directory -Force (Split-Path $Path) | Out-Null }
     [IO.File]::WriteAllText($Path, $after, $Utf8NoBom)
-    Ok "$(Short $Path) — $($L.updated)$(if ($raw.Trim()) { " $([char]0x00B7) $($L.old): settings.json.bak-$Stamp" })"
+    Ok "$(Short $Path) - $($L.updated)$(if ($raw.Trim()) { " $([char]0x00B7) $($L.old): settings.json.bak-$Stamp" })"
 }
 
 Step $L.s_wt
@@ -416,12 +422,12 @@ if (-not (Test-Path (Split-Path $vsSettings)) -and -not (Test-Command code)) {
     } else {
         ([regex]'\{').Replace($raw, "{`n  $line,", 1)
     }
-    if ($new -eq $raw) { Ok "$(Short $vsSettings) — $($L.unchanged)" }
+    if ($new -eq $raw) { Ok "$(Short $vsSettings) - $($L.unchanged)" }
     else {
         if (Test-Path $vsSettings) { Copy-Item $vsSettings "$vsSettings.bak-$Stamp" -Force }
         else { New-Item -ItemType Directory -Force (Split-Path $vsSettings) | Out-Null }
         [IO.File]::WriteAllText($vsSettings, $new, $Utf8NoBom)
-        Ok "$(Short $vsSettings) — $($L.vscode_font -f $FontFace)"
+        Ok "$(Short $vsSettings) - $($L.vscode_font -f $FontFace)"
     }
 }
 

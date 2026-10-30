@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   Renders text with ANSI codes as a terminal window PNG (Catppuccin colors, JetBrainsMono NF).
-  Used by tools\make-screenshots.ps1 — the images in docs\ come from real command output.
+  Used by tools\make-screenshots.ps1: the images in docs\ come from real command output.
 
 .EXAMPLE
   .\render-terminal.ps1 -InputFile out.txt -OutFile docs\help.png -Title 'help' -Flavor mocha
@@ -10,7 +10,7 @@ param(
     [Parameter(Mandatory)][string]$InputFile,
     [Parameter(Mandatory)][string]$OutFile,
     [string]$Title = '',
-    [ValidateSet('mocha', 'macchiato', 'frappe', 'latte')][string]$Flavor = 'mocha',
+    [string]$Flavor = 'mocha',
     [int]$MinColumns = 72,
     [int]$MaxColumns = 110,
     [double]$FontSize = 13,
@@ -21,7 +21,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 . (Join-Path $PSScriptRoot '..\src\profile\palette.ps1')
 
-$p = $CatppuccinFlavors[$Flavor]
+$p = $Themes[$Flavor]
 $scheme = Get-TerminalScheme $Flavor
 function C([int]$rgb) { [Drawing.Color]::FromArgb(255, ($rgb -shr 16) -band 255, ($rgb -shr 8) -band 255, $rgb -band 255) }
 function Hex([string]$h) { [Drawing.ColorTranslator]::FromHtml($h) }

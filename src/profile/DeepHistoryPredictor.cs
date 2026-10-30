@@ -80,7 +80,7 @@ public sealed class DeepHistoryPredictor : ICommandPredictor
         using (var fs = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
         using (var reader = new StreamReader(fs))
         {
-            // multi-line entries are stored as lines ending with a backtick — skipped entirely
+            // multi-line entries are stored as lines ending with a backtick; skipped entirely
             bool continuation = false;
             string line;
             while ((line = reader.ReadLine()) != null)

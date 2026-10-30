@@ -13,18 +13,18 @@ hook='[ -f ~/.bashrc.local ] && . ~/.bashrc.local   # prompt, history, helpers (
 
 declare -A M_ru=(
     [removed_hook]='строка подключения убрана из ~/.bashrc' [backup]='бэкап' [kept]='~/.config/projects, ~/.config/bashrc-local.conf и ~/.bashrc.d оставлены'
-    [uptodate]='уже актуален' [syntax_err]='синтаксическая ошибка — ничего не меняю' [load_err]='пробная загрузка с ошибками — ничего не меняю:'
+    [uptodate]='уже актуален' [syntax_err]='синтаксическая ошибка - ничего не меняю' [load_err]='пробная загрузка с ошибками - ничего не меняю:'
     [checked]='проверка: синтаксис и пробная загрузка' [label]='метка' [none]='нет' [lang]='язык' [migrated]='метка перенесена из старой версии'
     [created]='создан' [hook_present]='~/.bashrc уже подключает ~/.bashrc.local' [hook_added]='~/.bashrc: добавлена строка подключения'
-    [profile_warn]='~/.bash_profile не подключает ~/.bashrc — добавь: [ -f ~/.bashrc ] && . ~/.bashrc' [profile_created]='создан ~/.bash_profile (подключает ~/.bashrc при входе)'
+    [profile_warn]='~/.bash_profile не подключает ~/.bashrc - добавь: [ -f ~/.bashrc ] && . ~/.bashrc' [profile_created]='создан ~/.bash_profile (подключает ~/.bashrc при входе)'
     [projects]='проекты' [relogin]='перезайди по ssh, затем help'
 )
 declare -A M_en=(
     [removed_hook]='hook line removed from ~/.bashrc' [backup]='backup' [kept]='~/.config/projects, ~/.config/bashrc-local.conf and ~/.bashrc.d kept'
-    [uptodate]='already up to date' [syntax_err]='syntax error — nothing changed' [load_err]='trial load failed — nothing changed:'
+    [uptodate]='already up to date' [syntax_err]='syntax error - nothing changed' [load_err]='trial load failed - nothing changed:'
     [checked]='checked: syntax and trial load' [label]='label' [none]='none' [lang]='language' [migrated]='label migrated from the old version'
     [created]='created' [hook_present]='~/.bashrc already sources ~/.bashrc.local' [hook_added]='~/.bashrc: hook line added'
-    [profile_warn]='~/.bash_profile does not source ~/.bashrc — add: [ -f ~/.bashrc ] && . ~/.bashrc' [profile_created]='created ~/.bash_profile (sources ~/.bashrc on login)'
+    [profile_warn]='~/.bash_profile does not source ~/.bashrc - add: [ -f ~/.bashrc ] && . ~/.bashrc' [profile_created]='created ~/.bash_profile (sources ~/.bashrc on login)'
     [projects]='projects' [relogin]='reconnect over ssh, then help'
 )
 m() { local v="M_${lang}[$1]"; printf '%s' "${!v}"; }

@@ -71,7 +71,7 @@ $capture = @"
 `$PROFILE = '$work\home\profile\Microsoft.PowerShell_profile.ps1'
 . `$PROFILE *> `$null
 `$omp = '$work\home\.config\ohmyposh\soft.omp.json'
-`$env:POSH_THEME = `$omp      # профиль выставил свою тему — для сцен нужна копия из src
+`$env:POSH_THEME = `$omp      # профиль выставил свою тему - для сцен нужна копия из src
 `$W = 100
 function Prompt-Line([string]`$Dir, [int]`$Status = 0, [int]`$Ms = 0) {
     `$a = @('print', 'primary', '--config', `$omp, '--shell', 'pwsh', '--pwd', `$Dir, '--terminal-width', `$W)
@@ -115,11 +115,9 @@ Scene 'my-sys' ((Prompt-Line '$demo') + (Typed 'my sys') + "``n" + (Demo `$sys))
 # 4. my cmds + new
 Scene 'my-cmds' ((Prompt-Line '$demo') + (Typed 'my cmds') + "``n" + (Capture { my cmds }).Replace('$work\home\profile', '~\Documents\PowerShell'))
 
-foreach (`$f in 'mocha', 'macchiato', 'frappe', 'latte') {
-    `$env:TERMINAL_THEME = `$f; `$global:ThemeName = `$f; `$global:Palette = `$CatppuccinFlavors[`$f]; Set-TerminalPalette
+foreach (`$f in `$Themes.Keys) {
+    `$env:TERMINAL_THEME = `$f; `$global:ThemeName = `$f; `$global:Palette = `$Themes[`$f]; Set-TerminalPalette
     `$sceneText = @(
-        (Prompt-Line '$demo') + (Typed 'theme')
-        (Capture { theme })
         (Prompt-Line '$demo') + (Typed 'help git')
         (Capture { Show-TkHelp (`$TkStr.sections | Where-Object Key -eq 'git') })
     ) -join "``n"
@@ -154,7 +152,7 @@ host=$(hostname); me=$(whoami)
 fix() { sed -e "s/$host/prod-1/g" -e "s/\b$me\b/deploy/g" -e 's/\x01//g; s/\x02//g'; }
 bash --norc -i -c '
   source ~/.bashrc.local 2>/dev/null
-  printf "\e[90m  проекты: shop api · help — шпаргалка · sys — состояние сервера\e[0m\n"
+  printf "\e[90m  проекты: shop api · help - шпаргалка · sys - состояние сервера\e[0m\n"
   __ts=$((SECONDS-12)); __prompt; printf "%s" "${PS1@P}"; printf "sys\n"; sys
   true; __prompt; printf "%s" "${PS1@P}"; printf "shop\n"; shop
   __prompt; printf "%s" "${PS1@P}"; printf "shop logs worker\n"
@@ -176,16 +174,19 @@ Write-Host '  рендер…'
 & $render -InputFile "$work\help.txt" -OutFile "$OutDir\help.png" -Title 'help'
 & $render -InputFile "$work\my-sys.txt" -OutFile "$OutDir\my-sys.png" -Title 'my sys'
 & $render -InputFile "$work\my-cmds.txt" -OutFile "$OutDir\my-cmds.png" -Title 'my cmds'
-& $render -InputFile "$work\server.txt" -OutFile "$OutDir\server.png" -Title 'ssh prod-1 — bash'
-foreach ($f in 'mocha', 'macchiato', 'frappe', 'latte') {
-    & $render -InputFile "$work\theme-$f.txt" -OutFile "$work\theme-$f.png" -Title "theme $f" -Flavor $f -MinColumns 84 -MaxColumns 84
+& $render -InputFile "$work\server.txt" -OutFile "$OutDir\server.png" -Title 'ssh prod-1 - bash'
+. (Join-Path $root 'src\profile\palette.ps1')
+$names = @($Themes.Keys)
+foreach ($f in $names) {
+    & $render -InputFile "$work\theme-$f.txt" -OutFile "$work\theme-$f.png" -Title "theme $f  ·  $($Themes[$f].title)" -Flavor $f -MinColumns 84 -MaxColumns 84
 }
 
-$imgs = 'mocha', 'macchiato', 'frappe', 'latte' | ForEach-Object { [Drawing.Image]::FromFile("$work\theme-$_.png") }
+$imgs = $names | ForEach-Object { [Drawing.Image]::FromFile("$work\theme-$_.png") }
 $cw = ($imgs | Measure-Object Width -Maximum).Maximum; $ch = ($imgs | Measure-Object Height -Maximum).Maximum
-$grid = [Drawing.Bitmap]::new([int](2 * $cw), [int](2 * $ch))
+$rows = [math]::Ceiling($names.Count / 2)
+$grid = [Drawing.Bitmap]::new([int](2 * $cw), [int]($rows * $ch))
 $g = [Drawing.Graphics]::FromImage($grid); $g.Clear([Drawing.Color]::Transparent)
-for ($i = 0; $i -lt 4; $i++) { $g.DrawImage($imgs[$i], [int](($i % 2) * $cw), [int]([math]::Floor($i / 2) * $ch)) }
+for ($i = 0; $i -lt $names.Count; $i++) { $g.DrawImage($imgs[$i], [int](($i % 2) * $cw), [int]([math]::Floor($i / 2) * $ch)) }
 $grid.Save("$OutDir\themes.png", [Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $grid.Dispose(); $imgs | ForEach-Object { $_.Dispose() }
 "  ✓ $OutDir\themes.png"
 Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue

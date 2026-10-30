@@ -1,4 +1,4 @@
-# srv: managed — installed by srv install; the previous file is kept as ~/.inputrc.bak-*
+# srv: managed. Installed by srv install; the previous file is kept as ~/.inputrc.bak-*
 $include /etc/inputrc
 
 set completion-ignore-case on

@@ -1,4 +1,4 @@
-# ~/.bashrc.local — installed by `srv install <host>` from terminal-setup. Nothing runs in the background.
+# ~/.bashrc.local - installed by `srv install <host>` from terminal-setup. Nothing runs in the background.
 # version: 2.1.0
 # Per-server settings: ~/.config/bashrc-local.conf (PROMPT_ENV=prod, LANG_UI=en)
 # Your own: ~/.bashrc.d/*.sh and ~/bin/* (a "# help: ..." line shows up in help)
@@ -11,58 +11,58 @@ LANG_UI=''
 [[ $LANG_UI == en ]] || LANG_UI=ru
 
 declare -A T_ru=(
-    [help_hint]='help <слово> — поиск · help <встроенная> — справка bash'
+    [help_hint]='help <слово> - поиск · help <встроенная> - справка bash'
     [projects]='проекты' [own]='Своё  (~/bin, ~/.bashrc.d)' [own_script]='скрипт в ~/bin'
     [s_proj]='Проекты  (находятся сами: docker compose ls)' [s_docker]='Docker' [s_server]='Сервер' [s_files]='Файлы'
     [s_hist]='История и ввод' [s_guard]='Подстраховка'
     [r_proj]='все проекты: статус и папка' [r_status]='статус контейнеров' [r_logs]='логи: 200 строк и дальше поток'
     [r_sh]='shell внутри контейнера' [r_any]='любая docker compose команда' [r_cd]='перейти в папку проекта'
-    [r_dsh]='shell в контейнере проекта, где ты сейчас' [r_add]='добавить вручную (по умолчанию — текущую)' [r_rm]='скрыть из списка'
+    [r_dsh]='shell в контейнере проекта, где ты сейчас' [r_add]='добавить вручную (по умолчанию - текущую)' [r_rm]='скрыть из списка'
     [r_dps]='все контейнеры: статус и порты' [r_dc]='docker compose / логи в текущей папке'
     [r_sys]='нагрузка, память, диск, процессы, контейнеры' [r_ports]='кто слушает порты' [r_psg]='процессы по имени'
     [r_df]='диск · память · размер папок здесь' [r_ll]='подробный список · со скрытыми'
-    [r_bak]='копия рядом: файл.bak-дата — перед правкой на проде' [r_ex]='распаковать: tar.gz, zip, xz, 7z…'
+    [r_bak]='копия рядом: файл.bak-дата - перед правкой на проде' [r_ex]='распаковать: tar.gz, zip, xz, 7z…'
     [r_up]='вверх · два вверх · создать и зайти' [r_h]='последние 50 команд · поиск' [r_arrows]='листать только подходящие из истории'
-    [r_ctrlr]='поиск по всей истории' [r_tab]='дополнение без учёта регистра (и сервисов)' [r_space]='не сохранится в историю — для паролей'
+    [r_ctrlr]='поиск по всей истории' [r_tab]='дополнение без учёта регистра (и сервисов)' [r_space]='не сохранится в историю - для паролей'
     [r_rm_guard]='спрашивают перед массовым удалением' [r_down]='docker требует набрать yes' [r_noguard]='без подтверждения (обход алиаса)'
     [r_env]='метка сервера: ~/.config/bashrc-local.conf'
     [k_arrows]='начало команды + ↑/↓' [k_space]=' команда (с пробелом)' [k_env]='● prod в промпте' [k_proj]='<проект>' [k_svc]='сервис' [k_folder]='папка' [k_name]='имя' [k_file]='файл' [k_archive]='архив'
     [sys_load]='нагрузка' [sys_mem]='память' [sys_disk]='диск /' [sys_cores]='ядер' [sys_top]='топ процессов' [sys_cont]='контейнеры' [sys_nolabel]='без метки' [of]='из'
-    [p_title]='Проекты' [p_hint]='proj add — добавить текущую папку · proj rm <имя> — скрыть'
+    [p_title]='Проекты' [p_hint]='proj add - добавить текущую папку · proj rm <имя> - скрыть'
     [p_none]='пока нет: запусти docker compose up в папке проекта или proj add' [p_stopped]='не запущен'
     [p_nodir]='нет папки: %s\n' [p_badname]='плохое имя: %s\n' [p_added]='добавлен: %s → %s\n' [p_rmname]='укажи имя: proj rm <имя>'
-    [p_hidden]='скрыт: %s (вернуть: proj add %s <папка>)\n' [p_unknown]='нет проекта «%s» — список: proj\n' [p_svc]='укажи сервис: %s sh <Tab>\n'
-    [p_cmds]='%s logs <сервис> · %s sh <сервис> · %s restart <сервис> · %s cd' [p_many]='проектов несколько — зайди в папку проекта или: <проект> sh <сервис>'
+    [p_hidden]='скрыт: %s (вернуть: proj add %s <папка>)\n' [p_unknown]='нет проекта «%s» - список: proj\n' [p_svc]='укажи сервис: %s sh <Tab>\n'
+    [p_cmds]='%s logs <сервис> · %s sh <сервис> · %s restart <сервис> · %s cd' [p_many]='проектов несколько - зайди в папку проекта или: <проект> sh <сервис>'
     [d_warn]='⚠ %s: «docker %s» удалит данные (тома, базы).' [d_ask]='Напиши yes, чтобы продолжить: ' [d_cancel]='Отменено.'
     [ex_nofile]='нет файла: %s\n' [ex_unknown]='не знаю, чем распаковать: %s\n'
-    [banner]='help — шпаргалка · sys — состояние сервера'
+    [banner]='help - шпаргалка · sys - состояние сервера'
 )
 declare -A T_en=(
-    [help_hint]='help <word> — search · help <builtin> — bash help'
+    [help_hint]='help <word> - search · help <builtin> - bash help'
     [projects]='projects' [own]='Mine  (~/bin, ~/.bashrc.d)' [own_script]='script in ~/bin'
     [s_proj]='Projects  (discovered: docker compose ls)' [s_docker]='Docker' [s_server]='Server' [s_files]='Files'
     [s_hist]='History and input' [s_guard]='Guards'
     [r_proj]='all projects: status and folder' [r_status]='container status' [r_logs]='logs: last 200 lines, then follow'
     [r_sh]='shell inside a container' [r_any]='any docker compose command' [r_cd]='go to the project folder'
-    [r_dsh]='shell in a container of the project you are in' [r_add]='add manually (default — current folder)' [r_rm]='hide from the list'
+    [r_dsh]='shell in a container of the project you are in' [r_add]='add manually (default - current folder)' [r_rm]='hide from the list'
     [r_dps]='all containers: status and ports' [r_dc]='docker compose / logs in the current folder'
     [r_sys]='load, memory, disk, processes, containers' [r_ports]='who listens on which port' [r_psg]='processes by name'
     [r_df]='disk · memory · folder sizes here' [r_ll]='detailed list · with hidden files'
-    [r_bak]='copy next to it: file.bak-date — before editing on prod' [r_ex]='extract: tar.gz, zip, xz, 7z…'
+    [r_bak]='copy next to it: file.bak-date - before editing on prod' [r_ex]='extract: tar.gz, zip, xz, 7z…'
     [r_up]='up · two up · create and enter' [r_h]='last 50 commands · search' [r_arrows]='scroll only matching history'
-    [r_ctrlr]='search the whole history' [r_tab]='case-insensitive completion (and services)' [r_space]='not saved to history — for passwords'
+    [r_ctrlr]='search the whole history' [r_tab]='case-insensitive completion (and services)' [r_space]='not saved to history - for passwords'
     [r_rm_guard]='ask before mass deletion' [r_down]='docker asks you to type yes' [r_noguard]='no confirmation (bypass the alias)'
     [r_env]='server label: ~/.config/bashrc-local.conf'
     [k_arrows]='command prefix + ↑/↓' [k_space]=' command (leading space)' [k_env]='● prod in the prompt' [k_proj]='<project>' [k_svc]='service' [k_folder]='folder' [k_name]='name' [k_file]='file' [k_archive]='archive'
     [sys_load]='load' [sys_mem]='memory' [sys_disk]='disk /' [sys_cores]='cores' [sys_top]='top processes' [sys_cont]='containers' [sys_nolabel]='no label' [of]='of'
-    [p_title]='Projects' [p_hint]='proj add — add the current folder · proj rm <name> — hide'
+    [p_title]='Projects' [p_hint]='proj add - add the current folder · proj rm <name> - hide'
     [p_none]='none yet: run docker compose up in a project folder or proj add' [p_stopped]='not running'
     [p_nodir]='no such folder: %s\n' [p_badname]='bad name: %s\n' [p_added]='added: %s → %s\n' [p_rmname]='give a name: proj rm <name>'
-    [p_hidden]='hidden: %s (restore: proj add %s <folder>)\n' [p_unknown]='no project "%s" — list: proj\n' [p_svc]='give a service: %s sh <Tab>\n'
-    [p_cmds]='%s logs <service> · %s sh <service> · %s restart <service> · %s cd' [p_many]='several projects — enter a project folder or: <project> sh <service>'
+    [p_hidden]='hidden: %s (restore: proj add %s <folder>)\n' [p_unknown]='no project "%s" - list: proj\n' [p_svc]='give a service: %s sh <Tab>\n'
+    [p_cmds]='%s logs <service> · %s sh <service> · %s restart <service> · %s cd' [p_many]='several projects - enter a project folder or: <project> sh <service>'
     [d_warn]='⚠ %s: "docker %s" deletes data (volumes, databases).' [d_ask]='Type yes to continue: ' [d_cancel]='Cancelled.'
     [ex_nofile]='no such file: %s\n' [ex_unknown]='do not know how to extract: %s\n'
-    [banner]='help — cheat sheet · sys — server status'
+    [banner]='help - cheat sheet · sys - server status'
 )
 __t() { local v="T_${LANG_UI}[$1]"; printf '%s' "${!v}"; }
 
@@ -157,7 +157,7 @@ h() {
     else history | tail -n 50; fi
 }
 
-# printf %-Ns counts bytes, which breaks alignment with Cyrillic — pad by characters instead
+# printf %-Ns counts bytes, which breaks alignment with Cyrillic - pad by characters instead
 __pad() { local s=$1 n=$(( $2 - ${#1} )); (( n < 1 )) && n=1; printf '%s%*s' "$s" "$n" ''; }
 
 __dot() {
@@ -220,7 +220,7 @@ __proj_load() {
     done
 }
 
-# A function named after each project, unless the name is already a command (git, nginx…) — then `proj <name>`
+# A function named after each project, unless the name is already a command (git, nginx…) - then `proj <name>`
 __proj_define() {
     local name
     for name in "${!PROJ_DIR[@]}"; do
@@ -375,7 +375,7 @@ sys() {
     printf '\n  %s%s%s  %s%s · %s%s\n' "$t" "$(hostname)" "$r" "$d" "$(uptime -p)" "${PROMPT_ENV:-$(__t sys_nolabel)}" "$r"
     local load; load=$(cut -d' ' -f1 /proc/loadavg)
     printf '  %s%s%s  %s  %s%s · %s: %s%s\n' "$d" "$(__pad "$(__t sys_load)" 9)" "$r" "$(__bar "$(awk -v l="$load" -v n="$(nproc)" 'BEGIN{printf "%d", l/n*100}')")" "$d" "$(cut -d' ' -f1-3 /proc/loadavg)" "$(__t sys_cores)" "$(nproc)" "$r"
-    # `command` — the free/df aliases above would otherwise change the output format
+    # `command` - the free/df aliases above would otherwise change the output format
     command free -b | awk -v d="$d" -v r="$r" -v L="$(__pad "$(__t sys_mem)" 9)" -v of="$(__t of)" '/^Mem:/ {printf "  %s%s%s  __BAR__%d  %s%.1f %s %.1f GB%s\n", d, L, r, ($2-$7)/$2*100, d, ($2-$7)/1073741824, of, $2/1073741824, r}' | __bar_line
     command df -P / | awk -v d="$d" -v r="$r" -v L="$(__pad "$(__t sys_disk)" 9)" -v of="$(__t of)" 'NR==2 {gsub("%","",$5); printf "  %s%s%s  __BAR__%d  %s%.0f %s %.0f GB%s\n", d, L, r, $5, d, $3/1048576, of, $2/1048576, r}' | __bar_line
 
@@ -450,7 +450,7 @@ __help_rows() {
     for file in ~/.bashrc.d/*.sh; do
         [[ -f $file ]] || continue
         while IFS= read -r line; do
-            __help_row "${line%% — *}" "${line#* — }" "${file##*/}"
+            __help_row "${line%% - *}" "${line#* - }" "${file##*/}"
         done < <(sed -n 's/^[[:space:]]*#[[:space:]]*help:[[:space:]]*//p' "$file")
     done
     unset -f __help_section __help_row

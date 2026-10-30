@@ -18,6 +18,7 @@ $files = [ordered]@{
     'palette'     = @('src\profile\palette.ps1', (Join-Path $profileDir 'palette.ps1'))
     'lang'        = @('src\profile\lang.ps1', (Join-Path $profileDir 'lang.ps1'))
     'toolkit'     = @('src\profile\toolkit.ps1', (Join-Path $profileDir 'toolkit.ps1'))
+    'toolkit-lazy' = @('src\profile\toolkit-lazy.ps1', (Join-Path $profileDir 'toolkit-lazy.ps1'))
     'custom'      = @('src\profile\custom.ps1', $null)     # template, installed once, never pulled back
     'predictor'   = @('src\profile\DeepHistoryPredictor.cs', (Join-Path $profileDir 'DeepHistoryPredictor.cs'))
     'omp-theme'   = @('src\ohmyposh\soft.omp.json', (Join-Path $HOME '.config\ohmyposh\soft.omp.json'))
@@ -59,4 +60,4 @@ $out = Join-Path $root 'setup-terminal.ps1'
 $errors = $null
 [void][System.Management.Automation.Language.Parser]::ParseFile($out, [ref]$null, [ref]$errors)
 if ($errors) { $errors | ForEach-Object { "  ✗ строка $($_.Extent.StartLineNumber): $($_.Message)" }; throw 'setup-terminal.ps1 не разбирается' }
-"  ✓ setup-terminal.ps1 v$version — $([math]::Round((Get-Item $out).Length / 1KB)) KB, parses"
+"  ✓ setup-terminal.ps1 v$version, $([math]::Round((Get-Item $out).Length / 1KB)) KB, parses"
