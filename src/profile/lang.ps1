@@ -109,9 +109,9 @@ $global:Strings = @{
                 , ('Update-Completions', 'обновить Tab-дополнения после обновления CLI')
             ) }
         )
-        nav_header = '→ войти  ← вверх  Enter - перейти/открыть  Ctrl+E - файлы  Ctrl+H - скрытые  Ctrl+F - искать вглубь  Ctrl+O - Проводник'
-        pv_header = 'Enter - открыть  Ctrl+P - показать здесь  Ctrl+Y - скопировать путь'; pv_prompt = 'файлы'
-        rgi_header = 'печатай - ищет по содержимому  Enter - открыть файл:строку  Ctrl+Y - скопировать'
+        nav_header = "→ войти  ← вверх  Enter - перейти/открыть  Ctrl+O - Проводник`nCtrl+E - файлы  Ctrl+H - скрытые  Ctrl+F - искать вглубь"
+        pv_header = "Enter - открыть  Ctrl+P - показать здесь`nCtrl+Y - скопировать путь"; pv_prompt = 'файлы'
+        rgi_header = "печатай - ищет по содержимому`nEnter - открыть файл:строку  Ctrl+Y - скопировать"
         pk_header = 'Tab - отметить несколько  Enter - завершить'; pk_done = 'завершён {0}'
         gbr_header = 'Enter - переключиться на ветку'; gbr_none = 'не git-репозиторий'
         nav_deep = 'все папки внутри {0}'
@@ -318,9 +318,9 @@ $global:Strings = @{
                 , ('Update-Completions', 'refresh Tab completions after updating a CLI')
             ) }
         )
-        nav_header = '→ enter  ← up  Enter - go/open  Ctrl+E - files  Ctrl+H - hidden  Ctrl+F - search deep  Ctrl+O - Explorer'
-        pv_header = 'Enter - open  Ctrl+P - print here  Ctrl+Y - copy path'; pv_prompt = 'files'
-        rgi_header = 'type to search contents  Enter - open file:line  Ctrl+Y - copy'
+        nav_header = "→ enter  ← up  Enter - go/open  Ctrl+O - Explorer`nCtrl+E - files  Ctrl+H - hidden  Ctrl+F - search deep"
+        pv_header = "Enter - open  Ctrl+P - print here`nCtrl+Y - copy path"; pv_prompt = 'files'
+        rgi_header = "type to search contents`nEnter - open file:line  Ctrl+Y - copy"
         pk_header = 'Tab - select several  Enter - kill'; pk_done = 'killed {0}'
         gbr_header = 'Enter - switch to the branch'; gbr_none = 'not a git repository'
         nav_deep = 'all folders under {0}'

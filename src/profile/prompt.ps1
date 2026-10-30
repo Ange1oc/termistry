@@ -5,7 +5,6 @@ $global:TsGit = @{ Root = ''; Text = ''; Shown = ''; Time = [datetime]::MinValue
 $global:TsGitRoots = @{}
 $global:TsVersions = @{}
 $global:TsKube = @{ Stamp = ''; Text = ''; Prod = $false }
-$global:TsTransient = $false
 $global:TsRedraw = $false
 $global:TsLast = @{ Status = 0; Ms = 0 }
 $global:TsLastHistoryId = 0
@@ -111,11 +110,10 @@ function global:Get-TsShortPath([string]$Dir) {
 }
 
 function global:Get-TsPrompt {
-    param([string]$Dir = $PWD.ProviderPath, [int]$Status = 0, [int]$Ms = 0, [int]$Width = 100, [switch]$Transient)
+    param([string]$Dir = $PWD.ProviderPath, [int]$Status = 0, [int]$Ms = 0, [int]$Width = 100)
     $c = $global:TK
     $leaf = Split-Path $Dir -Leaf; if (-not $leaf) { $leaf = $Dir }
     $title = "$([char]27)]0;$leaf$([char]7)"
-    if ($Transient) { return "$title`n$($c.dim)$leaf $($c.ok)❯$($c.R) " }
 
     $left = "$($c.dim)╭─$($c.R) $($c.cmd) $(Get-TsShortPath $Dir)$($c.R)"
     $root = Get-TsGitRoot $Dir
@@ -161,8 +159,6 @@ function global:prompt {
     $width = $Host.UI.RawUI.WindowSize.Width
     # Redraw from OnIdle: $? and history belong to the handler, so reuse what the real prompt saw
     if ($global:TsRedraw) { $global:TsRedraw = $false; return Get-TsPrompt -Status $global:TsLast.Status -Ms $global:TsLast.Ms -Width $width }
-    $transient = $global:TsTransient; $global:TsTransient = $false
-    if ($transient) { return Get-TsPrompt -Width $width -Transient }
     $code = if ($ok) { 0 } elseif ($global:LASTEXITCODE) { $global:LASTEXITCODE } else { 1 }
     $ms = 0
     $last = Get-History -Count 1

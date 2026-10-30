@@ -331,10 +331,10 @@ if ($isInteractive) {
 # ExtraPromptLineCount: the prompt is 3 lines (blank, path, arrow), InvokePrompt must redraw all of them in place
 if ($isInteractive) { Set-PSReadLineOption -ContinuationPrompt '❯❯ ' -ExtraPromptLineCount 2 }
 
-# Enter: layout fix + abbreviation, redraw the prompt in its transient form, then run
+# Enter: layout fix + abbreviation, then run
 if ($isInteractive) {
     Set-PSReadLineKeyHandler -Key Enter -BriefDescription 'TerminalSetupEnter' -ScriptBlock {
-        $line = $null; $cursor = $null; $errors = $null
+        $line = $null; $cursor = $null
         [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
         if ($TerminalSetup.LayoutFix -and $line) {
             $fixed = Repair-CommandLayout $line
@@ -343,11 +343,6 @@ if ($isInteractive) {
         if ($TerminalSetup.Abbreviations) {
             $exp = Expand-Abbreviation $line $cursor
             if ($exp) { [Microsoft.PowerShell.PSConsoleReadLine]::Replace($exp.Start, $exp.Length, $exp.Text) }
-        }
-        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$null, [ref]$null, [ref]$errors, [ref]$null)
-        if ($errors.Count -eq 0) {
-            $global:TsTransient = $true
-            try { [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt() } catch { $global:TsTransient = $false }
         }
         [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
     }
@@ -616,9 +611,9 @@ $global:Strings = @{
                 , ('Update-Completions', 'обновить Tab-дополнения после обновления CLI')
             ) }
         )
-        nav_header = '→ войти  ← вверх  Enter - перейти/открыть  Ctrl+E - файлы  Ctrl+H - скрытые  Ctrl+F - искать вглубь  Ctrl+O - Проводник'
-        pv_header = 'Enter - открыть  Ctrl+P - показать здесь  Ctrl+Y - скопировать путь'; pv_prompt = 'файлы'
-        rgi_header = 'печатай - ищет по содержимому  Enter - открыть файл:строку  Ctrl+Y - скопировать'
+        nav_header = "→ войти  ← вверх  Enter - перейти/открыть  Ctrl+O - Проводник`nCtrl+E - файлы  Ctrl+H - скрытые  Ctrl+F - искать вглубь"
+        pv_header = "Enter - открыть  Ctrl+P - показать здесь`nCtrl+Y - скопировать путь"; pv_prompt = 'файлы'
+        rgi_header = "печатай - ищет по содержимому`nEnter - открыть файл:строку  Ctrl+Y - скопировать"
         pk_header = 'Tab - отметить несколько  Enter - завершить'; pk_done = 'завершён {0}'
         gbr_header = 'Enter - переключиться на ветку'; gbr_none = 'не git-репозиторий'
         nav_deep = 'все папки внутри {0}'
@@ -825,9 +820,9 @@ $global:Strings = @{
                 , ('Update-Completions', 'refresh Tab completions after updating a CLI')
             ) }
         )
-        nav_header = '→ enter  ← up  Enter - go/open  Ctrl+E - files  Ctrl+H - hidden  Ctrl+F - search deep  Ctrl+O - Explorer'
-        pv_header = 'Enter - open  Ctrl+P - print here  Ctrl+Y - copy path'; pv_prompt = 'files'
-        rgi_header = 'type to search contents  Enter - open file:line  Ctrl+Y - copy'
+        nav_header = "→ enter  ← up  Enter - go/open  Ctrl+O - Explorer`nCtrl+E - files  Ctrl+H - hidden  Ctrl+F - search deep"
+        pv_header = "Enter - open  Ctrl+P - print here`nCtrl+Y - copy path"; pv_prompt = 'files'
+        rgi_header = "type to search contents`nEnter - open file:line  Ctrl+Y - copy"
         pk_header = 'Tab - select several  Enter - kill'; pk_done = 'killed {0}'
         gbr_header = 'Enter - switch to the branch'; gbr_none = 'not a git repository'
         nav_deep = 'all folders under {0}'
@@ -2073,7 +2068,6 @@ $global:TsGit = @{ Root = ''; Text = ''; Shown = ''; Time = [datetime]::MinValue
 $global:TsGitRoots = @{}
 $global:TsVersions = @{}
 $global:TsKube = @{ Stamp = ''; Text = ''; Prod = $false }
-$global:TsTransient = $false
 $global:TsRedraw = $false
 $global:TsLast = @{ Status = 0; Ms = 0 }
 $global:TsLastHistoryId = 0
@@ -2179,11 +2173,10 @@ function global:Get-TsShortPath([string]$Dir) {
 }
 
 function global:Get-TsPrompt {
-    param([string]$Dir = $PWD.ProviderPath, [int]$Status = 0, [int]$Ms = 0, [int]$Width = 100, [switch]$Transient)
+    param([string]$Dir = $PWD.ProviderPath, [int]$Status = 0, [int]$Ms = 0, [int]$Width = 100)
     $c = $global:TK
     $leaf = Split-Path $Dir -Leaf; if (-not $leaf) { $leaf = $Dir }
     $title = "$([char]27)]0;$leaf$([char]7)"
-    if ($Transient) { return "$title`n$($c.dim)$leaf $($c.ok)❯$($c.R) " }
 
     $left = "$($c.dim)╭─$($c.R) $($c.cmd) $(Get-TsShortPath $Dir)$($c.R)"
     $root = Get-TsGitRoot $Dir
@@ -2229,8 +2222,6 @@ function global:prompt {
     $width = $Host.UI.RawUI.WindowSize.Width
     # Redraw from OnIdle: $? and history belong to the handler, so reuse what the real prompt saw
     if ($global:TsRedraw) { $global:TsRedraw = $false; return Get-TsPrompt -Status $global:TsLast.Status -Ms $global:TsLast.Ms -Width $width }
-    $transient = $global:TsTransient; $global:TsTransient = $false
-    if ($transient) { return Get-TsPrompt -Width $width -Transient }
     $code = if ($ok) { 0 } elseif ($global:LASTEXITCODE) { $global:LASTEXITCODE } else { 1 }
     $ms = 0
     $last = Get-History -Count 1

@@ -137,10 +137,10 @@ if ($isInteractive) {
 # ExtraPromptLineCount: the prompt is 3 lines (blank, path, arrow), InvokePrompt must redraw all of them in place
 if ($isInteractive) { Set-PSReadLineOption -ContinuationPrompt '❯❯ ' -ExtraPromptLineCount 2 }
 
-# Enter: layout fix + abbreviation, redraw the prompt in its transient form, then run
+# Enter: layout fix + abbreviation, then run
 if ($isInteractive) {
     Set-PSReadLineKeyHandler -Key Enter -BriefDescription 'TerminalSetupEnter' -ScriptBlock {
-        $line = $null; $cursor = $null; $errors = $null
+        $line = $null; $cursor = $null
         [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
         if ($TerminalSetup.LayoutFix -and $line) {
             $fixed = Repair-CommandLayout $line
@@ -149,11 +149,6 @@ if ($isInteractive) {
         if ($TerminalSetup.Abbreviations) {
             $exp = Expand-Abbreviation $line $cursor
             if ($exp) { [Microsoft.PowerShell.PSConsoleReadLine]::Replace($exp.Start, $exp.Length, $exp.Text) }
-        }
-        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$null, [ref]$null, [ref]$errors, [ref]$null)
-        if ($errors.Count -eq 0) {
-            $global:TsTransient = $true
-            try { [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt() } catch { $global:TsTransient = $false }
         }
         [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
     }
