@@ -185,7 +185,7 @@ $ProfileFile = Join-Path $ProfileDir 'Microsoft.PowerShell_profile.ps1'
 if ($Uninstall) {
     Step $L.s_uninstall
     $managed = @($EmbeddedFiles.Keys | Where-Object { $_ -ne 'custom.ps1' } | ForEach-Object { Join-Path $ProfileDir $_ })
-    $managed += (Join-Path $HOME '.config\ohmyposh\soft.omp.json'), $ConfigDir, (Join-Path $HOME '.cache\termistry'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
+    $managed += $ConfigDir,(Join-Path $HOME '.cache\termistry'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
     $managed += $LegacyDirs
     foreach ($p in $managed) {
         if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) - $($L.removed)" }
@@ -301,7 +301,7 @@ $ThemeTitle = $Themes[$ThemeName].title
 foreach ($rel in $EmbeddedFiles.Keys) {
     if ($rel -ne 'custom.ps1') { Write-ManagedFile (Join-Path $ProfileDir $rel) $EmbeddedFiles[$rel] }
 }
-Remove-Item $LegacyDirs[1], "$HOME\.config\ohmyposh\soft.omp.json" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $LegacyDirs[1] -Recurse -Force -ErrorAction SilentlyContinue
 
 $customFile = Join-Path $ProfileDir 'custom.ps1'
 if (Test-Path $customFile) { Ok "$(Short $customFile) - $($L.custom_yours)" }
@@ -452,8 +452,10 @@ else {
         $current = git config --global --get $k 2>$null
         if ($current -ne $gitSettings[$k]) { git config --global $k $gitSettings[$k]; $changed++ }
     }
-    foreach ($k in 'delta.minus-style', 'delta.minus-emph-style', 'delta.plus-style', 'delta.plus-emph-style') {
-        if (git config --global --get $k 2>$null) { git config --global --unset $k; $changed++ }
+    # Fixed colors the first version set; they are removed only if still exactly those, never the user's own
+    $legacy = @{ 'delta.minus-style' = 'syntax "#3E2E40"'; 'delta.minus-emph-style' = 'syntax "#5E3F53"'; 'delta.plus-style' = 'syntax "#323C3F"'; 'delta.plus-emph-style' = 'syntax "#475950"' }
+    foreach ($k in $legacy.Keys) {
+        if ((git config --global --get $k 2>$null) -eq $legacy[$k]) { git config --global --unset $k; $changed++ }
     }
     if ($changed) { Ok ($L.git_changed -f $changed) } else { Ok $L.git_same }
 }

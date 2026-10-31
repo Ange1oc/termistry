@@ -184,6 +184,8 @@ users:
 if ('setup' -in $Only) {
     Section 'installer (sandboxed, -SkipApps)'
     $setupHome = Join-Path $work 'setup-home'; New-SandboxHome $setupHome
+    $ompConfig = Join-Path $setupHome '.config\ohmyposh\soft.omp.json'   # the user's own Oh My Posh theme
+    New-Item -ItemType Directory -Force (Split-Path $ompConfig) | Out-Null; Set-Content $ompConfig '{}'
     $pdir = Join-Path $work 'setup-profile'
     $setup = Join-Path $root 'setup-terminal.ps1'
     if (-not (Test-Path $setup)) { & (Join-Path $root 'build.ps1') | Out-Null }
@@ -229,6 +231,7 @@ if ('setup' -in $Only) {
         Assert (Test-Path (Join-Path $pdir 'custom.ps1')) 'custom.ps1 kept'
         Assert (Test-Path (Join-Path $pdir 'bin')) 'bin kept'
         Assert (-not (Test-Path (Join-Path $setupHome '.config\termistry'))) 'config removed'
+        Assert (Test-Path $ompConfig) 'Oh My Posh config kept through install and uninstall'
     }
 
     # a second machine: english, a theme, ssh tabs, a starting folder, and settings the user already had
@@ -249,7 +252,12 @@ if ('setup' -in $Only) {
     New-Item -ItemType Directory -Force (Split-Path $vs2) | Out-Null
     '{ "editor.fontSize": 14, "terminal.integrated.fontFamily": "Consolas" }' | Set-Content $vs2 -Encoding utf8
     $pdir2 = Join-Path $work 'setup-profile2'
-    $out5 = Invoke-Sandboxed $setupHome2 {
+    $git2 = Join-Path $setupHome2 '.gitconfig'
+    if (Get-Command git -ErrorAction Ignore) {
+        git config --file $git2 delta.minus-style 'bold red'                # the user's own
+        git config --file $git2 delta.plus-style 'syntax "#323C3F"'         # left by the first version
+    }
+    $out5 =Invoke-Sandboxed $setupHome2 {
         (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $setup -Lang en -Theme gruvbox -SshTabs prod,staging -StartingDirectory 'D:\code' -SkipApps -ProfileDir $pdir2 2>&1 | ForEach-Object { "$_" }) -join "`n"
     }
     Test 'english run with a theme, ssh tabs and a starting folder' {
@@ -280,6 +288,10 @@ if ('setup' -in $Only) {
             AssertMatch $out5 'settings changed: \d+' 'reported'
             $out6 = Invoke-Sandboxed $setupHome2 { (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $setup -Lang en -SkipApps -ProfileDir $pdir2 2>&1 | ForEach-Object { "$_" }) -join "`n" }
             AssertMatch $out6 '\.gitconfig - unchanged' 'second run leaves git alone'
+        }
+        Test 'git: only the colors the first version set are removed' {
+            AssertEq (git config --file $git2 --get delta.minus-style) 'bold red' 'own style kept'
+            AssertEq (git config --file $git2 --get delta.plus-style) $null 'old style removed'
         }
     } else { Skip 'git delta config' 'git or delta not installed' }
 
