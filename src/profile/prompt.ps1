@@ -11,6 +11,8 @@ $global:TsLastExit = 0
 $global:TsLastHistoryId = 0
 $global:TsCtx = @{}
 $global:TsNetDrives = @{}
+$global:TsProjectsFile = Join-Path $HOME '.config\termistry\projects.tsv'
+$global:TsProjects = @{ Map = $null; Stamp = -1; Checked = [datetime]::MinValue }
 $global:TsNoFile = [datetime]::FromFileTimeUtc(0).Ticks
 $global:TsPromptTypes = 'node', 'python', 'go', 'rust', 'docker'
 
@@ -80,6 +82,36 @@ function global:Get-TsContextStamp($Ctx) {
     $s = [IO.Directory]::GetLastWriteTimeUtc($Ctx.Dir).Ticks
     if ($Ctx.Root -and $Ctx.Root -ne $Ctx.Dir) { $s += [IO.Directory]::GetLastWriteTimeUtc($Ctx.Root).Ticks }
     $s
+}
+
+# The Workspace list (projects.tsv: path, flags, types) as path → "flags<TAB>types". The file is looked at
+# no more than every 2 s and read again only when it changed, so other sessions' edits show up on their own.
+function global:Read-TsProjects([switch]$Force) {
+    $s = $global:TsProjects
+    $now = [datetime]::UtcNow
+    if (-not $Force -and $s.Map -and ($now - $s.Checked).TotalSeconds -lt 2) { return , $s.Map }
+    $s.Checked = $now
+    $info = [IO.FileInfo]::new($global:TsProjectsFile)
+    $stamp = if ($info.Exists) { $info.LastWriteTimeUtc.Ticks + $info.Length } else { 0 }
+    if ($s.Map -and $stamp -eq $s.Stamp) { return , $s.Map }
+    $map = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::OrdinalIgnoreCase)
+    if ($stamp) {
+        try { $lines = [IO.File]::ReadAllLines($global:TsProjectsFile) } catch { return , $s.Map }
+        foreach ($line in $lines) {
+            if (-not $line -or $line[0] -eq '#') { continue }
+            $tab = $line.IndexOf("`t")
+            if ($tab -lt 0) { $map[$line] = '' } else { $map[$line.Substring(0, $tab)] = $line.Substring($tab + 1) }
+        }
+    }
+    $s.Map = $map; $s.Stamp = $stamp
+    , $map
+}
+
+# The listed project a folder belongs to: the folder itself or its nearest listed parent; string work only
+function global:Find-TsProject([string]$Dir, $Map) {
+    $p = $Dir
+    while ($p) { if ($Map.ContainsKey($p)) { return $p }; $p = [IO.Path]::GetDirectoryName($p) }
+    ''
 }
 
 # Runs git once; called from OnIdle, never from the prompt itself. $LASTEXITCODE belongs to the user's last command.
@@ -175,7 +207,16 @@ function global:Get-TsPrompt {
 
     $ctx = Get-TsContext $Dir
     $root = $ctx.Root
-    $left = "$($c.dim)╭─$($c.R) $($c.cmd)$([char]0xF07B) $(Get-TsShortPath $Dir)$($c.R)"
+    # The folder icon tells a Workspace project apart: a bookmark when it is in the list, a star when pinned
+    $icon = "$($c.cmd)$([char]0xF07B)"
+    if ($global:Termistry.Workspace) {
+        $map = Read-TsProjects
+        if ($map -and $map.Count) {
+            $p = Find-TsProject $Dir $map
+            if ($p) { $icon = if ($map[$p].StartsWith('pin')) { "$($c.warn)$([char]0xF005)" } else { "$($c.cmd)$([char]0xF02E)" } }
+        }
+    }
+    $left = "$($c.dim)╭─$($c.R) $icon $($c.cmd)$(Get-TsShortPath $Dir)$($c.R)"
     if ($root) {
         $branch = Get-TsGitBranch $root
         $gitText = ''

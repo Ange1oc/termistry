@@ -67,7 +67,7 @@ if ('static' -in $Only) {
         $profile = Get-Content (Join-Path $root 'src\profile\Microsoft.PowerShell_profile.ps1') -Raw
         Assert ($profile -match "foreach \(\`$n in ([^)]+)\)") 'stub list not found'
         $names = [regex]::Matches($Matches[1], "'([^']+)'") | ForEach-Object { $_.Groups[1].Value }
-        $lazy = (Get-Content (Join-Path $root 'src\profile\toolkit-lazy.ps1'), (Join-Path $root 'src\profile\prompt.ps1') -Raw) -join "`n"
+        $lazy = (Get-Content (Join-Path $root 'src\profile\toolkit-lazy.ps1'), (Join-Path $root 'src\profile\workspace.ps1'), (Join-Path $root 'src\profile\prompt.ps1') -Raw) -join "`n"
         $missing = @($names | Where-Object { $lazy -notmatch "function global:$([regex]::Escape($_))\b" })
         AssertEq ($missing -join ',') '' 'stubs without a function'
     }
@@ -172,6 +172,23 @@ users:
         AssertMatch ($out -join "`n") 'Function' 'commands still defined'
         AssertMatch ($out -join "`n") '(?m)^3$' 'prompt still renders'
     }
+    Test 'three sessions adding to the Workspace list at once lose nothing' {
+        $list = Join-Path $work 'concurrent\projects.tsv'
+        $adder = Join-Path $work 'add-projects.ps1'
+        @"
+param(`$id)
+. '$prof\prompt.ps1'
+. '$prof\workspace.ps1'
+`$global:TsProjectsFile = '$list'
+foreach (`$i in 1..100) { `$null = Set-TsProject @(@{ Path = "C:\fake\`$id\p`$i"; Types = 'node' }) }
+"@ | Set-Content $adder
+        $procs = 1..3 | ForEach-Object { Start-Process pwsh -ArgumentList '-NoProfile', '-File', $adder, "s$_" -PassThru -WindowStyle Hidden }
+        $procs | Wait-Process -Timeout 180
+        $lines = [IO.File]::ReadAllLines($list)
+        AssertEq $lines.Count 300 'lines'
+        AssertEq @($lines | Sort-Object -Unique).Count 300 'no duplicates'
+        AssertEq (@(Get-ChildItem (Split-Path $list)).Name -join ',') 'projects.tsv' 'no lock or temp files left'
+    }
     Test 'profile loads in under 2 s (sandbox, warm caches)' {
         $ms = Invoke-Sandboxed $sandboxHome {
             [int](& pwsh -NoProfile -NoLogo -Command "`$sw = [Diagnostics.Stopwatch]::StartNew(); `$PROFILE = '$prof\Microsoft.PowerShell_profile.ps1'; . `$PROFILE *> `$null; `$sw.ElapsedMilliseconds")
@@ -199,7 +216,7 @@ if ('setup' -in $Only) {
         AssertMatch $out1 'Готово' 'finished'
         AssertNotMatch $out1 'ошибок при загрузке[^\n]*' 'profile check'
         AssertMatch $out1 'без ошибок' 'profile check'
-        foreach ($f in 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'custom.ps1', 'server\bashrc.local', 'server\inputrc', 'server\install.sh') { Assert (Test-Path (Join-Path $pdir $f)) $f }
+        foreach ($f in 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'workspace.ps1', 'DeepHistoryPredictor.cs', 'custom.ps1', 'server\bashrc.local', 'server\inputrc', 'server\install.sh') { Assert (Test-Path (Join-Path $pdir $f)) $f }
         foreach ($d in 'bin', 'server\custom') { Assert (Test-Path (Join-Path $pdir $d) -PathType Container) $d }
         AssertEq (Get-Content (Join-Path $setupHome '.config\termistry\lang') -First 1) 'ru' 'lang file'
     }
@@ -226,11 +243,14 @@ if ('setup' -in $Only) {
         AssertNotMatch (Get-Content (Join-Path $pdir 'toolkit.ps1') -Raw) '# tampered' 'restored'
     }
     Test 'uninstall removes its own files and keeps yours' {
+        $config = Join-Path $setupHome '.config\termistry'
+        Set-Content (Join-Path $config 'projects.tsv') "D:\code\shop`tpin`tnode"
         $null = Invoke-Setup @('-Uninstall')
-        foreach ($f in 'Microsoft.PowerShell_profile.ps1', 'toolkit.ps1', 'prompt.ps1', 'server\bashrc.local') { Assert (-not (Test-Path (Join-Path $pdir $f))) "$f still there" }
+        foreach ($f in 'Microsoft.PowerShell_profile.ps1', 'toolkit.ps1', 'prompt.ps1', 'workspace.ps1', 'server\bashrc.local') { Assert (-not (Test-Path (Join-Path $pdir $f))) "$f still there" }
         Assert (Test-Path (Join-Path $pdir 'custom.ps1')) 'custom.ps1 kept'
         Assert (Test-Path (Join-Path $pdir 'bin')) 'bin kept'
-        Assert (-not (Test-Path (Join-Path $setupHome '.config\termistry'))) 'config removed'
+        Assert (-not (Test-Path (Join-Path $config 'theme')) -and -not (Test-Path (Join-Path $config 'lang'))) 'settings removed'
+        Assert (Test-Path (Join-Path $config 'projects.tsv')) 'Workspace list kept'
         Assert (Test-Path $ompConfig) 'Oh My Posh config kept through install and uninstall'
     }
 

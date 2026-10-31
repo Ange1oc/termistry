@@ -4,6 +4,7 @@
 #   $Termistry.LayoutFix     = $false     # Russian layout fix on Enter
 #   $Termistry.Predictions   = 20         # history suggestions (0 - PSReadLine default 10)
 #   $Termistry.Kube          = 'always'   # kubernetes context in the prompt: auto (k8s folders and prod only), always, off
+#   $Termistry.Workspace     = $false     # no Workspace marks in the prompt (work still works)
 #
 #   abbr gcm 'git commit -m "%"'              # % - cursor position
 #   abbr -Remove d

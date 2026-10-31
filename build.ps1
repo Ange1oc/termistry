@@ -20,6 +20,7 @@ $files = [ordered]@{
     'toolkit.ps1'                      = 'src\profile\toolkit.ps1'
     'toolkit-lazy.ps1'                 = 'src\profile\toolkit-lazy.ps1'
     'prompt.ps1'                       = 'src\profile\prompt.ps1'
+    'workspace.ps1'                    = 'src\profile\workspace.ps1'
     'DeepHistoryPredictor.cs'          = 'src\profile\DeepHistoryPredictor.cs'
     'server\bashrc.local'              = 'src\server\bashrc.local'
     'server\inputrc'                   = 'src\server\inputrc'

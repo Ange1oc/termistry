@@ -23,7 +23,7 @@ Section 'profile'
 Test 'loads without errors' { AssertEq $loadErrors.Count 0 "errors: $($loadErrors -join ' | ')" }
 Test 'version and switches' {
     AssertMatch $global:TermistryVersion '^\d+\.\d+\.\d+$' 'version'
-    foreach ($k in 'Abbreviations', 'LayoutFix', 'Predictions', 'GitStatus', 'Kube') { Assert $global:Termistry.ContainsKey($k) "switch $k" }
+    foreach ($k in 'Abbreviations', 'LayoutFix', 'Predictions', 'GitStatus', 'Kube', 'Workspace') { Assert $global:Termistry.ContainsKey($k) "switch $k" }
 }
 Test 'profile folder is the one the files are in' { AssertEq $global:ProfileDir (Join-Path $Work 'profile') 'ProfileDir' }
 Test 'deferred part is loaded, no stub left behind' {
@@ -61,7 +61,7 @@ Test 'ru and en have the same keys, sections and rows' {
     AssertEq (@($en.my_topics.get_Keys()) -join ',') (@($ru.my_topics.get_Keys()) -join ',') 'my topics'
 }
 Test 'every string the code uses exists in both languages' {
-    $code = (Get-Content (Join-Path $Work 'profile\toolkit-lazy.ps1'), (Join-Path $Work 'profile\toolkit.ps1'), (Join-Path $Work 'profile\prompt.ps1'), $PROFILE -Raw) -join "`n"
+    $code = (Get-Content (Join-Path $Work 'profile\toolkit-lazy.ps1'), (Join-Path $Work 'profile\workspace.ps1'), (Join-Path $Work 'profile\toolkit.ps1'), (Join-Path $Work 'profile\prompt.ps1'), $PROFILE -Raw) -join "`n"
     $used = [regex]::Matches($code, '\$TkStr\.([A-Za-z_]\w*)') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
     Assert ($used.Count -gt 50) "only $($used.Count) string references found"
     $missing = @($used | Where-Object { -not $global:Strings.ru.ContainsKey($_) -or -not $global:Strings.en.ContainsKey($_) })
@@ -668,6 +668,145 @@ Test 'srv remove, srv without a host, srv with a bad label' {
     $out = Plain (Capture { srv install prod -Env 'bad env!' })
     AssertEq $global:SshCalls.Count 0 'nothing sent with a bad label'
     AssertMatch $out ([regex]::Escape($global:TkStr.srv_env)) 'label error shown'
+}
+
+# Workspace works on a list in the sandbox home; fzf and ssh are still the stand-ins from above
+Section 'workspace'
+$ws = Join-Path $Work 'ws'
+$shop = Join-Path $ws 'shop'
+New-Item -ItemType Directory -Force "$shop\src\deep", "$ws\notes", "$ws\проект" | Out-Null
+'{}' | Set-Content "$shop\package.json"; '' | Set-Content "$shop\compose.yaml"
+& git -C $shop init -q 2>&1 | Out-Null
+'' | Set-Content "$ws\проект\pyproject.toml"
+$folderIcon = [string][char]0xF07B; $listedIcon = [string][char]0xF02E; $pinIcon = [string][char]0xF005
+Test 'context: the project root and its types, reused until a file there changes' {
+    $ctx = Get-TsContext "$shop\src\deep"
+    AssertEq $ctx.Root $shop 'git root'
+    AssertEq $ctx.Project $shop 'project'
+    AssertEq ($ctx.Types -join ',') 'node,docker' 'types from the root'
+    Assert ([object]::ReferenceEquals($ctx, (Get-TsContext "$shop\src\deep"))) 'same folder, same answer'
+    '' | Set-Content "$shop\go.mod"
+    AssertEq ((Get-TsContext "$shop\src\deep").Types -join ',') 'node,go,docker' 'a new marker in the root is seen'
+    AssertEq (Get-TsContext "$ws\проект").Project "$ws\проект" 'a marker folder without git is a project'
+    AssertEq (Get-TsContext "$ws\notes").Project '' 'a plain folder is not'
+    AssertEq (Get-TsContext 'HKLM:\SOFTWARE').Project '' 'not a file system path'
+}
+Test 'work add, pin, unpin and rm; the prompt marks listed and pinned projects' {
+    Push-Location "$shop\src"
+    try {
+        AssertMatch (Plain (Get-TsPrompt -Width 120)) "$folderIcon " 'plain folder icon before'
+        AssertMatch (Plain (Capture { work add })) 'shop - ' 'added the git root, not the subfolder'
+        AssertEq ([IO.File]::ReadAllLines($global:TsProjectsFile) -join '|') "$shop`t`tnode,go,docker" 'file line'
+        AssertMatch (Plain (Get-TsPrompt -Width 120)) "$listedIcon " 'listed'
+        work pin *> $null
+        AssertMatch (Plain (Get-TsPrompt -Width 120)) "$pinIcon " 'pinned'
+        $global:Termistry.Workspace = $false
+        AssertMatch (Plain (Get-TsPrompt -Width 120)) "$folderIcon " 'Workspace = $false'
+        $global:Termistry.Workspace = $true
+        AssertMatch (Plain (Capture { work add })) ([regex]::Escape(($TkStr.work_exists -f '') )) 'second add'
+        work unpin shop *> $null
+        AssertMatch (Plain (Get-TsPrompt -Width 120)) "$listedIcon " 'unpinned by name'
+        work add "$ws\проект" *> $null
+        AssertMatch (Plain (Get-TsPrompt -Dir "$ws\проект" -Width 120)) $listedIcon 'unicode path'
+        work rm проект *> $null
+        AssertMatch (Plain (Capture { work rm nosuch })) ([regex]::Escape(($TkStr.work_unknown -f 'nosuch'))) 'unknown name'
+        AssertEq @([IO.File]::ReadAllLines($global:TsProjectsFile)).Count 1 'one project left'
+    } finally { Pop-Location }
+}
+Test 'work picker: Enter goes there, Ctrl+P pins, Ctrl+D drops, a name with one match skips the list' {
+    $global:FzfCalls.Clear()
+    work add "$ws\notes" *> $null
+    Push-Location $ws
+    try {
+        PickLine 'notes' 'ctrl-p'
+        PickLine 'notes'
+        work
+        AssertEq (Get-Location).Path "$ws\notes" 'went to the project'
+        AssertMatch $global:FzfCalls[1].Lines[0] 'notes' 'pinned project listed first'
+        AssertMatch ((Read-TsProjects -Force)["$ws\notes"]) '^pin' 'pinned'
+        Set-Location $ws
+        PickLine 'notes'
+        work notes
+        AssertMatch ($global:FzfCalls[-1].Args -join ' ') '(?s)--query=notes .*--select-1' 'query and --select-1'
+        PickLine 'notes' 'ctrl-d'
+        work
+        Assert (-not (Read-TsProjects -Force).ContainsKey("$ws\notes")) 'dropped'
+        Assert (Test-Path "$ws\notes") 'folder untouched'
+    } finally { Pop-Location }
+}
+Test 'work import: a tree of 1000 projects, nested ones and build folders left alone' {
+    $tree = Join-Path $Work 'many'
+    foreach ($i in 1..1000) {
+        $p = [IO.Directory]::CreateDirectory("$tree\group$($i % 20)\app$i").FullName
+        [IO.File]::WriteAllText("$p\package.json", '{}')
+    }
+    [void][IO.Directory]::CreateDirectory("$tree\group1\app1\packages\inner"); [IO.File]::WriteAllText("$tree\group1\app1\packages\inner\package.json", '{}')
+    [void][IO.Directory]::CreateDirectory("$tree\node_modules\lib"); [IO.File]::WriteAllText("$tree\node_modules\lib\package.json", '{}')
+    [void][IO.Directory]::CreateDirectory("$tree\a\b\c\too-deep"); [IO.File]::WriteAllText("$tree\a\b\c\too-deep\go.mod", '')
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $found = @(Find-TsProjectFolders $tree 3)
+    $scan = $sw.ElapsedMilliseconds
+    AssertEq $found.Count 1000 'projects found'
+    Assert (-not ($found.Path -match 'inner|node_modules|too-deep')) 'nested, build and too deep folders skipped'
+    Plan { param($lines) $lines }
+    $before = (Read-TsProjects -Force).Count
+    work import $tree *> $null
+    AssertEq ((Read-TsProjects -Force).Count - $before) 1000 'all picked were added'
+    Write-Host "    $TcDim$scan ms to find 1000 projects$TcR"
+}
+Test 'large list: 5000 projects open fast and do not slow the prompt' {
+    $lines = [Collections.Generic.List[string]]::new()
+    for ($i = 0; $i -lt 5000; $i++) { $lines.Add("C:\code\group$($i % 50)\project-$i`t$(if ($i % 25 -eq 0) { 'pin' })`tnode") }
+    $saved = [IO.File]::ReadAllLines($global:TsProjectsFile)
+    [IO.File]::WriteAllLines($global:TsProjectsFile, $lines)
+    try {
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        $picker = @(Get-TsWorkLines)
+        $ms = $sw.ElapsedMilliseconds
+        AssertEq $picker.Count 5000 'lines'
+        AssertMatch $picker[0] "$pinIcon" 'pinned first'
+        Assert ($ms -lt 3000) "$ms ms"
+        $null = Get-TsPrompt -Dir $shop -Width 120
+        $sw.Restart(); 1..50 | ForEach-Object { $null = Get-TsPrompt -Dir $shop -Width 120 }
+        $prompt = $sw.Elapsed.TotalMilliseconds / 50
+        Assert ($prompt -lt 25) "prompt $prompt ms"
+        Write-Host "    $TcDim$ms ms for the list, $([math]::Round($prompt, 2)) ms per prompt$TcR"
+    } finally { [IO.File]::WriteAllLines($global:TsProjectsFile, $saved) }
+}
+Test 'work clean drops folders that are gone and keeps ones on a missing drive' {
+    $gone = [IO.Directory]::CreateDirectory("$ws\gone").FullName
+    work add $gone *> $null
+    Remove-Item $gone
+    $null = Set-TsProject @(@{ Path = 'Q:\nowhere\offline'; Types = '' })
+    work clean *> $null
+    $map = Read-TsProjects -Force
+    Assert (-not $map.ContainsKey($gone)) 'gone folder dropped'
+    Assert ($map.ContainsKey('Q:\nowhere\offline')) 'unreachable drive kept'
+    Remove-TsProject @('Q:\nowhere\offline')
+}
+Test 'work ssh: environments are validated, the remote folder is quoted for the shell' {
+    Push-Location $shop
+    try {
+        $global:SshCalls.Clear()
+        work ssh add prod web-1 "/srv/it's app" *> $null
+        work ssh add stage staging '~/shop' *> $null
+        AssertMatch (Plain (Capture { work ssh add 'bad env' web-1 })) ([regex]::Escape($TkStr.work_ssh_bad_env)) 'env name'
+        AssertMatch (Plain (Capture { work ssh add x '-oProxyCommand=calc' })) ([regex]::Escape($TkStr.work_ssh_bad_host)) 'option as a host'
+        work ssh prod *> $null
+        AssertEq ($global:SshCalls[0].Args -join '|') "-t|web-1|cd -- '/srv/it'\''s app' && exec `$SHELL -l" 'quoted folder'
+        work ssh stage *> $null
+        AssertEq $global:SshCalls[1].Args[2] "cd -- ~/'shop' && exec `$SHELL -l" 'home-relative folder'
+        PickLine 'stage'
+        work ssh *> $null
+        AssertEq $global:SshCalls[2].Args[1] 'staging' 'picked from two'
+        AssertMatch (Plain (Capture { work . })) 'prod → web-1' 'work . lists environments'
+        work ssh rm prod *> $null
+        AssertEq @(Read-TsProjectSsh | Where-Object Path -eq $shop).Count 1 'one left'
+    } finally { Pop-Location }
+}
+Test 'work list and help show the projects and the commands' {
+    AssertMatch (Plain (Capture { work list })) 'shop' 'list'
+    AssertMatch (Plain (Capture { work help })) 'work import' 'help section'
 }
 
 exit (Write-TestSummary -Machine)

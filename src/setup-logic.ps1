@@ -82,7 +82,7 @@ $L = @{
         next2 = 'Своё: custom.ps1 и bin\ рядом с профилем (ep) · new имя.py - команда на любом языке · theme latte · lang en'
         next3 = 'Серверы: srv install <хост> -Env prod  - такой же удобный bash на Linux.'
         next4 = 'Скрипт можно запускать повторно - он доустановит недостающее и обновит конфиги.'
-        s_uninstall = 'Удаление'; removed = 'удалён'; uninstall_kept = 'Остались: custom.ps1, bin\, server\custom\, программы, шрифт, настройки Windows Terminal и *.bak'
+        s_uninstall = 'Удаление'; removed = 'удалён'; uninstall_kept = 'Остались: custom.ps1, bin\, server\custom\, список проектов Workspace, программы, шрифт, настройки Windows Terminal и *.bak'
     }
     en = @{
         title = '✦ Termistry';admin_note = 'running as administrator - better as a regular user; elevation is requested only where needed'
@@ -106,7 +106,7 @@ $L = @{
         next2 = 'Yours: custom.ps1 and bin\ next to the profile (ep) · new name.py - a command in any language · theme latte · lang ru'
         next3 = 'Servers: srv install <host> -Env prod  - the same bash on Linux.'
         next4 = 'Safe to run again - it installs what is missing and updates the configs.'
-        s_uninstall = 'Uninstall'; removed = 'removed'; uninstall_kept = 'Kept: custom.ps1, bin\, server\custom\, programs, font, Windows Terminal settings and *.bak files'
+        s_uninstall = 'Uninstall'; removed = 'removed'; uninstall_kept = 'Kept: custom.ps1, bin\, server\custom\, the Workspace project list, programs, font, Windows Terminal settings and *.bak files'
     }
 }[$Lang]
 
@@ -185,11 +185,14 @@ $ProfileFile = Join-Path $ProfileDir 'Microsoft.PowerShell_profile.ps1'
 if ($Uninstall) {
     Step $L.s_uninstall
     $managed = @($EmbeddedFiles.Keys | Where-Object { $_ -ne 'custom.ps1' } | ForEach-Object { Join-Path $ProfileDir $_ })
-    $managed += $ConfigDir,(Join-Path $HOME '.cache\termistry'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
+    # the Workspace project list is the user's own, like custom.ps1
+    $managed += @(Get-ChildItem $ConfigDir -Force -ErrorAction Ignore | Where-Object Name -notlike 'projects*.tsv' | ForEach-Object FullName)
+    $managed += (Join-Path $HOME '.cache\termistry'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
     $managed += $LegacyDirs
     foreach ($p in $managed) {
         if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) - $($L.removed)" }
     }
+    if ((Test-Path $ConfigDir) -and -not (Get-ChildItem $ConfigDir -Force)) { Remove-Item $ConfigDir }
     Write-Host ''
     Write-Host "  $($L.uninstall_kept)" -ForegroundColor Gray
     Write-Host ''

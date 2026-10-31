@@ -810,6 +810,7 @@ function global:Get-ConfigLocations {
         bin         = Join-Path $global:ProfileDir 'bin'
         srvcustom   = Join-Path $global:ProfileDir 'server\custom'
         settings    = Join-Path $HOME '.config\termistry'
+        projects    = $global:TsProjectsFile
         completions = Join-Path $HOME '.cache\pwsh-completions'
         predictor   = Join-Path $HOME '.cache\pwsh-predictor'
         wt          = $(if ($wt) { $wt } else { Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json' })

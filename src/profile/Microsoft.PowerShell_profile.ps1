@@ -1,6 +1,6 @@
 $global:TermistryVersion = '1.0.1'
 $global:TermistryLoaded = $false
-$global:TsFiles = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh'
+$global:TsFiles = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'workspace.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh'
 $global:ProfileDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $PROFILE }
 $env:XDG_CONFIG_HOME = "$HOME\.config"
 $global:isInteractive = -not [Console]::IsOutputRedirected -and $Host.Name -eq 'ConsoleHost'
@@ -12,6 +12,7 @@ $global:Termistry = @{
     Predictions   = 50
     GitStatus     = $true
     Kube          = 'auto'
+    Workspace     = $true
 }
 # custom.ps1 written before the rename sets $TerminalSetup.*
 $global:TerminalSetup = $global:Termistry
@@ -34,6 +35,7 @@ function global:Complete-Termistry {
     . (Join-Path $global:ProfileDir 'lang.ps1')
     $global:TkStr = $global:Strings[$global:LangName]
     . (Join-Path $global:ProfileDir 'toolkit-lazy.ps1')
+    . (Join-Path $global:ProfileDir 'workspace.ps1')
     if (Find-TkCommand zoxide) {
         $zoxideInit = "$HOME\.cache\termistry\zoxide-init.ps1"
         $zoxideExe = (Get-Command zoxide).Source
@@ -56,7 +58,7 @@ function global:Complete-Termistry {
     Register-BinCommands (Join-Path $global:ProfileDir 'bin')
 }
 # Until then these names forward to the real functions on first use
-foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'kctx', 'kns', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions', 'Get-TsPreview') {
+foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'work', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'kctx', 'kns', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions', 'Get-TsPreview') {
     Set-Item "Function:global:$n" -Value ([scriptblock]::Create("Complete-Termistry; & '$n' @args"))
 }
 

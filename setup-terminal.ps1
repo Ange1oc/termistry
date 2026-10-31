@@ -82,7 +82,7 @@ $L = @{
         next2 = 'Своё: custom.ps1 и bin\ рядом с профилем (ep) · new имя.py - команда на любом языке · theme latte · lang en'
         next3 = 'Серверы: srv install <хост> -Env prod  - такой же удобный bash на Linux.'
         next4 = 'Скрипт можно запускать повторно - он доустановит недостающее и обновит конфиги.'
-        s_uninstall = 'Удаление'; removed = 'удалён'; uninstall_kept = 'Остались: custom.ps1, bin\, server\custom\, программы, шрифт, настройки Windows Terminal и *.bak'
+        s_uninstall = 'Удаление'; removed = 'удалён'; uninstall_kept = 'Остались: custom.ps1, bin\, server\custom\, список проектов Workspace, программы, шрифт, настройки Windows Terminal и *.bak'
     }
     en = @{
         title = '✦ Termistry';admin_note = 'running as administrator - better as a regular user; elevation is requested only where needed'
@@ -106,7 +106,7 @@ $L = @{
         next2 = 'Yours: custom.ps1 and bin\ next to the profile (ep) · new name.py - a command in any language · theme latte · lang ru'
         next3 = 'Servers: srv install <host> -Env prod  - the same bash on Linux.'
         next4 = 'Safe to run again - it installs what is missing and updates the configs.'
-        s_uninstall = 'Uninstall'; removed = 'removed'; uninstall_kept = 'Kept: custom.ps1, bin\, server\custom\, programs, font, Windows Terminal settings and *.bak files'
+        s_uninstall = 'Uninstall'; removed = 'removed'; uninstall_kept = 'Kept: custom.ps1, bin\, server\custom\, the Workspace project list, programs, font, Windows Terminal settings and *.bak files'
     }
 }[$Lang]
 
@@ -185,7 +185,7 @@ $EmbeddedFiles = [ordered]@{}
 $EmbeddedFiles['Microsoft.PowerShell_profile.ps1'] = @'
 $global:TermistryVersion = '1.0.1'
 $global:TermistryLoaded = $false
-$global:TsFiles = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh'
+$global:TsFiles = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'workspace.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh'
 $global:ProfileDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $PROFILE }
 $env:XDG_CONFIG_HOME = "$HOME\.config"
 $global:isInteractive = -not [Console]::IsOutputRedirected -and $Host.Name -eq 'ConsoleHost'
@@ -197,6 +197,7 @@ $global:Termistry = @{
     Predictions   = 50
     GitStatus     = $true
     Kube          = 'auto'
+    Workspace     = $true
 }
 # custom.ps1 written before the rename sets $TerminalSetup.*
 $global:TerminalSetup = $global:Termistry
@@ -219,6 +220,7 @@ function global:Complete-Termistry {
     . (Join-Path $global:ProfileDir 'lang.ps1')
     $global:TkStr = $global:Strings[$global:LangName]
     . (Join-Path $global:ProfileDir 'toolkit-lazy.ps1')
+    . (Join-Path $global:ProfileDir 'workspace.ps1')
     if (Find-TkCommand zoxide) {
         $zoxideInit = "$HOME\.cache\termistry\zoxide-init.ps1"
         $zoxideExe = (Get-Command zoxide).Source
@@ -241,7 +243,7 @@ function global:Complete-Termistry {
     Register-BinCommands (Join-Path $global:ProfileDir 'bin')
 }
 # Until then these names forward to the real functions on first use
-foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'kctx', 'kns', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions', 'Get-TsPreview') {
+foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'work', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'kctx', 'kns', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions', 'Get-TsPreview') {
     Set-Item "Function:global:$n" -Value ([scriptblock]::Create("Complete-Termistry; & '$n' @args"))
 }
 
@@ -529,6 +531,16 @@ $global:Strings = @{
                 , ('ii .', 'открыть текущую папку в Проводнике')
                 , ('code .', 'открыть папку в VS Code')
             ) }
+            @{ Key = 'work'; Title = 'Проекты'; Rows = @(
+                , ('work [имя]', 'выбрать проект: Enter перейти, Ctrl+O редактор, Ctrl+P закрепить, Ctrl+S ssh', 'work shop')
+                , ('work add [папка]', 'добавить этот проект (его git-корень) в список')
+                , ('work pin / unpin [имя]', 'закреплённые идут первыми, в промпте у них звёздочка')
+                , ('work import [папка]', 'найти проекты в папке или среди папок, где вы бывали, и выбрать, что добавить', 'work import D:\code')
+                , ('work .', 'что Termistry знает об этом проекте')
+                , ('work list · rm [имя] · clean', 'весь список · убрать один · убрать те, чьих папок больше нет')
+                , ('work ssh [имя]', 'подключиться к серверу проекта и сразу в его папку', 'work ssh prod')
+                , ('work ssh add <имя> <хост> [папка]', 'привязать окружение: ssh-хост и папку на сервере', 'work ssh add prod web-1 /srv/shop')
+            ) }
             @{ Key = 'files'; Title = 'Файлы'; Rows = @(
                 , ('l / ll / lt', 'список · подробно с git-статусом · деревом')
                 , ('bat <файл>', 'просмотр с подсветкой и номерами строк', 'bat .env')
@@ -617,12 +629,28 @@ $global:Strings = @{
         pk_header = 'Tab - отметить несколько  Enter - завершить'; pk_done = 'завершён {0}'
         gbr_header = 'Enter - переключиться на ветку'; gbr_none = 'не git-репозиторий'
         nav_deep = 'все папки внутри {0}'
+        work_header = "Enter - перейти  Ctrl+O - открыть в редакторе  Ctrl+S - ssh`nCtrl+P - закрепить / открепить  Ctrl+D - убрать из списка"
+        work_empty = 'список пуст: work add - этот проект · work import <папка> - проекты в папке · work import - из папок, где вы бывали'
+        work_added = '{0} - добавлен'; work_exists = '{0} - уже в списке'; work_pinned = '{0} - закреплён'; work_unpinned = '{0} - откреплён'
+        work_removed = '{0} - убран из списка, файлы не тронуты'; work_unknown = '{0} нет в списке'
+        work_ambiguous = 'проектов с именем {0} несколько, укажите путь:'; work_gone = 'папки больше нет: {0} - work rm или work clean'
+        work_clean_none = 'все папки из списка на месте'
+        work_import_scan = 'ищу проекты в {0}…'; work_import_none = 'новых проектов не нашлось'; work_import_done = 'добавлено: {0}'
+        work_import_header = 'найдено {0} · Tab - отметить  Ctrl+A - все  Enter - добавить отмеченные'
+        work_info_title = 'Проект {0}'; work_info_list = 'в Workspace'; work_info_types = 'тип'
+        work_info_no_ssh = 'нет - work ssh add <имя> <хост> [папка]'
+        work_state_new = 'нет - work add'; work_state_listed = 'в списке - work pin закрепит'; work_state_pinned = 'закреплён'
+        work_list_title = 'Проекты'; work_list_hint = '{0} · work - выбрать · work help'
+        work_ssh_none = 'у {0} нет окружений: work ssh add <имя> <хост> [папка на сервере]'; work_ssh_unknown = 'нет окружения {0} (есть: {1})'
+        work_ssh_header = 'Enter - подключиться · Esc'; work_ssh_bad_env = 'имя окружения: латиница, цифры, - и _ (до 20)'
+        work_ssh_bad_host = 'хост: имя из ~/.ssh/config или user@host'; work_ssh_bad_dir = 'в папке на сервере не может быть управляющих символов'
+        work_ssh_not_in_config = '{0} нет в ~/.ssh/config - ssh попробует его как адрес'; work_ssh_added = '{1}: {0} → {2}'; work_ssh_removed = 'окружение {0} убрано'
         ex_nofile = 'нет файла: {0}'; ex_unknown = 'не знаю, чем распаковать: {0}'; ex_done = 'распаковано в {0}'
         cb_done = 'в буфере обмена: {0} строк'
         config_title = 'Где что лежит'; config_hint = 'ep - открыть папку профиля'
         config_rows = [ordered]@{
             profile = 'профиль PowerShell и команды'; custom = 'своё: функции, сокращения, переключатели'; bin = 'свои команды на любом языке'
-            srvcustom = 'свои файлы для серверов (→ ~/.bashrc.d)'; settings = 'тема и язык'
+            srvcustom = 'свои файлы для серверов (→ ~/.bashrc.d)'; settings = 'тема и язык'; projects = 'список проектов Workspace'
             completions = 'кэш Tab-дополнений'; predictor = 'кэш плагина подсказок'; wt = 'настройки Windows Terminal'
             vscode = 'настройки VS Code'; gitconfig = 'git: delta и имя'; ssh = 'SSH-хосты (my ssh, jump, srv)'
         }
@@ -739,6 +767,16 @@ $global:Strings = @{
                 , ('ii .', 'open the current folder in Explorer')
                 , ('code .', 'open the folder in VS Code')
             ) }
+            @{ Key = 'work'; Title = 'Projects'; Rows = @(
+                , ('work [name]', 'pick a project: Enter goes there, Ctrl+O editor, Ctrl+P pin, Ctrl+S ssh', 'work shop')
+                , ('work add [folder]', 'add this project (its git root) to the list')
+                , ('work pin / unpin [name]', 'pinned projects come first and get a star in the prompt')
+                , ('work import [folder]', 'find projects in a folder or among folders you visited, pick which to add', 'work import D:\code')
+                , ('work .', 'what Termistry knows about this project')
+                , ('work list · rm [name] · clean', 'the whole list · drop one · drop those whose folder is gone')
+                , ('work ssh [name]', 'connect to the project''s server and land in its folder', 'work ssh prod')
+                , ('work ssh add <name> <host> [folder]', 'link an environment: an ssh host and a remote folder', 'work ssh add prod web-1 /srv/shop')
+            ) }
             @{ Key = 'files'; Title = 'Files'; Rows = @(
                 , ('l / ll / lt', 'list · details with git status · tree')
                 , ('bat <file>', 'view with highlighting and line numbers', 'bat .env')
@@ -827,12 +865,28 @@ $global:Strings = @{
         pk_header = 'Tab - select several  Enter - kill'; pk_done = 'killed {0}'
         gbr_header = 'Enter - switch to the branch'; gbr_none = 'not a git repository'
         nav_deep = 'all folders under {0}'
+        work_header = "Enter - go there  Ctrl+O - open in the editor  Ctrl+S - ssh`nCtrl+P - pin / unpin  Ctrl+D - drop from the list"
+        work_empty = 'the list is empty: work add - this project · work import <folder> - projects in a folder · work import - from folders you visited'
+        work_added = '{0} - added'; work_exists = '{0} - already in the list'; work_pinned = '{0} - pinned'; work_unpinned = '{0} - unpinned'
+        work_removed = '{0} - dropped from the list, files untouched'; work_unknown = '{0} is not in the list'
+        work_ambiguous = 'several projects are called {0}, give the path:'; work_gone = 'the folder is gone: {0} - work rm or work clean'
+        work_clean_none = 'every listed folder is in place'
+        work_import_scan = 'looking for projects in {0}…'; work_import_none = 'no new projects found'; work_import_done = 'added: {0}'
+        work_import_header = '{0} found · Tab - mark  Ctrl+A - all  Enter - add the marked'
+        work_info_title = 'Project {0}'; work_info_list = 'in Workspace'; work_info_types = 'type'
+        work_info_no_ssh = 'none - work ssh add <name> <host> [folder]'
+        work_state_new = 'no - work add'; work_state_listed = 'listed - work pin pins it'; work_state_pinned = 'pinned'
+        work_list_title = 'Projects'; work_list_hint = '{0} · work - pick one · work help'
+        work_ssh_none = '{0} has no environments: work ssh add <name> <host> [remote folder]'; work_ssh_unknown = 'no environment {0} (there are: {1})'
+        work_ssh_header = 'Enter - connect · Esc'; work_ssh_bad_env = 'environment name: letters, digits, - and _ (up to 20)'
+        work_ssh_bad_host = 'host: an alias from ~/.ssh/config or user@host'; work_ssh_bad_dir = 'the remote folder cannot contain control characters'
+        work_ssh_not_in_config = '{0} is not in ~/.ssh/config - ssh will try it as an address'; work_ssh_added = '{1}: {0} → {2}'; work_ssh_removed = 'environment {0} removed'
         ex_nofile = 'no such file: {0}'; ex_unknown = 'do not know how to extract: {0}'; ex_done = 'extracted to {0}'
         cb_done = 'in the clipboard: {0} lines'
         config_title = 'Where things live'; config_hint = 'ep - open the profile folder'
         config_rows = [ordered]@{
             profile = 'PowerShell profile and commands'; custom = 'yours: functions, abbreviations, switches'; bin = 'your commands in any language'
-            srvcustom = 'your files for servers (→ ~/.bashrc.d)'; settings = 'theme and language'
+            srvcustom = 'your files for servers (→ ~/.bashrc.d)'; settings = 'theme and language'; projects = 'Workspace project list'
             completions = 'Tab completion cache'; predictor = 'suggestions plugin cache'; wt = 'Windows Terminal settings'
             vscode = 'VS Code settings'; gitconfig = 'git: delta and identity'; ssh = 'SSH hosts (my ssh, jump, srv)'
         }
@@ -1997,6 +2051,7 @@ function global:Get-ConfigLocations {
         bin         = Join-Path $global:ProfileDir 'bin'
         srvcustom   = Join-Path $global:ProfileDir 'server\custom'
         settings    = Join-Path $HOME '.config\termistry'
+        projects    = $global:TsProjectsFile
         completions = Join-Path $HOME '.cache\pwsh-completions'
         predictor   = Join-Path $HOME '.cache\pwsh-predictor'
         wt          = $(if ($wt) { $wt } else { Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json' })
@@ -2111,6 +2166,8 @@ $global:TsLastExit = 0
 $global:TsLastHistoryId = 0
 $global:TsCtx = @{}
 $global:TsNetDrives = @{}
+$global:TsProjectsFile = Join-Path $HOME '.config\termistry\projects.tsv'
+$global:TsProjects = @{ Map = $null; Stamp = -1; Checked = [datetime]::MinValue }
 $global:TsNoFile = [datetime]::FromFileTimeUtc(0).Ticks
 $global:TsPromptTypes = 'node', 'python', 'go', 'rust', 'docker'
 
@@ -2180,6 +2237,36 @@ function global:Get-TsContextStamp($Ctx) {
     $s = [IO.Directory]::GetLastWriteTimeUtc($Ctx.Dir).Ticks
     if ($Ctx.Root -and $Ctx.Root -ne $Ctx.Dir) { $s += [IO.Directory]::GetLastWriteTimeUtc($Ctx.Root).Ticks }
     $s
+}
+
+# The Workspace list (projects.tsv: path, flags, types) as path → "flags<TAB>types". The file is looked at
+# no more than every 2 s and read again only when it changed, so other sessions' edits show up on their own.
+function global:Read-TsProjects([switch]$Force) {
+    $s = $global:TsProjects
+    $now = [datetime]::UtcNow
+    if (-not $Force -and $s.Map -and ($now - $s.Checked).TotalSeconds -lt 2) { return , $s.Map }
+    $s.Checked = $now
+    $info = [IO.FileInfo]::new($global:TsProjectsFile)
+    $stamp = if ($info.Exists) { $info.LastWriteTimeUtc.Ticks + $info.Length } else { 0 }
+    if ($s.Map -and $stamp -eq $s.Stamp) { return , $s.Map }
+    $map = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::OrdinalIgnoreCase)
+    if ($stamp) {
+        try { $lines = [IO.File]::ReadAllLines($global:TsProjectsFile) } catch { return , $s.Map }
+        foreach ($line in $lines) {
+            if (-not $line -or $line[0] -eq '#') { continue }
+            $tab = $line.IndexOf("`t")
+            if ($tab -lt 0) { $map[$line] = '' } else { $map[$line.Substring(0, $tab)] = $line.Substring($tab + 1) }
+        }
+    }
+    $s.Map = $map; $s.Stamp = $stamp
+    , $map
+}
+
+# The listed project a folder belongs to: the folder itself or its nearest listed parent; string work only
+function global:Find-TsProject([string]$Dir, $Map) {
+    $p = $Dir
+    while ($p) { if ($Map.ContainsKey($p)) { return $p }; $p = [IO.Path]::GetDirectoryName($p) }
+    ''
 }
 
 # Runs git once; called from OnIdle, never from the prompt itself. $LASTEXITCODE belongs to the user's last command.
@@ -2275,7 +2362,16 @@ function global:Get-TsPrompt {
 
     $ctx = Get-TsContext $Dir
     $root = $ctx.Root
-    $left = "$($c.dim)╭─$($c.R) $($c.cmd)$([char]0xF07B) $(Get-TsShortPath $Dir)$($c.R)"
+    # The folder icon tells a Workspace project apart: a bookmark when it is in the list, a star when pinned
+    $icon = "$($c.cmd)$([char]0xF07B)"
+    if ($global:Termistry.Workspace) {
+        $map = Read-TsProjects
+        if ($map -and $map.Count) {
+            $p = Find-TsProject $Dir $map
+            if ($p) { $icon = if ($map[$p].StartsWith('pin')) { "$($c.warn)$([char]0xF005)" } else { "$($c.cmd)$([char]0xF02E)" } }
+        }
+    }
+    $left = "$($c.dim)╭─$($c.R) $icon $($c.cmd)$(Get-TsShortPath $Dir)$($c.R)"
     if ($root) {
         $branch = Get-TsGitBranch $root
         $gitText = ''
@@ -2355,6 +2451,408 @@ if ($global:isInteractive) {
                 try { [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt() } catch {} finally { $global:TsRedraw = $false }
             }
         }
+    }
+}
+'@
+$EmbeddedFiles['workspace.ps1'] = @'
+# Workspace: the projects you work on, as a short list next to the prompt rather than an index of the disk.
+# ~/.config/termistry/projects.tsv holds "path<TAB>flags<TAB>types" (flag: pin) and projects-ssh.tsv holds
+# "path<TAB>environment<TAB>ssh host<TAB>remote folder". The prompt reads the first one (prompt.ps1), this file
+# changes them. Recently used projects come from zoxide, which already records every folder you visit.
+$global:TsProjectSshFile = Join-Path $HOME '.config\termistry\projects-ssh.tsv'
+
+# Every change re-reads the file under a lock and replaces it in one move: sessions editing the list at the
+# same time do not lose each other's changes, and a reader never sees half a file.
+function global:Edit-TsList([string]$File, [scriptblock]$Change) {
+    New-Item -ItemType Directory -Force (Split-Path $File) | Out-Null
+    $lock = $null
+    for ($try = 0; -not $lock; $try++) {
+        try { $lock = [IO.File]::Open("$File.lock", 'OpenOrCreate', 'ReadWrite', 'None') }
+        catch [IO.IOException], [UnauthorizedAccessException] { if ($try -ge 250) { throw }; Start-Sleep -Milliseconds 20 }
+    }
+    try {
+        $lines = [Collections.Generic.List[string]]::new()
+        if ([IO.File]::Exists($File)) { $lines.AddRange([IO.File]::ReadAllLines($File)) }
+        & $Change $lines
+        $tmp = "$File.$PID.tmp"
+        [IO.File]::WriteAllLines($tmp, $lines, [Text.UTF8Encoding]::new($false))
+        for ($try = 0; ; $try++) {
+            try { [IO.File]::Move($tmp, $File, $true); break }
+            catch [IO.IOException], [UnauthorizedAccessException] { if ($try -ge 100) { [IO.File]::Delete($tmp); throw }; Start-Sleep -Milliseconds 20 }
+        }
+    } finally {
+        $lock.Dispose()
+        # fails harmlessly while another session holds it; the last one out removes it
+        try { [IO.File]::Delete("$File.lock") } catch {}
+    }
+    $global:TsProjects.Checked = [datetime]::MinValue
+}
+
+function global:Find-TsLine($Lines, [string]$Path) {
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $l = $Lines[$i]
+        if ($l.StartsWith($Path, [StringComparison]::OrdinalIgnoreCase) -and ($l.Length -eq $Path.Length -or $l[$Path.Length] -eq "`t")) { return $i }
+    }
+    -1
+}
+
+# Adds projects or updates them. Pin: $true / $false, or $null to keep. Returns how many were new.
+function global:Set-TsProject([object[]]$Projects, $Pin = $null) {
+    $state = @{ New = 0 }
+    Edit-TsList $global:TsProjectsFile {
+        param($lines)
+        foreach ($p in $Projects) {
+            $i = Find-TsLine $lines $p.Path
+            $old = if ($i -ge 0) { $lines[$i].Split("`t") } else { @() }
+            $flags = if ($null -ne $Pin) { if ($Pin) { 'pin' } else { '' } } elseif ($old.Count -gt 1) { $old[1] } else { '' }
+            $types = if ($p.Types) { $p.Types } elseif ($old.Count -gt 2) { $old[2] } else { '' }
+            $line = "$($p.Path)`t$flags`t$types"
+            if ($i -ge 0) { $lines[$i] = $line } else { $lines.Add($line); $state.New++ }
+        }
+    }
+    $state.New
+}
+
+function global:Remove-TsProject([string[]]$Paths) {
+    foreach ($file in $global:TsProjectsFile, $global:TsProjectSshFile) {
+        if (-not [IO.File]::Exists($file)) { continue }
+        Edit-TsList $file {
+            param($lines)
+            foreach ($p in $Paths) { for ($i = $lines.Count - 1; $i -ge 0; $i--) { if ($lines[$i].Split("`t")[0] -eq $p) { $lines.RemoveAt($i) } } }
+        }
+    }
+}
+
+# The names of a folder's entries in one directory listing, which is far cheaper than a check per marker
+function global:Get-TsFolderEntries([string]$Dir) {
+    $opts = [IO.EnumerationOptions]@{ IgnoreInaccessible = $true; AttributesToSkip = 0 }
+    $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $subs = [Collections.Generic.List[string]]::new()
+    foreach ($e in [IO.DirectoryInfo]::new($Dir).EnumerateFileSystemInfos('*', $opts)) {
+        [void]$names.Add($e.Name)
+        if ($e.Attributes -band [IO.FileAttributes]::Directory) { $subs.Add($e.Name) }
+    }
+    @{ Names = $names; Dirs = $subs }
+}
+
+function global:Get-TsTypes($Names) {
+    $types = [Collections.Generic.List[string]]::new()
+    foreach ($m in $global:ProjectMarkers.GetEnumerator()) { if ($Names.Contains($m.Key) -and -not $types.Contains($m.Value)) { $types.Add($m.Value) } }
+    $types -join ','
+}
+
+function global:Get-TsProjectInfo([string]$Path) {
+    $types = if (Test-TsNetworkPath $Path) { '' } else { try { Get-TsTypes (Get-TsFolderEntries $Path).Names } catch { '' } }
+    @{ Path = $Path; Types = $types }
+}
+
+# Project folders under a folder: a folder with .git or a marker file is a project and is not looked into;
+# hidden folders and build or dependency folders are skipped. Breadth-first, a few levels, one listing per folder.
+function global:Find-TsProjectFolders([string]$Folder, [int]$Depth = 3) {
+    $skip = [Collections.Generic.HashSet[string]]::new([string[]]('node_modules', 'vendor', 'target', 'bin', 'obj', 'dist', 'build', 'out', 'venv', '__pycache__'), [StringComparer]::OrdinalIgnoreCase)
+    $queue = [Collections.Generic.Queue[object]]::new()
+    $queue.Enqueue(@($Folder, 0))
+    $visited = 0
+    while ($queue.Count -and $visited -lt 50000) {
+        $dir, $level = $queue.Dequeue()
+        $visited++
+        try { $e = Get-TsFolderEntries $dir } catch { continue }
+        $types = Get-TsTypes $e.Names
+        if ($types -or $e.Names.Contains('.git')) { @{ Path = $dir; Types = $types }; continue }
+        if ($level -ge $Depth) { continue }
+        foreach ($s in $e.Dirs) { if ($s[0] -ne '.' -and -not $skip.Contains($s)) { $queue.Enqueue(@([IO.Path]::Combine($dir, $s), ($level + 1))) } }
+    }
+}
+
+# Projects among the folders zoxide remembers: no disk scan, only places you have been
+function global:Find-TsVisitedProjects {
+    if (-not (Find-TkCommand zoxide)) { return }
+    $exit = $global:LASTEXITCODE
+    $dirs = @(zoxide query --list 2>$null)
+    $global:LASTEXITCODE = $exit
+    $seen = @{}
+    foreach ($d in $dirs) {
+        if (-not $d -or (Test-TsNetworkPath $d) -or -not [IO.Directory]::Exists($d)) { continue }
+        $root = Get-TsGitRoot $d
+        if (-not $root) {
+            try { $names = (Get-TsFolderEntries $d).Names } catch { continue }
+            if (-not (Get-TsTypes $names)) { continue }
+            $root = $d
+        }
+        if (-not $seen.ContainsKey($root)) { $seen[$root] = $true; Get-TsProjectInfo $root }
+    }
+}
+
+# zoxide's score of each listed project: visits to the project and to any folder inside it add up
+function global:Get-TsProjectScores($Map) {
+    $scores = @{}
+    if (-not (Find-TkCommand zoxide)) { return $scores }
+    $exit = $global:LASTEXITCODE
+    $out = @(zoxide query --list --score 2>$null)
+    $global:LASTEXITCODE = $exit
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+    foreach ($line in $out) {
+        $t = $line.TrimStart(); $sp = $t.IndexOf(' ')
+        $score = 0.0
+        if ($sp -lt 1 -or -not [double]::TryParse($t.Substring(0, $sp), [Globalization.NumberStyles]::Float, $inv, [ref]$score)) { continue }
+        $p = Find-TsProject $t.Substring($sp + 1) $Map
+        if ($p) { $scores[$p] = [double]$scores[$p] + $score }
+    }
+    $scores
+}
+
+function global:Read-TsProjectSsh {
+    if (-not [IO.File]::Exists($global:TsProjectSshFile)) { return }
+    foreach ($line in [IO.File]::ReadAllLines($global:TsProjectSshFile)) {
+        $f = $line.Split("`t")
+        if ($f.Count -lt 3 -or $line[0] -eq '#') { continue }
+        [pscustomobject]@{ Path = $f[0]; Env = $f[1]; Host = $f[2]; Dir = $(if ($f.Count -gt 3) { $f[3] } else { '' }) }
+    }
+}
+
+# Lines for the picker: pinned first, then by zoxide score, then by name; the full path after a TAB
+function global:Get-TsWorkLines {
+    $map = Read-TsProjects -Force
+    if (-not $map -or -not $map.Count) { return }
+    $scores = Get-TsProjectScores $map
+    $links = @{}
+    foreach ($l in Read-TsProjectSsh) { $links[$l.Path] = @($links[$l.Path]) + $l.Env | Where-Object { $_ } }
+    $keyed = [Collections.Generic.List[string]]::new($map.Count)
+    foreach ($kv in $map.GetEnumerator()) {
+        $path = $kv.Key; $v = $kv.Value
+        $tab = $v.IndexOf("`t")
+        $pin = $v.StartsWith('pin')
+        $types = if ($tab -ge 0) { $v.Substring($tab + 1) } else { '' }
+        $name = [IO.Path]::GetFileName($path); if (-not $name) { $name = $path }
+        $rank = [long](1e12 - [math]::Min(1e12 - 1, 100 * [double]$scores[$path]))
+        $mark = if ($pin) { "$($TK.warn)$([char]0xF005)$($TK.R)" } else { ' ' }
+        $ssh = if ($links.ContainsKey($path)) { "  $($TK.teal)$([char]0xF233) $($links[$path] -join ' ')$($TK.R)" } else { '' }
+        $shown = $path.Replace($HOME, '~')
+        $keyed.Add("$(if ($pin) { 0 } else { 1 })$($rank.ToString('D13'))$($name.ToLowerInvariant())`n$mark $($TK.text)$($name.PadRight(24))$($TK.R) $($TK.dim)$($types.PadRight(14)) $shown$($TK.R)$ssh`t$path")
+    }
+    $keyed.Sort([StringComparer]::Ordinal)
+    foreach ($k in $keyed) { $k.Substring($k.IndexOf("`n") + 1) }
+}
+
+# The project a folder belongs to: the listed project it is in, else its git root or marker folder, else the folder
+function global:Resolve-TsProjectPath([string]$Dir) {
+    $map = Read-TsProjects -Force
+    $listed = if ($map) { Find-TsProject $Dir $map } else { '' }
+    if ($listed) { return $listed }
+    $ctx = Get-TsContext $Dir
+    if ($ctx.Project) { $ctx.Project } else { $Dir }
+}
+
+# A project named on the command line: a path, or the folder name of a listed project; nothing means here
+function global:Resolve-TsProjectArg([string]$Arg) {
+    if (-not $Arg) { return Resolve-TsProjectPath $PWD.ProviderPath }
+    if (Test-Path -LiteralPath $Arg -PathType Container) {
+        $full = (Resolve-Path -LiteralPath $Arg).ProviderPath.TrimEnd('\'); if ($full -match '^[A-Za-z]:$') { $full += '\' }
+        return $full
+    }
+    $map = Read-TsProjects -Force
+    $hits = @(if ($map) { $map.Keys | Where-Object { [IO.Path]::GetFileName($_) -eq $Arg } })
+    if ($hits.Count -eq 1) { return $hits[0] }
+    if ($hits.Count -gt 1) { Write-Host "  $($TK.err)$($TkStr.work_ambiguous -f $Arg)$($TK.R)"; $hits | ForEach-Object { Write-Host "    $($TK.dim)$_$($TK.R)" } }
+    else { Write-Host "  $($TK.err)$($TkStr.work_unknown -f $Arg)$($TK.R)" }
+}
+
+# cd into the remote folder, then the login shell. The folder is single-quoted for the remote shell, so nothing
+# in it is expanded or run; a leading ~/ stays outside the quotes and still means the home folder.
+function global:ConvertTo-TsRemoteCommand([string]$Dir) {
+    if (-not $Dir) { return '' }
+    if ($Dir -eq '~') { return 'cd && exec $SHELL -l' }
+    $tilde = ''
+    if ($Dir.StartsWith('~/')) { $tilde = '~/'; $Dir = $Dir.Substring(2) }
+    "cd -- $tilde'$($Dir.Replace("'", "'\''"))' && exec `$SHELL -l"
+}
+
+function global:Connect-TsProjectSsh([string]$Path, [string]$Env) {
+    $links = @(Read-TsProjectSsh | Where-Object Path -eq $Path)
+    if (-not $links) { Write-Host "  $($TK.dim)$($TkStr.work_ssh_none -f [IO.Path]::GetFileName($Path))$($TK.R)"; return }
+    $link = if ($Env) { $links | Where-Object Env -eq $Env | Select-Object -First 1 } elseif ($links.Count -eq 1) { $links[0] }
+    if (-not $link -and $Env) { Write-Host "  $($TK.err)$($TkStr.work_ssh_unknown -f $Env, ($links.Env -join ', '))$($TK.R)"; return }
+    if (-not $link) {
+        $pick = @(Invoke-Fzf ($links | ForEach-Object { "{0,-12} {1}{2}" -f $_.Env, $_.Host, $(if ($_.Dir) { ":$($_.Dir)" }) }) @('--height=12', "--header=$($TkStr.work_ssh_header)", '--prompt=ssh ❯ '))
+        if (-not $pick) { return }
+        $link = $links | Where-Object Env -eq ($pick[0] -split '\s+')[0] | Select-Object -First 1
+    }
+    $remote = ConvertTo-TsRemoteCommand $link.Dir
+    Write-Host ("  {0}→ ssh {1}{2}{3}" -f $TK.dim, $link.Host, $(if ($link.Dir) { "  cd $($link.Dir)" }), $TK.R)
+    if ($remote) { ssh -t $link.Host $remote } else { ssh $link.Host }
+}
+
+function global:Invoke-TsWorkSsh([string[]]$Words) {
+    $verb = if ($Words) { $Words[0] } else { '' }
+    if ($verb -eq 'add') {
+        $envName, $sshHost, $dir = $Words[1], $Words[2], (@($Words | Select-Object -Skip 3) -join ' ')
+        if ($envName -notmatch '^[A-Za-z0-9_-]{1,20}$') { Write-Host "  $($TK.err)$($TkStr.work_ssh_bad_env)$($TK.R)"; return }
+        if ($sshHost -notmatch '^[A-Za-z0-9_.@][A-Za-z0-9_.@-]*$') { Write-Host "  $($TK.err)$($TkStr.work_ssh_bad_host)$($TK.R)"; return }
+        if ($dir -match '[\x00-\x1f]') { Write-Host "  $($TK.err)$($TkStr.work_ssh_bad_dir)$($TK.R)"; return }
+        $path = Resolve-TsProjectPath $PWD.ProviderPath
+        $map = Read-TsProjects -Force
+        if (-not $map -or -not $map.ContainsKey($path)) { $null = Set-TsProject @(Get-TsProjectInfo $path) }
+        Edit-TsList $global:TsProjectSshFile {
+            param($lines)
+            for ($i = $lines.Count - 1; $i -ge 0; $i--) { $f = $lines[$i].Split("`t"); if ($f[0] -eq $path -and $f[1] -eq $envName) { $lines.RemoveAt($i) } }
+            $lines.Add("$path`t$envName`t$sshHost`t$dir")
+        }
+        if ($sshHost -notin @((Get-SshHost).Name) -and $sshHost -notmatch '@') { Write-Host "  $($TK.warn)$($TkStr.work_ssh_not_in_config -f $sshHost)$($TK.R)" }
+        Write-Host "  $($TK.ok)✓$($TK.R) $($TkStr.work_ssh_added -f $envName, [IO.Path]::GetFileName($path), "$sshHost$(if ($dir) { ":$dir" })")"
+        return
+    }
+    if ($verb -eq 'rm') {
+        $path = Resolve-TsProjectPath $PWD.ProviderPath
+        $state = @{ Removed = 0 }
+        if ([IO.File]::Exists($global:TsProjectSshFile)) {
+            Edit-TsList $global:TsProjectSshFile {
+                param($lines)
+                for ($i = $lines.Count - 1; $i -ge 0; $i--) { $f = $lines[$i].Split("`t"); if ($f[0] -eq $path -and $f[1] -eq $Words[1]) { $lines.RemoveAt($i); $state.Removed++ } }
+            }
+        }
+        if ($state.Removed) { Write-Host "  $($TK.ok)✓$($TK.R) $($TkStr.work_ssh_removed -f $Words[1])" }
+        else { Write-Host "  $($TK.err)$($TkStr.work_ssh_unknown -f $Words[1], '-')$($TK.R)" }
+        return
+    }
+    Connect-TsProjectSsh (Resolve-TsProjectPath $PWD.ProviderPath) $verb
+}
+
+function global:Show-TsWorkInfo {
+    $dir = $PWD.ProviderPath
+    $ctx = Get-TsContext $dir
+    $path = Resolve-TsProjectPath $dir
+    $map = Read-TsProjects -Force
+    $listed = $map -and $map.ContainsKey($path)
+    $types = if ($listed) { $map[$path].Split("`t")[1] } else { '' }
+    if (-not $types) { $types = (Get-TsProjectInfo $path).Types }
+    Write-TkTitle ($TkStr.work_info_title -f [IO.Path]::GetFileName($path)) $path.Replace($HOME, '~')
+    $state = if (-not $listed) { $TkStr.work_state_new } elseif ($map[$path].StartsWith('pin')) { $TkStr.work_state_pinned } else { $TkStr.work_state_listed }
+    Write-TkRow $TkStr.work_info_list $state
+    Write-TkRow $TkStr.work_info_types $(if ($types) { $types } else { '-' })
+    if ($ctx.Root) { Write-TkRow 'git' (Get-TsGitBranch $ctx.Root) }
+    $links = @(Read-TsProjectSsh | Where-Object Path -eq $path)
+    Write-TkRow 'ssh' $(if ($links) { ($links | ForEach-Object { "$($_.Env) → $($_.Host)$(if ($_.Dir) { ":$($_.Dir)" })" }) -join ' · ' } else { $TkStr.work_info_no_ssh })
+    Write-Host ''
+}
+
+function global:Show-TsWorkList {
+    $map = Read-TsProjects -Force
+    if (-not $map -or -not $map.Count) { Write-Host "  $($TK.dim)$($TkStr.work_empty)$($TK.R)"; return }
+    Write-TkTitle $TkStr.work_list_title ($TkStr.work_list_hint -f $map.Count)
+    $rows = foreach ($kv in $map.GetEnumerator()) {
+        $f = $kv.Value.Split("`t")
+        [pscustomobject]@{ Pin = $(if ($f[0] -eq 'pin') { [string][char]0xF005 } else { ' ' }); Name = [IO.Path]::GetFileName($kv.Key); Types = $(if ($f.Count -gt 1) { $f[1] }); Path = $kv.Key.Replace($HOME, '~') }
+    }
+    Write-TkTable @($rows | Sort-Object { $_.Pin -eq ' ' }, Name) @(
+        @{ N = ' '; P = 'Pin'; C = 'warn' }
+        @{ N = ''; P = 'Name'; C = 'text' }
+        @{ N = ''; P = 'Types'; C = 'dim' }
+        @{ N = ''; P = 'Path'; C = 'cmd' }
+    )
+    Write-Host ''
+}
+
+# Forgets projects whose folder is gone. A folder whose parent is missing too (a drive or share that is not
+# connected right now) is kept: it may come back.
+function global:Clear-TsWorkList {
+    $map = Read-TsProjects -Force
+    $gone = @(if ($map) { $map.Keys | Where-Object { -not [IO.Directory]::Exists($_) -and [IO.Directory]::Exists([IO.Path]::GetDirectoryName($_)) } })
+    if (-not $gone) { Write-Host "  $($TK.dim)$($TkStr.work_clean_none)$($TK.R)"; return }
+    Remove-TsProject $gone
+    foreach ($p in $gone) { Write-Host "  $($TK.ok)✓$($TK.R) $($TkStr.work_removed -f $p.Replace($HOME, '~'))" }
+}
+
+function global:Import-TsProjects([string]$Folder, [int]$Depth) {
+    $map = Read-TsProjects -Force
+    $found = if ($Folder) {
+        if (-not (Test-Path -LiteralPath $Folder -PathType Container)) { Write-Host "  $($TK.err)$($TkStr.ex_nofile -f $Folder)$($TK.R)"; return }
+        $full = (Resolve-Path -LiteralPath $Folder).ProviderPath
+        Write-Host "  $($TK.dim)$($TkStr.work_import_scan -f $full.Replace($HOME, '~'))$($TK.R)"
+        @(Find-TsProjectFolders $full $Depth)
+    } else { @(Find-TsVisitedProjects) }
+    $new = @($found | Where-Object { -not $map -or -not $map.ContainsKey($_.Path) })
+    if (-not $new) { Write-Host "  $($TK.dim)$($TkStr.work_import_none)$($TK.R)"; return }
+    $byPath = @{}; foreach ($p in $new) { $byPath[$p.Path] = $p }
+    $lines = $new | ForEach-Object { "{0} {1}{2}{3} {4}{5}{6}`t{7}" -f ([IO.Path]::GetFileName($_.Path)).PadRight(24), $TK.dim, $_.Types.PadRight(14), $TK.R, $TK.cmd, $_.Path.Replace($HOME, '~'), $TK.R, $_.Path }
+    $picked = Invoke-Fzf $lines @('--multi', '--ansi', "--delimiter=`t", '--with-nth=1', '--height=70%', '--bind=ctrl-a:select-all',
+        "--header=$($TkStr.work_import_header -f $new.Count)", '--prompt=import ❯ ', "--preview=$(Get-TsPreview) {2}", '--preview-window=right:45%')
+    $chosen = @($picked | Where-Object { $_ } | ForEach-Object { $byPath[($_ -split "`t")[1]] } | Where-Object { $_ })
+    if (-not $chosen) { return }
+    $added = Set-TsProject $chosen
+    Write-Host "  $($TK.ok)✓$($TK.R) $($TkStr.work_import_done -f $added)"
+}
+
+function global:Invoke-TsWorkPicker([string]$Query) {
+    if (-not (Find-TkCommand fzf)) { Show-TsWorkList; return }
+    $first = $true
+    while ($true) {
+        $lines = @(Get-TsWorkLines)
+        if (-not $lines) { Write-Host "  $($TK.dim)$($TkStr.work_empty)$($TK.R)"; return }
+        $fzfArgs = @('--ansi', '--expect=ctrl-o,ctrl-p,ctrl-s,ctrl-d', "--delimiter=`t", '--with-nth=1', '--height=60%', "--query=$Query",
+            "--header=$($TkStr.work_header)", '--prompt=work ❯ ', "--preview=$(Get-TsPreview) {2}", '--preview-window=right:45%')
+        # work <name>: a single match goes straight there, but only on the first round
+        if ($first -and $Query) { $fzfArgs += '--select-1' }
+        $out = @(Invoke-Fzf $lines $fzfArgs)
+        $first = $false
+        if ($out.Count -lt 2) { return }
+        $path = ($out[1] -split "`t")[1]
+        switch ($out[0]) {
+            'ctrl-p' { $null = Set-TsProject @(@{ Path = $path }) (-not (Read-TsProjects -Force)[$path].StartsWith('pin')) }
+            'ctrl-d' { Remove-TsProject @($path); Write-Host "  $($TK.ok)✓$($TK.R) $($TkStr.work_removed -f $path.Replace($HOME, '~'))" }
+            'ctrl-o' { Open-TsFile $path; return }
+            'ctrl-s' { Connect-TsProjectSsh $path ''; return }
+            default {
+                if ([IO.Directory]::Exists($path)) { Set-Location -LiteralPath $path }
+                else { Write-Host "  $($TK.err)$($TkStr.work_gone -f $path)$($TK.R)" }
+                return
+            }
+        }
+    }
+}
+
+function global:work {
+    param(
+        [Parameter(Position = 0)]
+        [ArgumentCompleter({ param($c, $p, $word) @('add', 'pin', 'unpin', 'rm', 'list', 'import', 'clean', 'ssh', 'help', '.') | Where-Object { $_ -like "$word*" } })]
+        [string]$Action = '',
+        [Parameter(Position = 1, ValueFromRemainingArguments)][string[]]$Rest = @(),
+        [int]$Depth = 3
+    )
+    $arg = if ($Rest) { $Rest[0] } else { '' }
+    switch ($Action) {
+        '' { Invoke-TsWorkPicker ''; return }
+        'help' { help work; return }
+        '.' { Show-TsWorkInfo; return }
+        'list' { Show-TsWorkList; return }
+        'clean' { Clear-TsWorkList; return }
+        'import' { Import-TsProjects $arg $Depth; return }
+        'ssh' { Invoke-TsWorkSsh $Rest; return }
+        'add' {
+            $path = if ($arg) { Resolve-TsProjectArg $arg } else { Resolve-TsProjectPath $PWD.ProviderPath }
+            if (-not $path) { return }
+            $added = Set-TsProject @(Get-TsProjectInfo $path)
+            Write-Host "  $($TK.ok)✓$($TK.R) $($(if ($added) { $TkStr.work_added } else { $TkStr.work_exists }) -f $path.Replace($HOME, '~'))"
+            return
+        }
+        { $_ -in 'pin', 'unpin' } {
+            $path = Resolve-TsProjectArg $arg
+            if (-not $path) { return }
+            $map = Read-TsProjects -Force
+            $info = if ($map -and $map.ContainsKey($path)) { @{ Path = $path } } else { Get-TsProjectInfo $path }
+            $null = Set-TsProject @($info) ($Action -eq 'pin')
+            Write-Host "  $($TK.ok)✓$($TK.R) $($(if ($Action -eq 'pin') { $TkStr.work_pinned } else { $TkStr.work_unpinned }) -f $path.Replace($HOME, '~'))"
+            return
+        }
+        'rm' {
+            $path = Resolve-TsProjectArg $arg
+            if (-not $path) { return }
+            $map = Read-TsProjects -Force
+            if (-not $map -or -not $map.ContainsKey($path)) { Write-Host "  $($TK.err)$($TkStr.work_unknown -f $path.Replace($HOME, '~'))$($TK.R)"; return }
+            Remove-TsProject @($path)
+            Write-Host "  $($TK.ok)✓$($TK.R) $($TkStr.work_removed -f $path.Replace($HOME, '~'))"
+            return
+        }
+        default { Invoke-TsWorkPicker ((@($Action) + $Rest) -join ' ') }
     }
 }
 '@
@@ -3113,6 +3611,7 @@ $EmbeddedFiles['custom.ps1'] = @'
 #   $Termistry.LayoutFix     = $false     # Russian layout fix on Enter
 #   $Termistry.Predictions   = 20         # history suggestions (0 - PSReadLine default 10)
 #   $Termistry.Kube          = 'always'   # kubernetes context in the prompt: auto (k8s folders and prod only), always, off
+#   $Termistry.Workspace     = $false     # no Workspace marks in the prompt (work still works)
 #
 #   abbr gcm 'git commit -m "%"'              # % - cursor position
 #   abbr -Remove d
@@ -3126,11 +3625,14 @@ $EmbeddedFiles['custom.ps1'] = @'
 if ($Uninstall) {
     Step $L.s_uninstall
     $managed = @($EmbeddedFiles.Keys | Where-Object { $_ -ne 'custom.ps1' } | ForEach-Object { Join-Path $ProfileDir $_ })
-    $managed += $ConfigDir,(Join-Path $HOME '.cache\termistry'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
+    # the Workspace project list is the user's own, like custom.ps1
+    $managed += @(Get-ChildItem $ConfigDir -Force -ErrorAction Ignore | Where-Object Name -notlike 'projects*.tsv' | ForEach-Object FullName)
+    $managed += (Join-Path $HOME '.cache\termistry'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
     $managed += $LegacyDirs
     foreach ($p in $managed) {
         if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) - $($L.removed)" }
     }
+    if ((Test-Path $ConfigDir) -and -not (Get-ChildItem $ConfigDir -Force)) { Remove-Item $ConfigDir }
     Write-Host ''
     Write-Host "  $($L.uninstall_kept)" -ForegroundColor Gray
     Write-Host ''

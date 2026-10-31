@@ -27,6 +27,16 @@ $global:Strings = @{
                 , ('ii .', 'открыть текущую папку в Проводнике')
                 , ('code .', 'открыть папку в VS Code')
             ) }
+            @{ Key = 'work'; Title = 'Проекты'; Rows = @(
+                , ('work [имя]', 'выбрать проект: Enter перейти, Ctrl+O редактор, Ctrl+P закрепить, Ctrl+S ssh', 'work shop')
+                , ('work add [папка]', 'добавить этот проект (его git-корень) в список')
+                , ('work pin / unpin [имя]', 'закреплённые идут первыми, в промпте у них звёздочка')
+                , ('work import [папка]', 'найти проекты в папке или среди папок, где вы бывали, и выбрать, что добавить', 'work import D:\code')
+                , ('work .', 'что Termistry знает об этом проекте')
+                , ('work list · rm [имя] · clean', 'весь список · убрать один · убрать те, чьих папок больше нет')
+                , ('work ssh [имя]', 'подключиться к серверу проекта и сразу в его папку', 'work ssh prod')
+                , ('work ssh add <имя> <хост> [папка]', 'привязать окружение: ssh-хост и папку на сервере', 'work ssh add prod web-1 /srv/shop')
+            ) }
             @{ Key = 'files'; Title = 'Файлы'; Rows = @(
                 , ('l / ll / lt', 'список · подробно с git-статусом · деревом')
                 , ('bat <файл>', 'просмотр с подсветкой и номерами строк', 'bat .env')
@@ -115,12 +125,28 @@ $global:Strings = @{
         pk_header = 'Tab - отметить несколько  Enter - завершить'; pk_done = 'завершён {0}'
         gbr_header = 'Enter - переключиться на ветку'; gbr_none = 'не git-репозиторий'
         nav_deep = 'все папки внутри {0}'
+        work_header = "Enter - перейти  Ctrl+O - открыть в редакторе  Ctrl+S - ssh`nCtrl+P - закрепить / открепить  Ctrl+D - убрать из списка"
+        work_empty = 'список пуст: work add - этот проект · work import <папка> - проекты в папке · work import - из папок, где вы бывали'
+        work_added = '{0} - добавлен'; work_exists = '{0} - уже в списке'; work_pinned = '{0} - закреплён'; work_unpinned = '{0} - откреплён'
+        work_removed = '{0} - убран из списка, файлы не тронуты'; work_unknown = '{0} нет в списке'
+        work_ambiguous = 'проектов с именем {0} несколько, укажите путь:'; work_gone = 'папки больше нет: {0} - work rm или work clean'
+        work_clean_none = 'все папки из списка на месте'
+        work_import_scan = 'ищу проекты в {0}…'; work_import_none = 'новых проектов не нашлось'; work_import_done = 'добавлено: {0}'
+        work_import_header = 'найдено {0} · Tab - отметить  Ctrl+A - все  Enter - добавить отмеченные'
+        work_info_title = 'Проект {0}'; work_info_list = 'в Workspace'; work_info_types = 'тип'
+        work_info_no_ssh = 'нет - work ssh add <имя> <хост> [папка]'
+        work_state_new = 'нет - work add'; work_state_listed = 'в списке - work pin закрепит'; work_state_pinned = 'закреплён'
+        work_list_title = 'Проекты'; work_list_hint = '{0} · work - выбрать · work help'
+        work_ssh_none = 'у {0} нет окружений: work ssh add <имя> <хост> [папка на сервере]'; work_ssh_unknown = 'нет окружения {0} (есть: {1})'
+        work_ssh_header = 'Enter - подключиться · Esc'; work_ssh_bad_env = 'имя окружения: латиница, цифры, - и _ (до 20)'
+        work_ssh_bad_host = 'хост: имя из ~/.ssh/config или user@host'; work_ssh_bad_dir = 'в папке на сервере не может быть управляющих символов'
+        work_ssh_not_in_config = '{0} нет в ~/.ssh/config - ssh попробует его как адрес'; work_ssh_added = '{1}: {0} → {2}'; work_ssh_removed = 'окружение {0} убрано'
         ex_nofile = 'нет файла: {0}'; ex_unknown = 'не знаю, чем распаковать: {0}'; ex_done = 'распаковано в {0}'
         cb_done = 'в буфере обмена: {0} строк'
         config_title = 'Где что лежит'; config_hint = 'ep - открыть папку профиля'
         config_rows = [ordered]@{
             profile = 'профиль PowerShell и команды'; custom = 'своё: функции, сокращения, переключатели'; bin = 'свои команды на любом языке'
-            srvcustom = 'свои файлы для серверов (→ ~/.bashrc.d)'; settings = 'тема и язык'
+            srvcustom = 'свои файлы для серверов (→ ~/.bashrc.d)'; settings = 'тема и язык'; projects = 'список проектов Workspace'
             completions = 'кэш Tab-дополнений'; predictor = 'кэш плагина подсказок'; wt = 'настройки Windows Terminal'
             vscode = 'настройки VS Code'; gitconfig = 'git: delta и имя'; ssh = 'SSH-хосты (my ssh, jump, srv)'
         }
@@ -237,6 +263,16 @@ $global:Strings = @{
                 , ('ii .', 'open the current folder in Explorer')
                 , ('code .', 'open the folder in VS Code')
             ) }
+            @{ Key = 'work'; Title = 'Projects'; Rows = @(
+                , ('work [name]', 'pick a project: Enter goes there, Ctrl+O editor, Ctrl+P pin, Ctrl+S ssh', 'work shop')
+                , ('work add [folder]', 'add this project (its git root) to the list')
+                , ('work pin / unpin [name]', 'pinned projects come first and get a star in the prompt')
+                , ('work import [folder]', 'find projects in a folder or among folders you visited, pick which to add', 'work import D:\code')
+                , ('work .', 'what Termistry knows about this project')
+                , ('work list · rm [name] · clean', 'the whole list · drop one · drop those whose folder is gone')
+                , ('work ssh [name]', 'connect to the project''s server and land in its folder', 'work ssh prod')
+                , ('work ssh add <name> <host> [folder]', 'link an environment: an ssh host and a remote folder', 'work ssh add prod web-1 /srv/shop')
+            ) }
             @{ Key = 'files'; Title = 'Files'; Rows = @(
                 , ('l / ll / lt', 'list · details with git status · tree')
                 , ('bat <file>', 'view with highlighting and line numbers', 'bat .env')
@@ -325,12 +361,28 @@ $global:Strings = @{
         pk_header = 'Tab - select several  Enter - kill'; pk_done = 'killed {0}'
         gbr_header = 'Enter - switch to the branch'; gbr_none = 'not a git repository'
         nav_deep = 'all folders under {0}'
+        work_header = "Enter - go there  Ctrl+O - open in the editor  Ctrl+S - ssh`nCtrl+P - pin / unpin  Ctrl+D - drop from the list"
+        work_empty = 'the list is empty: work add - this project · work import <folder> - projects in a folder · work import - from folders you visited'
+        work_added = '{0} - added'; work_exists = '{0} - already in the list'; work_pinned = '{0} - pinned'; work_unpinned = '{0} - unpinned'
+        work_removed = '{0} - dropped from the list, files untouched'; work_unknown = '{0} is not in the list'
+        work_ambiguous = 'several projects are called {0}, give the path:'; work_gone = 'the folder is gone: {0} - work rm or work clean'
+        work_clean_none = 'every listed folder is in place'
+        work_import_scan = 'looking for projects in {0}…'; work_import_none = 'no new projects found'; work_import_done = 'added: {0}'
+        work_import_header = '{0} found · Tab - mark  Ctrl+A - all  Enter - add the marked'
+        work_info_title = 'Project {0}'; work_info_list = 'in Workspace'; work_info_types = 'type'
+        work_info_no_ssh = 'none - work ssh add <name> <host> [folder]'
+        work_state_new = 'no - work add'; work_state_listed = 'listed - work pin pins it'; work_state_pinned = 'pinned'
+        work_list_title = 'Projects'; work_list_hint = '{0} · work - pick one · work help'
+        work_ssh_none = '{0} has no environments: work ssh add <name> <host> [remote folder]'; work_ssh_unknown = 'no environment {0} (there are: {1})'
+        work_ssh_header = 'Enter - connect · Esc'; work_ssh_bad_env = 'environment name: letters, digits, - and _ (up to 20)'
+        work_ssh_bad_host = 'host: an alias from ~/.ssh/config or user@host'; work_ssh_bad_dir = 'the remote folder cannot contain control characters'
+        work_ssh_not_in_config = '{0} is not in ~/.ssh/config - ssh will try it as an address'; work_ssh_added = '{1}: {0} → {2}'; work_ssh_removed = 'environment {0} removed'
         ex_nofile = 'no such file: {0}'; ex_unknown = 'do not know how to extract: {0}'; ex_done = 'extracted to {0}'
         cb_done = 'in the clipboard: {0} lines'
         config_title = 'Where things live'; config_hint = 'ep - open the profile folder'
         config_rows = [ordered]@{
             profile = 'PowerShell profile and commands'; custom = 'yours: functions, abbreviations, switches'; bin = 'your commands in any language'
-            srvcustom = 'your files for servers (→ ~/.bashrc.d)'; settings = 'theme and language'
+            srvcustom = 'your files for servers (→ ~/.bashrc.d)'; settings = 'theme and language'; projects = 'Workspace project list'
             completions = 'Tab completion cache'; predictor = 'suggestions plugin cache'; wt = 'Windows Terminal settings'
             vscode = 'VS Code settings'; gitconfig = 'git: delta and identity'; ssh = 'SSH hosts (my ssh, jump, srv)'
         }
