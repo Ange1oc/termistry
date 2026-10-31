@@ -158,6 +158,7 @@ Test 'project markers show the tool version' {
     foreach ($m in $markers) {
         $cmd = Get-Command $m.tool -ErrorAction Ignore
         if (-not $cmd -or $cmd.Source -like '*WindowsApps*') { continue }
+        if ("$(if ($m.tool -eq 'go') { go version 2>$null } else { & $m.tool --version 2>$null })" -notmatch '\d+\.\d+') { continue }   # a shim without a toolchain
         $dir = Join-Path $Work "proj-$($m.tool)"; New-Item -ItemType Directory -Force $dir | Out-Null; Set-Content (Join-Path $dir $m.file) ''
         AssertMatch (Plain (Get-TsPrompt -Dir $dir -Width 100)) $m.re $m.tool
         $checked += $m.tool
@@ -564,14 +565,16 @@ if (Get-Command fd -ErrorAction Ignore) {
         AssertMatch ($global:FzfCalls[1].Lines -join '|') 'alpha' 'fd ran through FZF_DEFAULT_COMMAND'
     }
 } else { Skip 'nav Ctrl+F' 'fd not installed' }
-Test 'pv: Enter opens the file in the editor, Ctrl+P prints it' {
-    $global:CodeCalls.Clear()
-    PickLine 'note.txt'
-    pv "$tree\beta"
-    AssertMatch ($global:CodeCalls[0] -join ' ') 'note\.txt$' 'opened in the editor'
-    PickLine 'note.txt' 'ctrl-p'
-    AssertMatch (Plain (Capture { pv "$tree\beta" })) 'pv-content-marker' 'printed with bat'
-}
+if (Get-Command fd -ErrorAction Ignore) {
+    Test 'pv: Enter opens the file in the editor, Ctrl+P prints it' {
+        $global:CodeCalls.Clear()
+        PickLine 'note.txt'
+        pv "$tree\beta"
+        AssertMatch ($global:CodeCalls[0] -join ' ') 'note\.txt$' 'opened in the editor'
+        PickLine 'note.txt' 'ctrl-p'
+        AssertMatch (Plain (Capture { pv "$tree\beta" })) 'pv-content-marker' 'printed with bat'
+    }
+} else { Skip 'pv' 'fd not installed' }
 if (Get-Command rg -ErrorAction Ignore) {
     Test 'rgi: rg runs on every keystroke, a hit opens the editor at file:line' {
         $global:FzfCalls.Clear(); $global:CodeCalls.Clear()

@@ -206,7 +206,8 @@ if ('setup' -in $Only) {
         $s = $raw | ConvertFrom-Json
         AssertEq $s.defaultProfile '{574e775e-4f2a-5b96-ac1e-a2962a402336}' 'default profile'
         Assert ($s.schemes.Count -ge 10) "schemes: $($s.schemes.Count)"
-        AssertMatch $raw 'JetBrainsMono' 'font'
+        # without the Nerd Font (CI) the installer falls back to Cascadia Mono
+        AssertMatch $raw $(if (Test-Path "$env:windir\Fonts\JetBrainsMonoNerdFont-Regular.ttf") { 'JetBrainsMono' } else { 'Cascadia Mono' }) 'font'
         AssertMatch $raw 'quake' 'quake binding'
     }
     Test 'second run changes nothing and keeps custom.ps1' {
@@ -252,7 +253,7 @@ if ('setup' -in $Only) {
         (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $setup -Lang en -Theme gruvbox -SshTabs prod,staging -StartingDirectory 'D:\code' -SkipApps -ProfileDir $pdir2 2>&1 | ForEach-Object { "$_" }) -join "`n"
     }
     Test 'english run with a theme, ssh tabs and a starting folder' {
-        AssertMatch $out5 'Done\.' 'english messages'
+        AssertMatch $out5 'Done[.,]' 'english messages'
         AssertEq (Get-Content (Join-Path $setupHome2 '.config\termistry\lang') -First 1) 'en' 'lang file'
         AssertEq (Get-Content (Join-Path $setupHome2 '.config\termistry\theme') -First 1) 'gruvbox' 'theme file'
         $s = Get-Content $wt2 -Raw | ConvertFrom-Json
@@ -292,7 +293,7 @@ if ('setup' -in $Only) {
     Set-Content (Join-Path $pdir3 'custom.ps1') '$TerminalSetup.Kube = ''off'''
     $out7 = Invoke-Sandboxed $setupHome3 { (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $setup -SkipApps -ProfileDir $pdir3 2>&1 | ForEach-Object { "$_" }) -join "`n" }
     Test 'an install from before the rename moves over' {
-        AssertMatch $out7 'Done\.' 'english without asking'
+        AssertMatch $out7 'Done[.,]' 'english without asking'
         AssertNotMatch $out7 'errors while loading' 'profile check'
         Assert (-not (Test-Path (Join-Path $setupHome3 '.config\terminal-setup'))) 'old settings folder left'
         Assert (-not (Test-Path (Join-Path $setupHome3 '.cache\terminal-setup'))) 'old cache left'
