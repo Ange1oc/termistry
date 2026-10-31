@@ -20,7 +20,7 @@ Windows Terminal, быстрый промпт, навигацию на fzf и ш
 
 <p align="center"><a href="README.md">English</a> · <b>Русский</b></p>
 
-<p align="center"><img src="docs/hero.png" width="860" alt="Termistry в Windows Terminal: промпт с git-статусом, контекстом kubernetes и временем команды"></p>
+<p align="center"><img src="docs/demo.gif" width="860" alt="Демонстрация Termistry в Windows Terminal: промпт с git, подсказки из истории, смена темы на Catppuccin Latte и Tokyo Night, help, шпаргалка F1, навигатор папок, живой поиск, ветки git, поиск по истории и SSH-хосты"></p>
 
 
 ## Содержание
@@ -130,6 +130,8 @@ powershell -ExecutionPolicy Bypass -File "$dir\setup-terminal.ps1"  # и зап�
 Старт профиля занимает около полусекунды: при запуске грузится только ядро, а словарь команд, автодополнения и zoxide подтягиваются сразу после того, как промпт появился на экране.
 
 ## Промпт, темы и ввод
+
+<p align="center"><img src="docs/hero.png" width="860" alt="Промпт с папкой, веткой git и статусом, версией node и контекстом kubernetes"></p>
 
 
 Промпт рисует сам PowerShell, без внешних программ: ветка читается из `.git/HEAD`, контекст kubernetes из kubeconfig, а счётчики git-статуса подтягиваются фоном и дорисовываются, когда готовы.

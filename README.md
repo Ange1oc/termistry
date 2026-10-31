@@ -20,7 +20,7 @@ Windows Terminal, a fast prompt, fzf navigation and a cheat sheet. One more give
 
 <p align="center"><b>English</b> · <a href="README.ru.md">Русский</a></p>
 
-<p align="center"><img src="docs/hero.png" width="860" alt="Termistry in Windows Terminal: prompt with git status, Kubernetes context and command duration"></p>
+<p align="center"><img src="docs/demo.gif" width="860" alt="Termistry demo in Windows Terminal: git-aware prompt, history suggestions, theme switching to Catppuccin Latte and Tokyo Night, help, F1 cheat sheet, folder navigator, live grep, git branches, history search and SSH hosts"></p>
 
 ## Contents
 
@@ -129,6 +129,8 @@ Or build it yourself from source: `git clone https://github.com/Ange1oc/termistr
 The profile starts in about half a second: only the core loads up front, while the command dictionary, completions and zoxide load right after the prompt is on screen.
 
 ## Prompt, themes and input
+
+<p align="center"><img src="docs/hero.png" width="860" alt="Prompt with folder, git branch and status, node version and Kubernetes context"></p>
 
 
 The prompt is rendered by PowerShell itself, no external programs: the branch is read from `.git/HEAD`, the Kubernetes context from kubeconfig, and git status counts are fetched in the background and drawn in once they are ready.
