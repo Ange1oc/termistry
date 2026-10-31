@@ -29,6 +29,7 @@ Windows Terminal, a fast prompt, fzf navigation and a cheat sheet. One more give
 - [Requirements and what gets installed](#requirements-and-what-gets-installed)
 - [Prompt, themes and input](#prompt-themes-and-input)
 - [Git, Docker, Kubernetes and SSH](#git-docker-kubernetes-and-ssh)
+- [Workspace: your projects](#workspace-your-projects)
 - [Linux servers](#linux-servers)
 - [Customization](#customization)
 - [Update, uninstall and backups](#update-uninstall-and-backups)
@@ -44,6 +45,7 @@ A fresh PowerShell looks like it was designed for a printer. Doing it by hand ta
 - **One palette for everything.** Windows Terminal, prompt, input highlighting, `ls`, fzf and git diffs share the same colors. Ten themes, switched live.
 - **A prompt that shows what matters** and renders in a few milliseconds: folder, git branch with changes, node or python version inside a project, duration of long commands, exit code. The Kubernetes context appears only where it belongs, and in red everywhere when kubectl points at prod.
 - **`help` and `F1` remember commands for you.** Abbreviations `g␣` → `git`, up to 50 history suggestions, a fix for commands typed in the Russian keyboard layout.
+- **Workspace:** the projects you work on one key away, pinned or recent first, with their servers attached. No disk index, no background work.
 - **fzf everywhere:** folder tree navigation, file previews, live grep, git branches, processes, kubectl contexts.
 - **Your own commands in any language:** a file in `bin\` becomes a command, Python or Rust alike.
 - **Your servers get the same prompt**, cheat sheet and a guard against `docker compose down -v`. Nothing is installed there and nothing runs in the background.
@@ -182,6 +184,63 @@ Small helpers that exist on the server too: `ex archive` extracts zip, tar.gz, 7
 | Kubernetes | the context shows in folders with `Chart.yaml`, `kustomization.yaml`, `k8s/`, `helm/` and similar, and always in red for prod. `kctx` and `kns` switch context and namespace from a list, `my k8s` shows them all. `$Termistry.Kube = 'always'` or `'off'` changes when it is shown |
 | SSH | `my ssh` lists hosts from `~/.ssh/config`, `jump` picks one and connects, `ssh <Tab>` completes host names, `-SshTabs` adds hosts to the Windows Terminal menu, `srv` installs the server bash |
 
+## Workspace: your projects
+
+When there are hundreds of repositories on the disk and a dozen of them are in use, `work` keeps those at hand. It is a short list you curate, not an index: nothing scans the disk, nothing runs in the background, and nothing is added unless you ask.
+
+<p align="center"><img src="docs/workspace.gif" width="860" alt="work: project info, the picker with pinned projects first, jumping to a project, pinning it, importing projects from a folder and the list"></p>
+
+```powershell
+work add                    # add the project you are in (its git root)
+work                        # pick a project, Enter goes there
+work api                    # a name with one match goes straight there
+work pin                    # pinned projects come first and get a star in the prompt
+work import D:\code         # find projects in a folder (3 levels) and pick which to add
+work import                 # the same among folders you have visited (zoxide history)
+```
+
+| | |
+|---|---|
+| `work [name]` | fzf picker: pinned first, then by how often you visit them (zoxide), then by name, with a preview of the folder. Enter goes there, Ctrl+O opens it in the editor, Ctrl+P pins or unpins, Ctrl+S connects to its server, Ctrl+D drops it from the list (the files stay) |
+| `work add [folder]` · `work rm [name]` | add the project you are in, or a folder · drop one from the list |
+| `work pin` · `work unpin [name]` | pin or unpin the current project or one by name |
+| `work import [folder] [-Depth 3]` | look for project folders and pick which to add: `.git` or a marker file makes a folder a project, which is not looked into; hidden, `node_modules`, `target`, `bin`, `obj` and other build folders are skipped |
+| `work .` · `work list` · `work clean` | what Termistry knows about this project · the whole list · drop projects whose folder is gone |
+
+**In the prompt** the folder icon shows where you are: a folder in a plain folder, a bookmark inside a listed project, a star in a pinned one. Nothing else is added. The versions of node, python, go and rust and a docker icon come from marker files in the folder and in its git root, so they also show in subfolders.
+
+**A project** is its git root, or a folder with a marker file: `package.json`, `pyproject.toml`, `requirements.txt`, `go.mod`, `Cargo.toml`, `compose.yaml`, `docker-compose.yml`, `Dockerfile`, `pom.xml`, `build.gradle`, `composer.json`, `Gemfile`. Add your own in `custom.ps1`: `$ProjectMarkers['mix.exs'] = 'elixir'`.
+
+**SSH environments.** A project can have servers attached to it, each with a remote folder:
+
+```powershell
+work ssh add prod web-1 /srv/shop      # an alias from ~/.ssh/config and the folder on the server
+work ssh add staging staging ~/shop
+work ssh prod                          # ssh web-1, cd /srv/shop, your login shell
+work ssh                               # one environment connects at once, several open a list
+work ssh rm staging
+```
+
+Nothing connects by itself and nothing is checked over the network. Only the host alias and the folder are stored, never passwords or keys. The folder is quoted for the remote shell, so it cannot run anything, and the host name cannot start with `-`. On a server set up with `srv` you land in the same bash.
+
+**Storage.** `~\.config\termistry\projects.tsv` (path, pin, types) and `projects-ssh.tsv`, plain text with one line per project. Every change takes a lock, re-reads the file and replaces it in one move, so several open terminals never overwrite each other; they notice each other's changes within 2 seconds. `-Uninstall` keeps both files.
+
+**Speed.** The prompt now works out a folder once, when you enter it, and afterwards only compares the timestamps of the folder and its git root; the branch and kubeconfig are read with direct file calls. The list is read once and again only when the file changes. Measured with `tests\bench.ps1` on one Windows 11 machine with real-time antivirus, where every file check costs about 0.15 ms:
+
+| | before Workspace | with Workspace |
+|---|---|---|
+| prompt in the same folder, repository root | 15.0 ms | 1.7 ms |
+| prompt in the same folder, deep inside a repository | 16.9 ms | 2.0 ms |
+| first prompt in a folder | 9.3 ms | 10.5 ms |
+| prompt with 10 000 projects in the list | - | 1.4 ms |
+| reading a list of 10 000 projects (when it changes) | - | 73 ms |
+| `work` picker lines for 1 000 / 10 000 projects, zoxide included | - | 133 / 528 ms |
+| profile load | 680-720 ms | 690-720 ms |
+
+**Limits.** Recent-first order needs zoxide, which Termistry installs; without it, pinned projects come first and the rest by name. On network drives only the git root is found: types and k8s folders are not checked, so the prompt never waits on the network. A project without git is recognized in its own folder only, and anywhere inside it once it is in the list. .NET projects (`*.csproj`) have no fixed file name and are not detected by type. `work clean` keeps projects on a drive that is not connected right now.
+
+`$Termistry.Workspace = $false` in `custom.ps1` removes the marks from the prompt; `work` keeps working.
+
 ## Linux servers
 
 ```powershell
@@ -221,6 +280,7 @@ $Termistry.Abbreviations = $false     # turn off g␣ → git␣
 $Termistry.LayoutFix     = $false     # turn off the keyboard layout fix
 $Termistry.Predictions   = 20         # number of history suggestions
 $Termistry.Kube          = 'always'   # Kubernetes context: auto, always, off
+$Termistry.Workspace     = $false     # no Workspace marks in the prompt
 
 abbr gcm 'git commit -m "%"'          # % marks the cursor
 function deploy { ssh prod 'cd app && git pull && docker compose up -d' }   # shows up in help
@@ -233,7 +293,7 @@ function deploy { ssh prod 'cd app && git pull && docker compose up -d' }   # sh
 | | |
 |---|---|
 | `~\Documents\PowerShell\` | profile and commands, your `custom.ps1`, `bin\`, `server\custom\`. This is the `$PROFILE` folder; with Documents redirected to OneDrive it lives there and syncs between machines |
-| `~\.config\termistry\` | `theme`, `lang` |
+| `~\.config\termistry\` | `theme`, `lang`, the Workspace list `projects.tsv` and `projects-ssh.tsv` |
 | `~\.cache\termistry\`, `~\.cache\pwsh-*` | caches, safe to delete, rebuilt automatically |
 | `%LOCALAPPDATA%\Packages\Microsoft.WindowsTerminal_*\LocalState\settings.json` | Windows Terminal |
 | `%APPDATA%\Code\User\settings.json`, `~\.gitconfig` | VS Code terminal font, delta for git |
@@ -242,7 +302,7 @@ function deploy { ssh prod 'cd app && git pull && docker compose up -d' }   # sh
 
 - **Update:** `update` downloads the installer from this repository and updates whatever changed. Running the install command again does the same.
 - **Backups:** profile files, Windows Terminal and VS Code settings that differ from the new version are saved next to themselves as `*.bak-<date>` before being replaced. git settings are changed with `git config`. Your `custom.ps1` and `bin\` are never touched.
-- **Uninstall:** removes the profile files and caches; programs, the font, `custom.ps1`, `bin\` and `*.bak` files stay.
+- **Uninstall:** removes the profile files and caches; programs, the font, `custom.ps1`, `bin\`, the Workspace list and `*.bak` files stay.
 
   ```powershell
   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ange1oc/termistry/master/install.ps1))) -Uninstall
@@ -284,7 +344,7 @@ build.ps1             .\build.ps1  ·  .\build.ps1 -FromProfile pulls the setup 
 src/
   setup-logic.ps1     installer logic
   profile/            profile, prompt.ps1, palette.ps1 (themes), lang.ps1 (en/ru strings),
-                      toolkit.ps1 and toolkit-lazy.ps1 (commands), history suggestions plugin
+                      toolkit.ps1 and toolkit-lazy.ps1 (commands), workspace.ps1 (work), history suggestions plugin
   server/             bashrc.local, inputrc and the installer behind srv
 tests/                .\tests\run.ps1: profile, prompt, installer and server bash, all in a sandbox
 tools/                make-screenshots.ps1 and record-demo.ps1: the images in docs/ come from real output
@@ -292,7 +352,8 @@ tools/                make-screenshots.ps1 and record-demo.ps1: the images in do
 
 - `.\tests\run.ps1` runs every check without touching your real profile; `-Only static,profile,setup,server` picks parts. The server part needs WSL; CI runs it on Ubuntu with `bash tests/server.sh src/server`.
 - After changing anything in `src\`, run `.\build.ps1` and commit `setup-terminal.ps1` too; CI fails if it is out of date.
-- `.\tools\make-screenshots.ps1 -Lang en` regenerates `docs\*.png`, `.\tools\record-demo.ps1` records `docs\demo.gif` from a real Windows Terminal window.
+- `.\tools\make-screenshots.ps1 -Lang en` regenerates `docs\*.png`, `.\tools\record-demo.ps1` records `docs\demo.gif` from a real Windows Terminal window, `-Session workspace` records `docs\workspace.gif`.
+- `.\tests\bench.ps1` measures the prompt and the Workspace list; `-Profile <folder>` measures another copy, for example an older checkout, to compare.
 - User-facing strings live in `src\profile\lang.ps1` and `src\setup-logic.ps1` in both languages; keep them in sync.
 
 Issues and pull requests are welcome.

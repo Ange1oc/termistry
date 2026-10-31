@@ -8,10 +8,13 @@
   Terminal settings, so they are restored afterwards. The window may be covered but not minimized (about a minute).
 
 .EXAMPLE
-  .\tools\record-demo.ps1
+  .\tools\record-demo.ps1                      # the tour → docs\demo.gif
+.EXAMPLE
+  .\tools\record-demo.ps1 -Session workspace   # projects and work → docs\workspace.gif
 #>
-param([string]$OutFile = (Join-Path $PSScriptRoot '..\docs\demo.gif'), [int]$Columns = 120, [int]$Rows = 32, [int]$Width = 1100)
+param([ValidateSet('tour', 'workspace')][string]$Session = 'tour', [string]$OutFile = '', [int]$Columns = 120, [int]$Rows = 32, [int]$Width = 1100)
 $ErrorActionPreference = 'Stop'
+if (-not $OutFile) { $OutFile = Join-Path $PSScriptRoot "..\docs\$(if ($Session -eq 'tour') { 'demo' } else { 'workspace' }).gif" }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 # Public, not %TEMP%: paths some commands print must not carry the user name
 $work = Join-Path $env:PUBLIC 'termistry-demo'
@@ -26,8 +29,46 @@ Copy-Item "$root\src\server\*" "$profileDir\server" -Recurse
 Set-Content "$sandbox\.config\termistry\lang" 'en'
 Set-Content "$sandbox\.config\termistry\theme" 'mocha'
 
-# The session: sleep <seconds> · type <text> · key <name> [times] (Enter, Tab, Esc, Backspace, Up, Down, Left, Right, F1, Ctrl+R, Alt+C)
-$steps = @'
+# The sessions: sleep <seconds> · type <text> · key <name> [times] (Enter, Tab, Esc, Backspace, Up, Down, Left, Right, F1, Ctrl+R, Ctrl+A, Alt+C)
+$sessions = @{}
+$sessions.workspace = @'
+sleep 2
+type work .
+key Enter
+sleep 3.5
+type work
+key Enter
+sleep 3
+type api
+sleep 1.5
+key Enter
+sleep 2
+type work pin
+key Enter
+sleep 2
+type cd ..
+key Enter
+sleep 1
+type work import .
+key Enter
+sleep 3
+key Ctrl+A
+sleep 1.2
+key Enter
+sleep 2
+type work
+key Enter
+sleep 3.5
+key Esc
+sleep 1
+type work list
+key Enter
+sleep 3.5
+done
+type exit
+key Enter
+'@
+$sessions.tour = @'
 sleep 2
 type ll
 key Enter
@@ -102,7 +143,7 @@ done
 type exit
 key Enter
 '@
-Set-Content "$work\steps.txt" $steps
+Set-Content "$work\steps.txt" $sessions[$Session]
 
 @'
 Host prod-1
@@ -151,6 +192,22 @@ git switch -q -c feature/checkout
 "export const VERSION = '2.4.0';" | Set-Content "$demo\src\version.js"
 git add src/version.js
 Pop-Location
+
+if ($Session -eq 'workspace') {
+    # more projects next to shop: three in the list, two for work import to find
+    foreach ($p in @{ n = 'api'; f = 'go.mod' }, @{ n = 'infra'; f = 'compose.yaml' }, @{ n = 'blog'; f = 'package.json' }, @{ n = 'cli'; f = 'Cargo.toml' }) {
+        $dir = Join-Path $sandbox "code\$($p.n)"
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        '' | Set-Content (Join-Path $dir $p.f)
+        git -C $dir init -q -b main
+    }
+    New-Item -ItemType Directory -Force "$sandbox\notes\ideas" | Out-Null
+    $code = Join-Path $sandbox 'code'
+    [IO.File]::WriteAllLines("$sandbox\.config\termistry\projects.tsv", [string[]]@(
+        "$demo`tpin`tnode,docker", "$code\api`t`tgo", "$code\infra`t`tdocker", "$sandbox\notes\ideas`t`t"))
+    [IO.File]::WriteAllLines("$sandbox\.config\termistry\projects-ssh.tsv", [string[]]@(
+        "$demo`tprod`tprod-1`t/srv/shop", "$demo`tstaging`tstaging`t~/shop"))
+}
 
 @'
 apiVersion: v1
@@ -210,6 +267,7 @@ public static class DemoPlayer {
             case "F1": Send(0x70, '\0', 0); break;
             case "Ctrl+R": Send(0x52, '\x12', 0x08); break;
             case "Alt+C": Send(0x43, 'c', 0x02); break;
+            case "Ctrl+A": Send(0x41, '\x01', 0x08); break;
             default: throw new ArgumentException(name);
         }
     }
