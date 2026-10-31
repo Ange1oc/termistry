@@ -275,7 +275,6 @@ if ('setup' -in $Only) {
     $git2 = Join-Path $setupHome2 '.gitconfig'
     if (Get-Command git -ErrorAction Ignore) {
         git config --file $git2 delta.minus-style 'bold red'                # the user's own
-        git config --file $git2 delta.plus-style 'syntax "#323C3F"'         # left by the first version
     }
     $out5 =Invoke-Sandboxed $setupHome2 {
         (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $setup -Lang en -Theme gruvbox -SshTabs prod,staging -StartingDirectory 'D:\code' -SkipApps -ProfileDir $pdir2 2>&1 | ForEach-Object { "$_" }) -join "`n"
@@ -309,9 +308,8 @@ if ('setup' -in $Only) {
             $out6 = Invoke-Sandboxed $setupHome2 { (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $setup -Lang en -SkipApps -ProfileDir $pdir2 2>&1 | ForEach-Object { "$_" }) -join "`n" }
             AssertMatch $out6 '\.gitconfig - unchanged' 'second run leaves git alone'
         }
-        Test 'git: only the colors the first version set are removed' {
+        Test 'git: delta settings of the user stay' {
             AssertEq (git config --file $git2 --get delta.minus-style) 'bold red' 'own style kept'
-            AssertEq (git config --file $git2 --get delta.plus-style) $null 'old style removed'
         }
     } else { Skip 'git delta config' 'git or delta not installed' }
 

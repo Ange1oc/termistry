@@ -17,7 +17,7 @@ $render = Join-Path $PSScriptRoot 'render-terminal.ps1'
 $OutDir = (New-Item -ItemType Directory -Force $OutDir).FullName
 $work = Join-Path ([IO.Path]::GetTempPath()) 'termistry-shots'
 if (Test-Path $work) { Remove-Item $work -Recurse -Force }
-New-Item -ItemType Directory -Force "$work\home\profile\bin", "$work\home\profile\server", "$work\home\.config\ohmyposh", "$work\home\.cache" | Out-Null
+New-Item -ItemType Directory -Force "$work\home\profile\bin", "$work\home\profile\server", "$work\home\.cache" | Out-Null
 
 Copy-Item "$root\src\profile\*" "$work\home\profile" -Recurse -Force
 Copy-Item "$root\src\server\*" "$work\home\profile\server" -Recurse -Force

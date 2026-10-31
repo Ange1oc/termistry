@@ -109,13 +109,6 @@ test_bash_profile_warn() {
     rm -f "$HOME/.bash_profile"
     has "$out" '~/.bash_profile не подключает'
 }
-test_legacy_label() {
-    installer remove '' ru >/dev/null
-    rm -f "$HOME/.config/bashrc-local.conf"
-    printf '# old\nPROMPT_ENV=legacy\n' > "$HOME/.bashrc.local"
-    local out; out=$(installer install '' ru)
-    has "$out" 'перенесена' && grep -q '^PROMPT_ENV=legacy$' "$HOME/.config/bashrc-local.conf"
-}
 test_broken_payload() {
     local s; s=$(<"$src/install.sh")
     s=${s//__ACTION__/install}; s=${s//__ENV__/}; s=${s//__LANG__/ru}
@@ -137,7 +130,6 @@ t 'other lines in the conf survive'        test_conf_kept
 t 'custom files: up to date or refreshed'  test_custom_update
 t 'no ~/.bashrc: created with the hook'    test_no_bashrc
 t '~/.bash_profile without bashrc warns'   test_bash_profile_warn
-t 'label migrates from an old bashrc.local' test_legacy_label
 t 'a broken payload is refused, nothing changes' test_broken_payload
 installer install prod ru >/dev/null
 

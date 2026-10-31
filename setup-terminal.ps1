@@ -504,12 +504,6 @@ function Get-TerminalTheme([string]$Name) {
 $EmbeddedFiles['lang.ps1'] = @'
 $global:LangFile = Join-Path $HOME '.config\termistry\lang'
 
-function global:Get-LangName {
-    $name = if (Test-Path $LangFile) { (Get-Content $LangFile -First 1).Trim().ToLower() }
-    if ($name -in 'ru', 'en') { return $name }
-    if ((Get-Culture).TwoLetterISOLanguageName -eq 'ru') { 'ru' } else { 'en' }
-}
-
 $global:Strings = @{
     ru = @{
         help_title    = '✦ Что умеет мой терминал'
@@ -988,7 +982,6 @@ $EmbeddedFiles['toolkit.ps1'] = @'
 # Core: loaded before the first prompt. The commands live in toolkit-lazy.ps1 and workspace.ps1,
 # which Complete-Termistry loads once the prompt is on screen.
 function _tkRgb([int]$hex) { $PSStyle.Foreground.FromRgb($hex) }
-function _tkBg([int]$hex) { $PSStyle.Background.FromRgb($hex) }
 
 # Get-Command without module auto-discovery, which costs 0.3-2 s for every name that does not exist.
 # The preference is only honored at global scope, so it is flipped for the duration of the call.
@@ -3472,7 +3465,7 @@ hook='[ -f ~/.bashrc.local ] && . ~/.bashrc.local   # prompt, history, helpers (
 declare -A M_ru=(
     [removed_hook]='строка подключения убрана из ~/.bashrc' [backup]='бэкап' [kept]='~/.config/projects, ~/.config/bashrc-local.conf и ~/.bashrc.d оставлены'
     [uptodate]='уже актуален' [syntax_err]='синтаксическая ошибка - ничего не меняю' [load_err]='пробная загрузка с ошибками - ничего не меняю:'
-    [checked]='проверка: синтаксис и пробная загрузка' [label]='метка' [none]='нет' [lang]='язык' [migrated]='метка перенесена из старой версии'
+    [checked]='проверка: синтаксис и пробная загрузка' [label]='метка' [none]='нет' [lang]='язык'
     [created]='создан' [hook_present]='~/.bashrc уже подключает ~/.bashrc.local' [hook_added]='~/.bashrc: добавлена строка подключения'
     [profile_warn]='~/.bash_profile не подключает ~/.bashrc - добавь: [ -f ~/.bashrc ] && . ~/.bashrc' [profile_created]='создан ~/.bash_profile (подключает ~/.bashrc при входе)'
     [projects]='проекты' [relogin]='перезайди по ssh, затем help'
@@ -3480,7 +3473,7 @@ declare -A M_ru=(
 declare -A M_en=(
     [removed_hook]='hook line removed from ~/.bashrc' [backup]='backup' [kept]='~/.config/projects, ~/.config/bashrc-local.conf and ~/.bashrc.d kept'
     [uptodate]='already up to date' [syntax_err]='syntax error - nothing changed' [load_err]='trial load failed - nothing changed:'
-    [checked]='checked: syntax and trial load' [label]='label' [none]='none' [lang]='language' [migrated]='label migrated from the old version'
+    [checked]='checked: syntax and trial load' [label]='label' [none]='none' [lang]='language'
     [created]='created' [hook_present]='~/.bashrc already sources ~/.bashrc.local' [hook_added]='~/.bashrc: hook line added'
     [profile_warn]='~/.bash_profile does not source ~/.bashrc - add: [ -f ~/.bashrc ] && . ~/.bashrc' [profile_created]='created ~/.bash_profile (sources ~/.bashrc on login)'
     [projects]='projects' [relogin]='reconnect over ssh, then help'
@@ -3539,9 +3532,6 @@ if [ -n "$env_label" ]; then
     [ "$env_label" = none ] && env_label=''
 elif [ -f "$conf" ]; then
     env_label=$(sed -n 's/^PROMPT_ENV=\([A-Za-z0-9_-]*\).*/\1/p' "$conf" | head -n1)
-elif [ -f ~/.bashrc.local ]; then
-    env_label=$(sed -n 's/^PROMPT_ENV=\([A-Za-z0-9_-]*\).*/\1/p' ~/.bashrc.local | head -n1)
-    [ -n "$env_label" ] && echo "$ok $(m migrated): $env_label"
 fi
 printf 'PROMPT_ENV=%s\nLANG_UI=%s\n' "$env_label" "$lang" >> "$work/conf"
 cat "$work/conf" > "$conf"
@@ -3884,11 +3874,6 @@ else {
     foreach ($k in $gitSettings.Keys) {
         $current = git config --global --get $k 2>$null
         if ($current -ne $gitSettings[$k]) { git config --global $k $gitSettings[$k]; $changed++ }
-    }
-    # Fixed colors the first version set; they are removed only if still exactly those, never the user's own
-    $legacy = @{ 'delta.minus-style' = 'syntax "#3E2E40"'; 'delta.minus-emph-style' = 'syntax "#5E3F53"'; 'delta.plus-style' = 'syntax "#323C3F"'; 'delta.plus-emph-style' = 'syntax "#475950"' }
-    foreach ($k in $legacy.Keys) {
-        if ((git config --global --get $k 2>$null) -eq $legacy[$k]) { git config --global --unset $k; $changed++ }
     }
     if ($changed) { Ok ($L.git_changed -f $changed) } else { Ok $L.git_same }
 }

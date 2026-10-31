@@ -455,11 +455,6 @@ else {
         $current = git config --global --get $k 2>$null
         if ($current -ne $gitSettings[$k]) { git config --global $k $gitSettings[$k]; $changed++ }
     }
-    # Fixed colors the first version set; they are removed only if still exactly those, never the user's own
-    $legacy = @{ 'delta.minus-style' = 'syntax "#3E2E40"'; 'delta.minus-emph-style' = 'syntax "#5E3F53"'; 'delta.plus-style' = 'syntax "#323C3F"'; 'delta.plus-emph-style' = 'syntax "#475950"' }
-    foreach ($k in $legacy.Keys) {
-        if ((git config --global --get $k 2>$null) -eq $legacy[$k]) { git config --global --unset $k; $changed++ }
-    }
     if ($changed) { Ok ($L.git_changed -f $changed) } else { Ok $L.git_same }
 }
 

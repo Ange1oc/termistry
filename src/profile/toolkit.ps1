@@ -1,7 +1,6 @@
 # Core: loaded before the first prompt. The commands live in toolkit-lazy.ps1 and workspace.ps1,
 # which Complete-Termistry loads once the prompt is on screen.
 function _tkRgb([int]$hex) { $PSStyle.Foreground.FromRgb($hex) }
-function _tkBg([int]$hex) { $PSStyle.Background.FromRgb($hex) }
 
 # Get-Command without module auto-discovery, which costs 0.3-2 s for every name that does not exist.
 # The preference is only honored at global scope, so it is flipped for the duration of the call.

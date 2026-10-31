@@ -1,11 +1,5 @@
 $global:LangFile = Join-Path $HOME '.config\termistry\lang'
 
-function global:Get-LangName {
-    $name = if (Test-Path $LangFile) { (Get-Content $LangFile -First 1).Trim().ToLower() }
-    if ($name -in 'ru', 'en') { return $name }
-    if ((Get-Culture).TwoLetterISOLanguageName -eq 'ru') { 'ru' } else { 'en' }
-}
-
 $global:Strings = @{
     ru = @{
         help_title    = '✦ Что умеет мой терминал'
