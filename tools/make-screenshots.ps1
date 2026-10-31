@@ -6,24 +6,26 @@
 
 .EXAMPLE
   .\tools\make-screenshots.ps1
+.EXAMPLE
+  .\tools\make-screenshots.ps1 -Lang ru -OutDir $env:TEMP\shots-ru
 #>
-param([string]$OutDir = (Join-Path $PSScriptRoot '..\docs'))
+param([string]$OutDir = (Join-Path $PSScriptRoot '..\docs'), [ValidateSet('en', 'ru')][string]$Lang = 'en')
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $render = Join-Path $PSScriptRoot 'render-terminal.ps1'
 $OutDir = (New-Item -ItemType Directory -Force $OutDir).FullName
-$work = Join-Path ([IO.Path]::GetTempPath()) 'terminal-setup-shots'
+$work = Join-Path ([IO.Path]::GetTempPath()) 'termistry-shots'
 if (Test-Path $work) { Remove-Item $work -Recurse -Force }
 New-Item -ItemType Directory -Force "$work\home\profile\bin", "$work\home\profile\server", "$work\home\.config\ohmyposh", "$work\home\.cache" | Out-Null
 
 Copy-Item "$root\src\profile\*" "$work\home\profile" -Recurse -Force
 Copy-Item "$root\src\server\*" "$work\home\profile\server" -Recurse -Force
-@'
-# help: погода в городе
+@"
+# help: $(if ($Lang -eq 'ru') { 'погода в городе' } else { 'weather in a city' })
 import sys
 print("sunny in", *sys.argv[1:])
-'@ | Set-Content "$work\home\profile\bin\weather.py" -Encoding utf8
+"@ | Set-Content "$work\home\profile\bin\weather.py" -Encoding utf8
 @'
 function deploy { ssh prod 'cd ~/shop && git pull && docker compose up -d --build' }
 abbr dcu 'docker compose up -d --build'
@@ -41,7 +43,7 @@ New-Item -ItemType Directory -Force "$demo\src", "$demo\deploy" | Out-Null
 Push-Location $demo
 git init -q -b main; git config user.email ''; git config user.name 'demo'
 git add -A; git commit -q -m 'init'
-"# shop`n`nИнтернет-магазин. Запуск: npm run dev" | Set-Content "$demo\README.md"
+"# shop`n`nOnline shop. Run: npm run dev" | Set-Content "$demo\README.md"
 "export const VERSION = '2.4.0';" | Set-Content "$demo\src\version.js"
 git add src/version.js
 Pop-Location
@@ -69,13 +71,15 @@ $capture = @"
 `$env:KUBECONFIG = '$kube'
 `$PROFILE = '$work\home\profile\Microsoft.PowerShell_profile.ps1'
 . `$PROFILE *> `$null
+`$global:LangName = '$Lang'; `$global:TkStr = `$Strings['$Lang']
+[cultureinfo]::CurrentCulture ='$(if ($Lang -eq 'ru') { 'ru-RU' } else { 'en-US' })'
 `$W = 100
 Update-TsGitStatus '$demo'
 function Prompt-Line([string]`$Dir, [int]`$Status = 0, [int]`$Ms = 0) {
     `$global:TsGit.Time = Get-Date
     ((Get-TsPrompt -Dir `$Dir -Status `$Status -Ms `$Ms -Width `$W) -replace "``e\]0;[^``a]*``a", '').TrimEnd("``n")
 }
-function Typed([string]`$Cmd) {     # как подсветит PSReadLine: команда, параметры, строки
+function Typed([string]`$Cmd) {     # highlighted the way PSReadLine does it: command, parameters, strings
     `$p = `$global:Palette
     `$tokens = `$Cmd -split ' '
     `$out = for (`$i = 0; `$i -lt `$tokens.Count; `$i++) {
@@ -87,10 +91,14 @@ function Typed([string]`$Cmd) {     # как подсветит PSReadLine: ко
 }
 function Capture([scriptblock]`$Block) { ((& `$Block *>&1) | ForEach-Object { "`$_" }) -join "``n" }
 function Scene([string]`$Name, [string]`$Text) {
-    `$Text = `$Text.Replace('~\..\Temp\terminal-setup-shots', '~\code').Replace('$work', '~\code')
+    `$Text = `$Text.Replace('~\..\Temp\termistry-shots', '~\code').Replace('$work', '~\code')
     [IO.File]::WriteAllText('$work\' + `$Name + '.txt', `$Text, [Text.UTF8Encoding]::new(`$false))
 }
-function Demo([string]`$Text) { `$Text.Replace(`$env:COMPUTERNAME, 'workstation') }
+function Demo([string]`$Text) {
+    `$Text = `$Text.Replace(`$env:COMPUTERNAME, 'workstation').Replace((Get-CimInstance Win32_OperatingSystem).Caption, 'Microsoft Windows 11 Pro')
+    foreach (`$v in Get-Volume) { if (`$v.FileSystemLabel) { `$Text = `$Text.Replace(' · ' + `$v.FileSystemLabel, '') } }
+    `$Text
+}
 
 Set-Location '$demo'
 `$hero = @(
@@ -105,7 +113,7 @@ Scene 'hero' `$hero
 Scene 'help' (Capture { Show-TkHelp (@(`$TkStr.sections | Where-Object { `$_.Key -in 'input', 'git', 'ssh', 'mine' }) + @(Get-TkUserSection)) })
 
 `$sys = Capture { my sys }
-`$cut = `$sys.IndexOf('контейнеры'); if (`$cut -gt 0) { `$sys = `$sys.Substring(0, `$sys.LastIndexOf("``n", `$cut)).TrimEnd() }
+`$cut = `$sys.IndexOf(`$TkStr.sys_containers); if (`$cut -gt 0) { `$sys = `$sys.Substring(0, `$sys.LastIndexOf("``n", `$cut)).TrimEnd() }
 Scene 'my-sys' ((Prompt-Line '$demo') + (Typed 'my sys') + "``n" + (Demo `$sys))
 
 # 4. my cmds + new
@@ -121,7 +129,7 @@ foreach (`$f in `$Themes.Keys) {
 }
 "@
 [IO.File]::WriteAllText("$work\capture.ps1", $capture, [Text.UTF8Encoding]::new($false))
-Write-Host '  захват PowerShell…'
+Write-Host '  capturing PowerShell…'
 & (Get-Command pwsh).Source -NoProfile -NoLogo -File "$work\capture.ps1"
 
 $serverScript = @'
@@ -140,15 +148,16 @@ case "$*" in
 esac
 EOF
 chmod +x "$T/bin/docker"; export PATH=$T/bin:$PATH
-printf '#!/bin/bash\n# help: бэкап базы в S3\n' > "$HOME/bin/backup-db"; chmod +x "$HOME/bin/backup-db"
-mkdir -p "$HOME/.config" "$HOME/.bashrc.d"; printf 'PROMPT_ENV=prod\n' > "$HOME/.config/bashrc-local.conf"
+if [[ $2 == ru ]]; then h='бэкап базы в S3'; else h='database backup to S3'; fi
+printf '#!/bin/bash\n# help: %s\n' "$h" > "$HOME/bin/backup-db"; chmod +x "$HOME/bin/backup-db"
+mkdir -p "$HOME/.config" "$HOME/.bashrc.d"; printf 'PROMPT_ENV=prod\nLANG_UI=%s\n' "$2" > "$HOME/.config/bashrc-local.conf"
 cp "$1" "$HOME/.bashrc.local"
 cd "$HOME/apps/shop"; git init -q -b main 2>/dev/null; git -c user.email= -c user.name=d commit -q --allow-empty -m init 2>/dev/null; echo x > new.txt; git add new.txt
 host=$(hostname); me=$(whoami)
 fix() { sed -e "s/$host/prod-1/g" -e "s/\b$me\b/deploy/g" -e 's/\x01//g; s/\x02//g'; }
 bash --norc -i -c '
   source ~/.bashrc.local 2>/dev/null
-  printf "\e[90m  проекты: shop api · help - шпаргалка · sys - состояние сервера\e[0m\n"
+  printf "\e[90m  %s: shop api · %s\e[0m\n" "$(__t projects)" "$(__t banner)"
   __ts=$((SECONDS-12)); __prompt; printf "%s" "${PS1@P}"; printf "sys\n"; sys
   true; __prompt; printf "%s" "${PS1@P}"; printf "shop\n"; shop
   __prompt; printf "%s" "${PS1@P}"; printf "shop logs worker\n"
@@ -159,13 +168,13 @@ bash --norc -i -c '
 rm -rf "$T"
 '@
 [IO.File]::WriteAllText("$work\server.sh", ($serverScript -replace "`r`n", "`n"), [Text.UTF8Encoding]::new($false))
-Write-Host '  захват сервера (WSL)…'
+Write-Host '  capturing the server (WSL)…'
 $wslWork = wsl wslpath -a ($work -replace '\\', '/')
 $wslBashrc = wsl wslpath -a (($root -replace '\\', '/') + '/src/server/bashrc.local')
-$serverOut = wsl bash "$wslWork/server.sh" "$wslBashrc"
+$serverOut = wsl bash "$wslWork/server.sh" "$wslBashrc" $Lang
 [IO.File]::WriteAllText("$work\server.txt", (($serverOut -join "`n") -replace "`r", ''), [Text.UTF8Encoding]::new($false))
 
-Write-Host '  рендер…'
+Write-Host '  rendering…'
 & $render -InputFile "$work\hero.txt" -OutFile "$OutDir\hero.png" -Title 'PowerShell 7 · Windows Terminal'
 & $render -InputFile "$work\help.txt" -OutFile "$OutDir\help.png" -Title 'help'
 & $render -InputFile "$work\my-sys.txt" -OutFile "$OutDir\my-sys.png" -Title 'my sys'
