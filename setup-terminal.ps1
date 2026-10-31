@@ -1116,6 +1116,15 @@ function Repair-CommandLayout([string]$Line) {
     Convert-Layout $Line
 }
 
+# ── project types: file name → type, plain data so custom.ps1 can add to it ──
+# The prompt checks those it shows (versions for node, python, go, rust; an icon for docker) when the folder
+# changes; the Workspace list shows every type.
+$global:ProjectMarkers = [ordered]@{
+    'package.json' = 'node'; 'pyproject.toml' = 'python'; 'requirements.txt' = 'python'; 'go.mod' = 'go'; 'Cargo.toml' = 'rust'
+    'compose.yaml' = 'docker'; 'compose.yml' = 'docker'; 'docker-compose.yml' = 'docker'; 'docker-compose.yaml' = 'docker'; 'Dockerfile' = 'docker'
+    'pom.xml' = 'java'; 'build.gradle' = 'java'; 'build.gradle.kts' = 'java'; 'composer.json' = 'php'; 'Gemfile' = 'ruby'
+}
+
 # ── bin\: every script becomes a command, runner chosen by extension ─────────
 $global:ScriptRunners = [ordered]@{
     '.ps1' = @('pwsh -NoProfile -File')
@@ -2100,30 +2109,77 @@ $global:TsRedraw = $false
 $global:TsLast = @{ Status = 0; Ms = 0 }
 $global:TsLastExit = 0
 $global:TsLastHistoryId = 0
+$global:TsCtx = @{}
+$global:TsNetDrives = @{}
+$global:TsNoFile = [datetime]::FromFileTimeUtc(0).Ticks
+$global:TsPromptTypes = 'node', 'python', 'go', 'rust', 'docker'
 
+# .NET calls instead of Test-Path / Get-Content: the prompt runs them on every Enter and cmdlets cost ~1 ms each
 function global:Get-TsGitRoot([string]$Dir) {
     if ($global:TsGitRoots.ContainsKey($Dir)) { return $global:TsGitRoots[$Dir] }
     $d = $Dir; $root = ''
     while ($d) {
-        if (Test-Path -LiteralPath (Join-Path $d '.git')) { $root = $d; break }
-        $d = Split-Path $d -Parent
+        $git = [IO.Path]::Combine($d, '.git')
+        if ([IO.Directory]::Exists($git) -or [IO.File]::Exists($git)) { $root = $d; break }
+        $d = [IO.Path]::GetDirectoryName($d)
     }
     $global:TsGitRoots[$Dir] = $root
     $root
 }
 
 function global:Get-TsGitBranch([string]$Root) {
-    $gitDir = Join-Path $Root '.git'
-    if (Test-Path -LiteralPath $gitDir -PathType Leaf) {
-        $line = Get-Content -LiteralPath $gitDir -First 1
-        if ($line -match '^gitdir:\s*(.+)$') { $gitDir = $Matches[1]; if (-not [IO.Path]::IsPathRooted($gitDir)) { $gitDir = Join-Path $Root $gitDir } }
-    }
-    $head = Join-Path $gitDir 'HEAD'
-    if (-not (Test-Path -LiteralPath $head)) { return '' }
-    $ref = Get-Content -LiteralPath $head -First 1
+    $gitDir = [IO.Path]::Combine($Root, '.git')
+    try {
+        if ([IO.File]::Exists($gitDir) -and [IO.File]::ReadAllText($gitDir) -match '^gitdir:\s*(\S.*?)\s*$') {
+            $gitDir = $Matches[1]; if (-not [IO.Path]::IsPathRooted($gitDir)) { $gitDir = [IO.Path]::Combine($Root, $gitDir) }
+        }
+        $ref = [IO.File]::ReadAllText([IO.Path]::Combine($gitDir, 'HEAD')).Trim()
+    } catch { return '' }
     if ($ref -match '^ref: refs/heads/(.+)$') { return $Matches[1] }
     if ($ref.Length -ge 7) { return $ref.Substring(0, 7) }
     ''
+}
+
+function global:Test-TsNetworkPath([string]$Dir) {
+    if ($Dir.StartsWith('\\')) { return $true }
+    $drive = $Dir.Substring(0, 1)
+    if (-not $global:TsNetDrives.ContainsKey($drive)) {
+        $global:TsNetDrives[$drive] = try { [IO.DriveInfo]::new($drive).DriveType -eq 'Network' } catch { $false }
+    }
+    $global:TsNetDrives[$drive]
+}
+
+# What a folder is: its project root (git root, or the folder itself when it has a marker file), the project
+# types found there and in the root, and whether it is a k8s folder (found on first need). Worked out when the
+# folder changes and reused while the folder and its root keep their timestamps, which a new or deleted file
+# updates; so an unchanged prompt costs one or two timestamps instead of a dozen file checks. On network
+# drives nothing is checked but the git root, and the result is kept until the folder changes.
+function global:Get-TsContext([string]$Dir) {
+    $ctx = $global:TsCtx[$Dir]
+    if ($ctx -and ($ctx.Net -or $ctx.Stamp -eq (Get-TsContextStamp $ctx))) { return $ctx }
+    if ($Dir -notmatch '^([A-Za-z]:\\|\\\\)') { return @{ Dir = $Dir; Root = ''; Project = ''; Types = @(); Kube = $false; Net = $true } }
+    $net = Test-TsNetworkPath $Dir
+    [void]$global:TsGitRoots.Remove($Dir)
+    $root = Get-TsGitRoot $Dir
+    $types = [Collections.Generic.List[string]]::new()
+    if (-not $net) {
+        foreach ($d in @($Dir; if ($root -and $root -ne $Dir) { $root })) {
+            foreach ($m in $global:ProjectMarkers.GetEnumerator()) {
+                if ($m.Value -in $global:TsPromptTypes -and -not $types.Contains($m.Value) -and [IO.File]::Exists([IO.Path]::Combine($d, $m.Key))) { $types.Add($m.Value) }
+            }
+        }
+    }
+    $ctx = @{ Dir = $Dir; Root = $root; Project = $(if ($root) { $root } elseif ($types.Count) { $Dir } else { '' }); Types = $types.ToArray(); Kube = $null; Net = $net }
+    $ctx.Stamp = if ($net) { 0 } else { Get-TsContextStamp $ctx }
+    if ($global:TsCtx.Count -ge 256) { $global:TsCtx.Clear() }
+    $global:TsCtx[$Dir] = $ctx
+    $ctx
+}
+
+function global:Get-TsContextStamp($Ctx) {
+    $s = [IO.Directory]::GetLastWriteTimeUtc($Ctx.Dir).Ticks
+    if ($Ctx.Root -and $Ctx.Root -ne $Ctx.Dir) { $s += [IO.Directory]::GetLastWriteTimeUtc($Ctx.Root).Ticks }
+    $s
 }
 
 # Runs git once; called from OnIdle, never from the prompt itself. $LASTEXITCODE belongs to the user's last command.
@@ -2160,11 +2216,12 @@ function global:Update-TsGitStatus([string]$Root) {
 
 function global:Get-TsKubeText {
     $file = if ($env:KUBECONFIG) { ($env:KUBECONFIG -split ';')[0] } else { Join-Path $HOME '.kube\config' }
-    if (-not (Test-Path -LiteralPath $file)) { return '' }
-    $stamp = "$file|$((Get-Item -LiteralPath $file).LastWriteTimeUtc.Ticks)"
+    $ticks = [IO.File]::GetLastWriteTimeUtc($file).Ticks
+    if ($ticks -eq $global:TsNoFile) { return '' }
+    $stamp = "$file|$ticks"
     if ($global:TsKube.Stamp -eq $stamp) { return $global:TsKube.Text }
     $text = ''; $ctx = ''
-    $yaml = Get-Content -LiteralPath $file -Raw
+    $yaml = [IO.File]::ReadAllText($file)
     if ($yaml -match '(?m)^current-context:\s*(\S+)') {
         $ctx = $Matches[1]
         $ns = ''
@@ -2213,11 +2270,12 @@ function global:Get-TsShortPath([string]$Dir) {
 function global:Get-TsPrompt {
     param([string]$Dir = $PWD.ProviderPath, [int]$Status = 0, [int]$Ms = 0, [int]$Width = 100)
     $c = $global:TK
-    $leaf = Split-Path $Dir -Leaf; if (-not $leaf) { $leaf = $Dir }
+    $leaf = [IO.Path]::GetFileName($Dir); if (-not $leaf) { $leaf = $Dir }
     $title = "$([char]27)]0;$leaf$([char]7)"
 
+    $ctx = Get-TsContext $Dir
+    $root = $ctx.Root
     $left = "$($c.dim)╭─$($c.R) $($c.cmd)$([char]0xF07B) $(Get-TsShortPath $Dir)$($c.R)"
-    $root = Get-TsGitRoot $Dir
     if ($root) {
         $branch = Get-TsGitBranch $root
         $gitText = ''
@@ -2230,19 +2288,24 @@ function global:Get-TsPrompt {
         }
         $left += "  $($c.title)$([char]0xE0A0) $branch$($gitText -replace '\{(\w+)\}', { $c[$_.Groups[1].Value] })$($c.R)"
     }
-    if ($env:VIRTUAL_ENV -or [IO.File]::Exists("$Dir\pyproject.toml") -or [IO.File]::Exists("$Dir\requirements.txt")) {
+    $types = $ctx.Types
+    if ($env:VIRTUAL_ENV -or $types -contains 'python') {
         $v = Get-TsToolVersion python
-        if ($v) { $left += "  $($c.warn)$([char]0xE73C) $v$(if ($env:VIRTUAL_ENV) { " ($(Split-Path $env:VIRTUAL_ENV -Leaf))" })$($c.R)" }
+        if ($v) { $left += "  $($c.warn)$([char]0xE73C) $v$(if ($env:VIRTUAL_ENV) { " ($([IO.Path]::GetFileName($env:VIRTUAL_ENV)))" })$($c.R)" }
     }
-    if ([IO.File]::Exists("$Dir\package.json")) { $v = Get-TsToolVersion node; if ($v) { $left += "  $($c.ok)$([char]0xE718) $v$($c.R)" } }
-    if ([IO.File]::Exists("$Dir\go.mod")) { $v = Get-TsToolVersion go; if ($v) { $left += "  $($c.teal)$([char]0xE627) $v$($c.R)" } }
-    if ([IO.File]::Exists("$Dir\Cargo.toml")) { $v = Get-TsToolVersion rust; if ($v) { $left += "  $($c.accent)$([char]0xE7A8) $v$($c.R)" } }
+    if ($types -contains 'node') { $v = Get-TsToolVersion node; if ($v) { $left += "  $($c.ok)$([char]0xE718) $v$($c.R)" } }
+    if ($types -contains 'go') { $v = Get-TsToolVersion go; if ($v) { $left += "  $($c.teal)$([char]0xE627) $v$($c.R)" } }
+    if ($types -contains 'rust') { $v = Get-TsToolVersion rust; if ($v) { $left += "  $($c.accent)$([char]0xE7A8) $v$($c.R)" } }
+    if ($types -contains 'docker') { $left += "  $($c.teal)$([char]0xF308)$($c.R)" }
 
     $right = @()
     $kube = "$($global:Termistry.Kube)"
     if ($kube -and $kube -ne 'off' -and $kube -ne 'False') {
         $k = Get-TsKubeText
-        if ($k -and ($kube -eq 'always' -or $global:TsKube.Prod -or (Test-TsKubeDir $Dir) -or ($root -and $root -ne $Dir -and (Test-TsKubeDir $root)))) {
+        if ($k -and $kube -ne 'always' -and -not $global:TsKube.Prod -and $null -eq $ctx.Kube) {
+            $ctx.Kube = -not $ctx.Net -and ((Test-TsKubeDir $Dir) -or ($root -and $root -ne $Dir -and (Test-TsKubeDir $root)))
+        }
+        if ($k -and ($kube -eq 'always' -or $global:TsKube.Prod -or $ctx.Kube)) {
             $right += "$(if ($global:TsKube.Prod) { $c.err } else { $c.dim })$k$($c.R)"
         }
     }

@@ -183,6 +183,15 @@ function Repair-CommandLayout([string]$Line) {
     Convert-Layout $Line
 }
 
+# ── project types: file name → type, plain data so custom.ps1 can add to it ──
+# The prompt checks those it shows (versions for node, python, go, rust; an icon for docker) when the folder
+# changes; the Workspace list shows every type.
+$global:ProjectMarkers = [ordered]@{
+    'package.json' = 'node'; 'pyproject.toml' = 'python'; 'requirements.txt' = 'python'; 'go.mod' = 'go'; 'Cargo.toml' = 'rust'
+    'compose.yaml' = 'docker'; 'compose.yml' = 'docker'; 'docker-compose.yml' = 'docker'; 'docker-compose.yaml' = 'docker'; 'Dockerfile' = 'docker'
+    'pom.xml' = 'java'; 'build.gradle' = 'java'; 'build.gradle.kts' = 'java'; 'composer.json' = 'php'; 'Gemfile' = 'ruby'
+}
+
 # ── bin\: every script becomes a command, runner chosen by extension ─────────
 $global:ScriptRunners = [ordered]@{
     '.ps1' = @('pwsh -NoProfile -File')
