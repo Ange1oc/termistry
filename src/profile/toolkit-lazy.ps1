@@ -78,8 +78,12 @@ function global:Invoke-HelpPicker {
             "{0,-12}  {1}`t{2}" -f $s.Title, $shown, $insert
         }
     }
-    $pick = $lines | fzf --height=60% --prompt='help ❯ ' --header=$TkStr.picker_header --delimiter="`t" --with-nth=1 --tabstop=4
-    [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
+    $exit = $global:LASTEXITCODE
+    $pick = $lines | fzf --height=60% --prompt='help ❯ ' "--header=$($TkStr.picker_header)" --delimiter="`t" --with-nth=1 --tabstop=4
+    # fzf's exit code is not the user's: redraw the prompt as it was
+    $global:LASTEXITCODE = $exit
+    $global:TsRedraw = $true
+    try { [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt() } finally { $global:TsRedraw = $false }
     if ($pick) {
         $insert = ($pick -split "`t")[1]
         if ($insert) { [Microsoft.PowerShell.PSConsoleReadLine]::Insert($insert) }

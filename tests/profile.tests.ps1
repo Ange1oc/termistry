@@ -100,6 +100,13 @@ Test 'git counts: staged, modified, untracked, ahead, stash' {
     foreach ($x in '\+1', '~1', '\?1', '⇡1', '≡1') { AssertMatch $t $x 'counts' }
     AssertEq $global:TsGit.Pending '' 'pending cleared'
 }
+Test 'git counts take the colors of the current theme' {
+    $global:TsGit.Time = [datetime]::Now
+    try {
+        $global:Palette = $Themes['latte']; Set-TerminalPalette
+        AssertMatch (Get-TsPrompt -Dir $repo -Width 100) ([regex]::Escape("$($global:TK.ok)+1")) 'latte colors after a switch'
+    } finally { $global:Palette = $Themes[$global:ThemeName]; Set-TerminalPalette }
+}
 Test 'fresh counts are shown, stale ones stay until the refresh' {
     $global:TsGit.Time = [datetime]::Now
     AssertMatch (Plain (Get-TsPrompt -Dir $repo -Width 100)) 'main \+1 ~1 \?1 ⇡1 ≡1' 'fresh'
@@ -508,6 +515,15 @@ function Plan([scriptblock]$Step) { $global:FzfPlan.Add($Step) }
 # the next fzf call answers with the first line containing $Match; with --expect, $Key comes first like the real fzf
 function PickLine([string]$Match, [string]$Key = '') {
     Plan ({ param($lines, $argv) $hit = $lines | Where-Object { $_ -like "*$Match*" } | Select-Object -First 1; if ($argv -match '^--expect') { $Key; $hit } else { $hit } }.GetNewClosure())
+}
+Test 'F1 picker: header text, and fzf''s exit code does not reach the prompt' {
+    $global:FzfCalls.Clear()
+    $global:LASTEXITCODE = 0
+    Plan { $global:LASTEXITCODE = 130 }
+    try { Invoke-HelpPicker } catch {}   # InvokePrompt needs a live PSReadLine
+    AssertMatch ($global:FzfCalls[0].Args -join ' ') ([regex]::Escape("--header=$($TkStr.picker_header)")) 'header'
+    AssertEq $global:LASTEXITCODE 0 'exit code'
+    $global:FzfCalls.Clear()
 }
 $tree = Join-Path $Work 'tree'
 New-Item -ItemType Directory -Force "$tree\alpha\inner", "$tree\beta" | Out-Null

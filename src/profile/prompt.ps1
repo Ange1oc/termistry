@@ -55,14 +55,14 @@ function global:Update-TsGitStatus([string]$Root) {
     $stash = 0
     $stashLog = Join-Path $Root '.git\logs\refs\stash'
     if (Test-Path -LiteralPath $stashLog) { $stash = @(Get-Content -LiteralPath $stashLog).Count }
-    $c = $global:TK
+    # {color} placeholders, filled in by the prompt, so the counts follow a theme switch
     $parts = @()
-    if ($staged) { $parts += "$($c.ok)+$staged" }
-    if ($modified) { $parts += "$($c.accent)~$modified" }
-    if ($untracked) { $parts += "$($c.accent)?$untracked" }
-    if ($ahead) { $parts += "$($c.teal)⇡$ahead" }
-    if ($behind) { $parts += "$($c.teal)⇣$behind" }
-    if ($stash) { $parts += "$($c.dim)≡$stash" }
+    if ($staged) { $parts += "{ok}+$staged" }
+    if ($modified) { $parts += "{accent}~$modified" }
+    if ($untracked) { $parts += "{accent}?$untracked" }
+    if ($ahead) { $parts += "{teal}⇡$ahead" }
+    if ($behind) { $parts += "{teal}⇣$behind" }
+    if ($stash) { $parts += "{dim}≡$stash" }
     $g = $global:TsGit
     $g.Root = $Root; $g.Text = $(if ($parts) { ' ' + ($parts -join ' ') } else { '' }); $g.Time = [datetime]::Now; $g.Pending = ''
 }
@@ -137,7 +137,7 @@ function global:Get-TsPrompt {
             if ($g.Root -ne $root -or ([datetime]::Now - $g.Time).TotalSeconds -ge 2) { $g.Pending = $root }
             $g.Shown = $gitText
         }
-        $left += "  $($c.title)$([char]0xE0A0) $branch$gitText$($c.R)"
+        $left += "  $($c.title)$([char]0xE0A0) $branch$($gitText -replace '\{(\w+)\}', { $c[$_.Groups[1].Value] })$($c.R)"
     }
     if ($env:VIRTUAL_ENV -or [IO.File]::Exists("$Dir\pyproject.toml") -or [IO.File]::Exists("$Dir\requirements.txt")) {
         $v = Get-TsToolVersion python
