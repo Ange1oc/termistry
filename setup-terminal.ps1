@@ -34,7 +34,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$SetupVersion = '1.0.1'
+$SetupVersion = '1.1.0'
 $ProgressPreference = 'SilentlyContinue'
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
@@ -183,7 +183,7 @@ $ProfileFile = Join-Path $ProfileDir 'Microsoft.PowerShell_profile.ps1'
 # Embedded files, put here by build.ps1 from src/
 $EmbeddedFiles = [ordered]@{}
 $EmbeddedFiles['Microsoft.PowerShell_profile.ps1'] = @'
-$global:TermistryVersion = '1.0.1'
+$global:TermistryVersion = '1.1.0'
 $global:TermistryLoaded = $false
 $global:TsFiles = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'workspace.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh'
 $global:ProfileDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $PROFILE }
@@ -1408,7 +1408,7 @@ function global:srv {
         "__put '.bashrc.d/$($f.Name)' '$(& $b64 (& $read $f.FullName))'"
     }
     $script = (& $read (Join-Path $dir 'install.sh')).Replace('__ACTION__', $Action).Replace('__ENV__', $Env).Replace('__LANG__', $Lang)
-    $script = $script.Replace('__BASHRC_B64__', (& $b64 (& $read (Join-Path $dir 'bashrc.local')).Replace('1.0.1', $global:TermistryVersion)))
+    $script = $script.Replace('__BASHRC_B64__', (& $b64 (& $read (Join-Path $dir 'bashrc.local')).Replace('1.1.0', $global:TermistryVersion)))
     $script = $script.Replace('__INPUTRC_B64__', (& $b64 (& $read (Join-Path $dir 'inputrc'))))
     $script = $script.Replace('__CUSTOM_FILES__', ($custom -join "`n"))
     # the trailing newline PowerShell adds on pipe lands inside the final "# end" comment
@@ -2954,7 +2954,7 @@ public sealed class DeepHistoryPredictor : ICommandPredictor
 '@
 $EmbeddedFiles['server\bashrc.local'] = @'
 # ~/.bashrc.local - installed by `srv install <host>` from Termistry. Nothing runs in the background.
-# version: 1.0.1
+# version: 1.1.0
 # Per-server settings: ~/.config/bashrc-local.conf (PROMPT_ENV=prod, LANG_UI=en)
 # Your own: ~/.bashrc.d/*.sh and ~/bin/* (a "# help: ..." line shows up in help)
 

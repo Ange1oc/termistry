@@ -88,7 +88,7 @@ Prefer to read the script before running it? See [Verified install](#verified-in
 `setup-terminal.ps1` is a single self-contained file. Every release publishes it together with `SHA256SUMS`, so you can download a fixed version, check it, read it and only then run it:
 
 ```powershell
-$v = 'v1.0.1'
+$v = 'v1.1.0'
 $dir = New-Item -ItemType Directory -Force "$env:TEMP\termistry-$v"
 foreach ($f in 'setup-terminal.ps1', 'SHA256SUMS') {
     Invoke-WebRequest "https://github.com/Ange1oc/termistry/releases/download/$v/$f" -OutFile "$dir\$f" -UseBasicParsing
