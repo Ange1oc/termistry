@@ -1,4 +1,4 @@
-# The prompt is rendered in PowerShell itself (a few ms) instead of spawning oh-my-posh (~140 ms + git).
+# The prompt is rendered by PowerShell itself in a couple of milliseconds, no external program runs for it.
 # Branch comes from .git/HEAD, k8s context from kubeconfig; git status counts are fetched on PowerShell.OnIdle
 # and the prompt is redrawn in place, so a slow `git status` never delays the prompt.
 $global:TsGit = @{ Root = ''; Text = ''; Shown = ''; Time = [datetime]::MinValue; Pending = '' }

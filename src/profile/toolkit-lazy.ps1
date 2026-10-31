@@ -19,7 +19,6 @@ function global:Invoke-WithTimeout([string]$Command, [string[]]$Arguments, [int]
     $out.Result -split "`r?`n" | Where-Object { $_.Trim() }
 }
 
-# ── help ─────────────────────────────────────────────────────────────────────
 function global:Get-TkUserSection {
     $rows = @()
     foreach ($c in $global:UserCommands) { $rows += , ($c.Name, $c.Help, ("bin\" + $c.File)) }
@@ -90,7 +89,6 @@ function global:Invoke-HelpPicker {
     }
 }
 
-# ── ssh ──────────────────────────────────────────────────────────────────────
 function global:Get-SshHost {
     $config = Join-Path $HOME '.ssh\config'
     if (-not (Test-Path $config)) { return }
@@ -148,7 +146,6 @@ Register-ArgumentCompleter -Native -CommandName ssh, scp, sftp -ScriptBlock {
     }
 }
 
-# ── srv ──────────────────────────────────────────────────────────────────────
 function global:srv {
     param(
         [Parameter(Position = 0)][ValidateSet('install', 'remove', 'help')][string]$Action = 'help',
@@ -207,7 +204,6 @@ function global:Show-SrvHelp([string]$Dir) {
     Write-Host ''
 }
 
-# ── my ───────────────────────────────────────────────────────────────────────
 function global:my {
     param(
         [Parameter(Position = 0)][ArgumentCompleter({
@@ -466,7 +462,6 @@ function global:Show-MyCommands {
     Write-Host ''
 }
 
-# ── history ──────────────────────────────────────────────────────────────────
 if (Test-Path Alias:h) { Remove-Item Alias:h -Force }
 function global:h {
     param([string]$Filter, [int]$Count = 50, [int]$PageSize = 10)
@@ -558,7 +553,6 @@ function global:new {
     if ($global:isInteractive -and (Find-TkCommand code)) { code $path }
 }
 
-# ── theme / lang ─────────────────────────────────────────────────────────────
 function global:Get-TerminalSettingsPaths {
     $paths = foreach ($pkg in 'Microsoft.WindowsTerminal_8wekyb3d8bbwe', 'Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe') {
         Join-Path $env:LOCALAPPDATA "Packages\$pkg\LocalState\settings.json"
@@ -619,7 +613,6 @@ function global:lang {
 
 function global:ep { code $global:ProfileDir }
 
-# ── fzf helpers ──────────────────────────────────────────────────────────────
 # PowerShell piping into fzf throws "pipe is being closed" when fzf exits before the producer is done;
 # short lists go through Invoke-Fzf, long ones (fd, rg) are started by fzf itself via FZF_DEFAULT_COMMAND.
 function global:Invoke-Fzf([string[]]$Lines, [string[]]$Arguments) {
@@ -647,7 +640,6 @@ function global:Open-TsFile([string]$Path) {
     if (Find-TkCommand code) { code $Path } else { Invoke-Item $Path }
 }
 
-# ── nav: folders (and files with Ctrl+E) as a tree on fzf ────────────────────
 function global:nav {
     param([string]$Start = (Get-Location).Path)
     if (-not (Find-TkCommand fzf)) { return }
@@ -693,7 +685,6 @@ function global:nav {
     }
 }
 
-# ── pv: files with a preview pane; rgi: live grep; pk: kill picker; gbr: branch picker ──
 function global:pv {
     param([string]$Dir = '.', [string]$Query = '')
     $dir = (Resolve-Path -LiteralPath $Dir).Path
@@ -746,7 +737,7 @@ function global:gbr {
 
 function global:o { param([string]$Path = '.') Invoke-Item -LiteralPath $Path }
 
-# ── kubernetes: switch context / namespace, the prompt picks it up by itself ─
+# kctx and kns switch the kubectl context or namespace; the prompt picks the change up by itself
 function global:kctx([string]$Name) {
     if (-not (Find-TkCommand kubectl)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
     if (-not $Name) {
@@ -767,7 +758,7 @@ function global:kns([string]$Name) {
     if ($Name) { kubectl config set-context --current --namespace $Name }
 }
 
-# ── small helpers, same names as on the server ───────────────────────────────
+# ex, bak, psg, cb: the server bash has the same commands
 function global:ex([string]$Archive) {
     if (-not (Test-Path -LiteralPath $Archive)) { Write-Host "  $($TK.err)$($TkStr.ex_nofile -f $Archive)$($TK.R)"; return }
     $file = Get-Item -LiteralPath $Archive
@@ -801,7 +792,6 @@ function global:cb {
     Write-Host ("  {0}{1}{2}" -f $TK.dim, ($TkStr.cb_done -f $lines.Count), $TK.R)
 }
 
-# ── my config / doctor / update ──────────────────────────────────────────────
 function global:Get-ConfigLocations {
     $wt = Get-TerminalSettingsPaths | Select-Object -First 1
     [ordered]@{

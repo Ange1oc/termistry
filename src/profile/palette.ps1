@@ -1,5 +1,5 @@
 # Every theme uses the same 26 Catppuccin-style slots, so one table drives Windows Terminal,
-# the oh-my-posh prompt, PSReadLine colors and fzf. Add a theme here and it works everywhere.
+# the prompt, PSReadLine colors and fzf. Add a theme here and it works everywhere.
 $Themes = [ordered]@{
     mocha = @{
         title = 'Catppuccin Mocha'; dark = $true

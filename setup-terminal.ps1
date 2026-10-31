@@ -180,7 +180,7 @@ if (Test-Admin) { Info $L.admin_note }
 if (-not $ProfileDir) { $ProfileDir = Split-Path $PROFILE }
 $ProfileFile = Join-Path $ProfileDir 'Microsoft.PowerShell_profile.ps1'
 
-# ── Embedded files (build.ps1 puts them here from src/) ─────────────────────
+# Embedded files, put here by build.ps1 from src/
 $EmbeddedFiles = [ordered]@{}
 $EmbeddedFiles['Microsoft.PowerShell_profile.ps1'] = @'
 $global:TermistryVersion = '1.0.1'
@@ -385,7 +385,7 @@ if ($isInteractive) {
 '@
 $EmbeddedFiles['palette.ps1'] = @'
 # Every theme uses the same 26 Catppuccin-style slots, so one table drives Windows Terminal,
-# the oh-my-posh prompt, PSReadLine colors and fzf. Add a theme here and it works everywhere.
+# the prompt, PSReadLine colors and fzf. Add a theme here and it works everywhere.
 $Themes = [ordered]@{
     mocha = @{
         title = 'Catppuccin Mocha'; dark = $true
@@ -985,7 +985,7 @@ $global:Strings = @{
 }
 '@
 $EmbeddedFiles['toolkit.ps1'] = @'
-# Core: loaded before the first prompt. Everything the user types lives in toolkit-lazy.ps1,
+# Core: loaded before the first prompt. The commands live in toolkit-lazy.ps1 and workspace.ps1,
 # which Complete-Termistry loads once the prompt is on screen.
 function _tkRgb([int]$hex) { $PSStyle.Foreground.FromRgb($hex) }
 function _tkBg([int]$hex) { $PSStyle.Background.FromRgb($hex) }
@@ -1093,7 +1093,7 @@ function Get-TkBar([double]$Percent, [int]$Width = 20) {
     $color + ('█' * $filled) + $TK.dim + ('░' * ($Width - $filled)) + $TK.R + (' {0,3:N0}%' -f $Percent)
 }
 
-# ── abbreviations (fish-style: expand on space/Enter at command position) ────
+# Fish-style abbreviations: they expand on space or Enter in command position
 $global:Abbreviations = [System.Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
 
 function abbr {
@@ -1146,7 +1146,7 @@ foreach ($pair in @{ g = 'git'; k = 'kubectl'; d = 'docker'; dc = 'docker compos
     $global:Abbreviations[$pair.Key] = $pair.Value
 }
 
-# ── keyboard layout: a command typed in the Russian layout becomes its Latin counterpart ──
+# A command typed in the Russian layout becomes its Latin counterpart
 $TkLayoutMap = @{}
 $ru = 'ёйцукенгшщзхъфывапролджэячсмитьбюЁЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ'
 $en = '`qwertyuiop[]asdfghjkl;''zxcvbnm,.~QWERTYUIOP{}ASDFGHJKL:"ZXCVBNM<>'
@@ -1170,7 +1170,7 @@ function Repair-CommandLayout([string]$Line) {
     Convert-Layout $Line
 }
 
-# ── project types: file name → type, plain data so custom.ps1 can add to it ──
+# Project types by file name; plain data, so custom.ps1 can add to it.
 # The prompt checks those it shows (versions for node, python, go, rust; an icon for docker) when the folder
 # changes; the Workspace list shows every type.
 $global:ProjectMarkers = [ordered]@{
@@ -1179,7 +1179,7 @@ $global:ProjectMarkers = [ordered]@{
     'pom.xml' = 'java'; 'build.gradle' = 'java'; 'build.gradle.kts' = 'java'; 'composer.json' = 'php'; 'Gemfile' = 'ruby'
 }
 
-# ── bin\: every script becomes a command, runner chosen by extension ─────────
+# Every script in bin\ becomes a command; the extension picks the runner
 $global:ScriptRunners = [ordered]@{
     '.ps1' = @('pwsh -NoProfile -File')
     '.py'  = @('uv run', 'python')
@@ -1260,7 +1260,6 @@ function global:Invoke-WithTimeout([string]$Command, [string[]]$Arguments, [int]
     $out.Result -split "`r?`n" | Where-Object { $_.Trim() }
 }
 
-# ── help ─────────────────────────────────────────────────────────────────────
 function global:Get-TkUserSection {
     $rows = @()
     foreach ($c in $global:UserCommands) { $rows += , ($c.Name, $c.Help, ("bin\" + $c.File)) }
@@ -1331,7 +1330,6 @@ function global:Invoke-HelpPicker {
     }
 }
 
-# ── ssh ──────────────────────────────────────────────────────────────────────
 function global:Get-SshHost {
     $config = Join-Path $HOME '.ssh\config'
     if (-not (Test-Path $config)) { return }
@@ -1389,7 +1387,6 @@ Register-ArgumentCompleter -Native -CommandName ssh, scp, sftp -ScriptBlock {
     }
 }
 
-# ── srv ──────────────────────────────────────────────────────────────────────
 function global:srv {
     param(
         [Parameter(Position = 0)][ValidateSet('install', 'remove', 'help')][string]$Action = 'help',
@@ -1448,7 +1445,6 @@ function global:Show-SrvHelp([string]$Dir) {
     Write-Host ''
 }
 
-# ── my ───────────────────────────────────────────────────────────────────────
 function global:my {
     param(
         [Parameter(Position = 0)][ArgumentCompleter({
@@ -1707,7 +1703,6 @@ function global:Show-MyCommands {
     Write-Host ''
 }
 
-# ── history ──────────────────────────────────────────────────────────────────
 if (Test-Path Alias:h) { Remove-Item Alias:h -Force }
 function global:h {
     param([string]$Filter, [int]$Count = 50, [int]$PageSize = 10)
@@ -1799,7 +1794,6 @@ function global:new {
     if ($global:isInteractive -and (Find-TkCommand code)) { code $path }
 }
 
-# ── theme / lang ─────────────────────────────────────────────────────────────
 function global:Get-TerminalSettingsPaths {
     $paths = foreach ($pkg in 'Microsoft.WindowsTerminal_8wekyb3d8bbwe', 'Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe') {
         Join-Path $env:LOCALAPPDATA "Packages\$pkg\LocalState\settings.json"
@@ -1860,7 +1854,6 @@ function global:lang {
 
 function global:ep { code $global:ProfileDir }
 
-# ── fzf helpers ──────────────────────────────────────────────────────────────
 # PowerShell piping into fzf throws "pipe is being closed" when fzf exits before the producer is done;
 # short lists go through Invoke-Fzf, long ones (fd, rg) are started by fzf itself via FZF_DEFAULT_COMMAND.
 function global:Invoke-Fzf([string[]]$Lines, [string[]]$Arguments) {
@@ -1888,7 +1881,6 @@ function global:Open-TsFile([string]$Path) {
     if (Find-TkCommand code) { code $Path } else { Invoke-Item $Path }
 }
 
-# ── nav: folders (and files with Ctrl+E) as a tree on fzf ────────────────────
 function global:nav {
     param([string]$Start = (Get-Location).Path)
     if (-not (Find-TkCommand fzf)) { return }
@@ -1934,7 +1926,6 @@ function global:nav {
     }
 }
 
-# ── pv: files with a preview pane; rgi: live grep; pk: kill picker; gbr: branch picker ──
 function global:pv {
     param([string]$Dir = '.', [string]$Query = '')
     $dir = (Resolve-Path -LiteralPath $Dir).Path
@@ -1987,7 +1978,7 @@ function global:gbr {
 
 function global:o { param([string]$Path = '.') Invoke-Item -LiteralPath $Path }
 
-# ── kubernetes: switch context / namespace, the prompt picks it up by itself ─
+# kctx and kns switch the kubectl context or namespace; the prompt picks the change up by itself
 function global:kctx([string]$Name) {
     if (-not (Find-TkCommand kubectl)) { Write-Host "  $($TK.dim)$($TkStr.k8s_missing)$($TK.R)"; return }
     if (-not $Name) {
@@ -2008,7 +1999,7 @@ function global:kns([string]$Name) {
     if ($Name) { kubectl config set-context --current --namespace $Name }
 }
 
-# ── small helpers, same names as on the server ───────────────────────────────
+# ex, bak, psg, cb: the server bash has the same commands
 function global:ex([string]$Archive) {
     if (-not (Test-Path -LiteralPath $Archive)) { Write-Host "  $($TK.err)$($TkStr.ex_nofile -f $Archive)$($TK.R)"; return }
     $file = Get-Item -LiteralPath $Archive
@@ -2042,7 +2033,6 @@ function global:cb {
     Write-Host ("  {0}{1}{2}" -f $TK.dim, ($TkStr.cb_done -f $lines.Count), $TK.R)
 }
 
-# ── my config / doctor / update ──────────────────────────────────────────────
 function global:Get-ConfigLocations {
     $wt = Get-TerminalSettingsPaths | Select-Object -First 1
     [ordered]@{
@@ -2153,7 +2143,7 @@ function global:Update-Completions {
 }
 '@
 $EmbeddedFiles['prompt.ps1'] = @'
-# The prompt is rendered in PowerShell itself (a few ms) instead of spawning oh-my-posh (~140 ms + git).
+# The prompt is rendered by PowerShell itself in a couple of milliseconds, no external program runs for it.
 # Branch comes from .git/HEAD, k8s context from kubeconfig; git status counts are fetched on PowerShell.OnIdle
 # and the prompt is redrawn in place, so a slow `git status` never delays the prompt.
 $global:TsGit = @{ Root = ''; Text = ''; Shown = ''; Time = [datetime]::MinValue; Pending = '' }
@@ -2874,7 +2864,7 @@ public sealed class DeepHistoryPredictor : ICommandPredictor
 
     private readonly string _path;
     private readonly int _max;
-    private volatile string[] _entries = Array.Empty<string>();   // новые первыми, без дублей
+    private volatile string[] _entries = Array.Empty<string>();   // newest first, no duplicates
     private long _loadedLength = -1;
     private int _loading;
 
@@ -3158,7 +3148,7 @@ if command -v docker >/dev/null; then
     alias dlogs='docker compose logs -f --tail=200'
 fi
 
-# ── projects: discovered from docker compose, remembered in ~/.config/projects ("name<TAB>dir", "-" = hidden)
+# Projects are discovered from docker compose and remembered in ~/.config/projects ("name<TAB>dir", "-" = hidden)
 PROJ_FILE=~/.config/projects
 declare -gA PROJ_DIR=() PROJ_STATUS=()
 declare -gA __PROJ_FUNCS __PROJ_SVC

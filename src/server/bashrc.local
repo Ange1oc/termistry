@@ -187,7 +187,7 @@ if command -v docker >/dev/null; then
     alias dlogs='docker compose logs -f --tail=200'
 fi
 
-# ── projects: discovered from docker compose, remembered in ~/.config/projects ("name<TAB>dir", "-" = hidden)
+# Projects are discovered from docker compose and remembered in ~/.config/projects ("name<TAB>dir", "-" = hidden)
 PROJ_FILE=~/.config/projects
 declare -gA PROJ_DIR=() PROJ_STATUS=()
 declare -gA __PROJ_FUNCS __PROJ_SVC

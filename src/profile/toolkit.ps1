@@ -1,4 +1,4 @@
-# Core: loaded before the first prompt. Everything the user types lives in toolkit-lazy.ps1,
+# Core: loaded before the first prompt. The commands live in toolkit-lazy.ps1 and workspace.ps1,
 # which Complete-Termistry loads once the prompt is on screen.
 function _tkRgb([int]$hex) { $PSStyle.Foreground.FromRgb($hex) }
 function _tkBg([int]$hex) { $PSStyle.Background.FromRgb($hex) }
@@ -106,7 +106,7 @@ function Get-TkBar([double]$Percent, [int]$Width = 20) {
     $color + ('█' * $filled) + $TK.dim + ('░' * ($Width - $filled)) + $TK.R + (' {0,3:N0}%' -f $Percent)
 }
 
-# ── abbreviations (fish-style: expand on space/Enter at command position) ────
+# Fish-style abbreviations: they expand on space or Enter in command position
 $global:Abbreviations = [System.Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
 
 function abbr {
@@ -159,7 +159,7 @@ foreach ($pair in @{ g = 'git'; k = 'kubectl'; d = 'docker'; dc = 'docker compos
     $global:Abbreviations[$pair.Key] = $pair.Value
 }
 
-# ── keyboard layout: a command typed in the Russian layout becomes its Latin counterpart ──
+# A command typed in the Russian layout becomes its Latin counterpart
 $TkLayoutMap = @{}
 $ru = 'ёйцукенгшщзхъфывапролджэячсмитьбюЁЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ'
 $en = '`qwertyuiop[]asdfghjkl;''zxcvbnm,.~QWERTYUIOP{}ASDFGHJKL:"ZXCVBNM<>'
@@ -183,7 +183,7 @@ function Repair-CommandLayout([string]$Line) {
     Convert-Layout $Line
 }
 
-# ── project types: file name → type, plain data so custom.ps1 can add to it ──
+# Project types by file name; plain data, so custom.ps1 can add to it.
 # The prompt checks those it shows (versions for node, python, go, rust; an icon for docker) when the folder
 # changes; the Workspace list shows every type.
 $global:ProjectMarkers = [ordered]@{
@@ -192,7 +192,7 @@ $global:ProjectMarkers = [ordered]@{
     'pom.xml' = 'java'; 'build.gradle' = 'java'; 'build.gradle.kts' = 'java'; 'composer.json' = 'php'; 'Gemfile' = 'ruby'
 }
 
-# ── bin\: every script becomes a command, runner chosen by extension ─────────
+# Every script in bin\ becomes a command; the extension picks the runner
 $global:ScriptRunners = [ordered]@{
     '.ps1' = @('pwsh -NoProfile -File')
     '.py'  = @('uv run', 'python')

@@ -15,7 +15,7 @@ public sealed class DeepHistoryPredictor : ICommandPredictor
 
     private readonly string _path;
     private readonly int _max;
-    private volatile string[] _entries = Array.Empty<string>();   // новые первыми, без дублей
+    private volatile string[] _entries = Array.Empty<string>();   // newest first, no duplicates
     private long _loadedLength = -1;
     private int _loading;
 

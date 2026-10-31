@@ -39,7 +39,7 @@ if ($FromProfile) {
 }
 
 $sb = [Text.StringBuilder]::new()
-[void]$sb.AppendLine('# ── Embedded files (build.ps1 puts them here from src/) ─────────────────────')
+[void]$sb.AppendLine('# Embedded files, put here by build.ps1 from src/')
 [void]$sb.AppendLine('$EmbeddedFiles = [ordered]@{}')
 foreach ($rel in $files.Keys) {
     $text = ([IO.File]::ReadAllText((Join-Path $root $files[$rel])) -replace "`r`n", "`n").TrimEnd("`n")

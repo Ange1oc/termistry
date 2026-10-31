@@ -116,7 +116,6 @@ Scene 'help' (Capture { Show-TkHelp (@(`$TkStr.sections | Where-Object { `$_.Key
 `$cut = `$sys.IndexOf(`$TkStr.sys_containers); if (`$cut -gt 0) { `$sys = `$sys.Substring(0, `$sys.LastIndexOf("``n", `$cut)).TrimEnd() }
 Scene 'my-sys' ((Prompt-Line '$demo') + (Typed 'my sys') + "``n" + (Demo `$sys))
 
-# 4. my cmds + new
 Scene 'my-cmds' ((Prompt-Line '$demo') + (Typed 'my cmds') + "``n" + (Capture { my cmds }).Replace('$work\home\profile', '~\Documents\PowerShell'))
 
 foreach (`$f in `$Themes.Keys) {
