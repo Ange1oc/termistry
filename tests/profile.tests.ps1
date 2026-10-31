@@ -653,7 +653,9 @@ Test 'srv install builds the server script and ships it over ssh' {
     AssertMatch $s "action='install'" 'action'; AssertMatch $s "env_label='prod'" 'label'; AssertMatch $s "lang='en'" 'lang'
     AssertMatch $s "__put '\.bashrc\.d/mine\.sh' '[A-Za-z0-9+/=]+'" 'custom file shipped'
     $b64 = [regex]::Match($s, 'printf ''%s'' ''([A-Za-z0-9+/=]+)'' \| base64 -d > "\$work/bashrc\.local"').Groups[1].Value
-    AssertMatch ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))) '^# ~/\.bashrc\.local' 'bashrc payload decodes'
+    $bashrc = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
+    AssertMatch $bashrc '^# ~/\.bashrc\.local' 'bashrc payload decodes'
+    AssertMatch $bashrc "(?m)^# version: $([regex]::Escape($global:TermistryVersion))$" 'Termistry version in the server file'
     [IO.File]::WriteAllText((Join-Path $Work 'srv-script.sh'), $s + "`n", [Text.UTF8Encoding]::new($false))
 }
 Test 'srv remove, srv without a host, srv with a bad label' {

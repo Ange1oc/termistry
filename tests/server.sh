@@ -56,7 +56,7 @@ run() { bash --norc -i -c $'. ~/.bashrc.local\n'"$1" </dev/null 2>&1 | grep -v -
 printf '\n  %s── static%s\n' "$dim" "$r"
 t 'bashrc.local: bash -n'                 bash -n "$src/bashrc.local"
 t 'install.sh: bash -n'                   bash -n "$src/install.sh"
-t 'version header present'                grep -q '^# version: [0-9]' "$src/bashrc.local"
+t 'version header present'                grep -q '^# version: __VERSION__$' "$src/bashrc.local"
 t 'inputrc carries the managed marker'    grep -q 'srv: managed' "$src/inputrc"
 no_background() { ! grep -nE '(^|[^&])&[[:space:]]*$' "$src/bashrc.local"; }
 t 'nothing is started in the background'  no_background

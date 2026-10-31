@@ -25,6 +25,7 @@ function global:Get-TsGitRoot([string]$Dir) {
         if ([IO.Directory]::Exists($git) -or [IO.File]::Exists($git)) { $root = $d; break }
         $d = [IO.Path]::GetDirectoryName($d)
     }
+    if ($global:TsGitRoots.Count -ge 1024) { $global:TsGitRoots.Clear() }
     $global:TsGitRoots[$Dir] = $root
     $root
 }

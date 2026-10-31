@@ -1,5 +1,5 @@
 # ~/.bashrc.local - installed by `srv install <host>` from Termistry. Nothing runs in the background.
-# version: 2.1.0
+# version: __VERSION__
 # Per-server settings: ~/.config/bashrc-local.conf (PROMPT_ENV=prod, LANG_UI=en)
 # Your own: ~/.bashrc.d/*.sh and ~/bin/* (a "# help: ..." line shows up in help)
 

@@ -174,7 +174,7 @@ function global:srv {
         "__put '.bashrc.d/$($f.Name)' '$(& $b64 (& $read $f.FullName))'"
     }
     $script = (& $read (Join-Path $dir 'install.sh')).Replace('__ACTION__', $Action).Replace('__ENV__', $Env).Replace('__LANG__', $Lang)
-    $script = $script.Replace('__BASHRC_B64__', (& $b64 (& $read (Join-Path $dir 'bashrc.local'))))
+    $script = $script.Replace('__BASHRC_B64__', (& $b64 (& $read (Join-Path $dir 'bashrc.local')).Replace('__VERSION__', $global:TermistryVersion)))
     $script = $script.Replace('__INPUTRC_B64__', (& $b64 (& $read (Join-Path $dir 'inputrc'))))
     $script = $script.Replace('__CUSTOM_FILES__', ($custom -join "`n"))
     # the trailing newline PowerShell adds on pipe lands inside the final "# end" comment
@@ -613,10 +613,10 @@ function global:lang {
 
 function global:ep { code $global:ProfileDir }
 
-# PowerShell piping into fzf throws "pipe is being closed" when fzf exits before the producer is done;
+# Piping into fzf throws an IOException (the pipe is being closed) when fzf exits before the producer is done;
 # short lists go through Invoke-Fzf, long ones (fd, rg) are started by fzf itself via FZF_DEFAULT_COMMAND.
 function global:Invoke-Fzf([string[]]$Lines, [string[]]$Arguments) {
-    try { @($Lines | fzf @Arguments) } catch { if ("$_" -notmatch 'pipe|канал') { throw } }
+    try { @($Lines | fzf @Arguments) } catch [System.IO.IOException] {}
 }
 
 function global:Invoke-FzfCommand([string]$Command, [string[]]$Arguments) {
