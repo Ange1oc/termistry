@@ -34,7 +34,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$SetupVersion = '1.0.0'
+$SetupVersion = '1.0.1'
 $ProgressPreference = 'SilentlyContinue'
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
@@ -183,7 +183,7 @@ $ProfileFile = Join-Path $ProfileDir 'Microsoft.PowerShell_profile.ps1'
 # ── Embedded files (build.ps1 puts them here from src/) ─────────────────────
 $EmbeddedFiles = [ordered]@{}
 $EmbeddedFiles['Microsoft.PowerShell_profile.ps1'] = @'
-$global:TermistryVersion = '1.0.0'
+$global:TermistryVersion = '1.0.1'
 $global:TermistryLoaded = $false
 $global:TsFiles = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh'
 $global:ProfileDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $PROFILE }

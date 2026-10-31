@@ -87,7 +87,7 @@ irm https://raw.githubusercontent.com/Ange1oc/termistry/master/install.ps1 | iex
 `setup-terminal.ps1` это один самодостаточный файл. Каждый релиз публикует его вместе с `SHA256SUMS`, поэтому можно скачать конкретную версию, проверить её, прочитать и только потом запустить:
 
 ```powershell
-$v = 'v1.0.0'
+$v = 'v1.0.1'
 $dir = New-Item -ItemType Directory -Force "$env:TEMP\termistry-$v"
 foreach ($f in 'setup-terminal.ps1', 'SHA256SUMS') {
     Invoke-WebRequest "https://github.com/Ange1oc/termistry/releases/download/$v/$f" -OutFile "$dir\$f" -UseBasicParsing

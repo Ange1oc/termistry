@@ -1,4 +1,4 @@
-$global:TermistryVersion = '1.0.0'
+$global:TermistryVersion = '1.0.1'
 $global:TermistryLoaded = $false
 $global:TsFiles = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh'
 $global:ProfileDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $PROFILE }
