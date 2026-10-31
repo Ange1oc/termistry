@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows (PowerShell 5.1 and 7)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup-terminal.ps1 is built from src
+        shell: pwsh
+        run: |
+          ./build.ps1
+          git diff --exit-code -- setup-terminal.ps1
+      - name: Static checks, profile and installer
+        shell: pwsh
+        run: ./tests/run.ps1 -Only static,profile,setup
+
+  linux:
+    name: Server bash (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install.sh and bashrc.local
+        run: bash tests/server.sh src/server
