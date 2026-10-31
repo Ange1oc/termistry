@@ -110,7 +110,7 @@ Set-Location '$demo'
 ) -join "``n"
 Scene 'hero' `$hero
 
-Scene 'help' (Capture { Show-TkHelp (@(`$TkStr.sections | Where-Object { `$_.Key -in 'input', 'git', 'ssh', 'mine' }) + @(Get-TkUserSection)) })
+Scene 'help' (Capture { Show-TkHelp (@(`$TkStr.sections | Where-Object { `$_.Key -in 'work', 'input', 'ssh', 'mine' }) + @(Get-TkUserSection)) })
 
 `$sys = Capture { my sys }
 # the process list and containers are this machine's own business, the screenshot stops at the disks
@@ -176,7 +176,7 @@ $serverOut = wsl bash "$wslWork/server.sh" "$wslBashrc" $Lang
 
 Write-Host '  rendering…'
 & $render -InputFile "$work\hero.txt" -OutFile "$OutDir\hero.png" -Title 'PowerShell 7 · Windows Terminal'
-& $render -InputFile "$work\help.txt" -OutFile "$OutDir\help.png" -Title 'help'
+& $render -InputFile "$work\help.txt" -OutFile "$OutDir\help.png" -Title 'help' -MaxColumns 140
 & $render -InputFile "$work\my-sys.txt" -OutFile "$OutDir\my-sys.png" -Title 'my sys'
 & $render -InputFile "$work\my-cmds.txt" -OutFile "$OutDir\my-cmds.png" -Title 'my cmds'
 & $render -InputFile "$work\server.txt" -OutFile "$OutDir\server.png" -Title 'ssh prod-1 - bash'
