@@ -1,4 +1,4 @@
-# Loaded by Complete-TerminalSetup right after the first prompt (PowerShell.OnIdle), so startup stays fast.
+# Loaded by Complete-Termistry right after the first prompt (PowerShell.OnIdle), so startup stays fast.
 
 function global:Format-TkSize([double]$Bytes) {
     foreach ($u in $TkStr.units) { if ($Bytes -lt 1024) { return ('{0:N1} {1}' -f $Bytes, $u) -replace '[.,]0 ', ' ' }; $Bytes /= 1024 }
@@ -630,7 +630,7 @@ function global:Invoke-FzfCommand([string]$Command, [string[]]$Arguments) {
 
 # Preview script for fzf: folders through eza, files through bat. cmd runs it with UTF-8 so Cyrillic paths work.
 function global:Get-TsPreview {
-    $p = "$HOME\.cache\terminal-setup\preview.cmd"
+    $p = "$HOME\.cache\termistry\preview.cmd"
     if (-not (Test-Path $p)) {
         New-Item -ItemType Directory -Force (Split-Path $p) | Out-Null
         $lines = '@echo off', 'chcp 65001 >nul', 'if exist "%~1\" (', '  eza --icons=always --color=always --group-directories-first -1 "%~1"', ') else (', '  bat --color=always --style=numbers,header-filename --line-range :300 "%~1"', ')'
@@ -805,7 +805,7 @@ function global:Get-ConfigLocations {
         custom      = Join-Path $global:ProfileDir 'custom.ps1'
         bin         = Join-Path $global:ProfileDir 'bin'
         srvcustom   = Join-Path $global:ProfileDir 'server\custom'
-        settings    = Join-Path $HOME '.config\terminal-setup'
+        settings    = Join-Path $HOME '.config\termistry'
         completions = Join-Path $HOME '.cache\pwsh-completions'
         predictor   = Join-Path $HOME '.cache\pwsh-predictor'
         wt          = $(if ($wt) { $wt } else { Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json' })
@@ -830,7 +830,7 @@ function global:Show-MyConfig {
 }
 
 function global:doctor {
-    Write-TkTitle $TkStr.doctor_title ($TkStr.doctor_hint -f $global:TerminalSetupVersion)
+    Write-TkTitle $TkStr.doctor_title ($TkStr.doctor_hint -f $global:TermistryVersion)
     $state = @{ problems = 0 }
     $check = { param($ok, $label, $detail) if ($ok) { Write-Host "  $($TK.ok)✓$($TK.R) $label $($TK.dim)$detail$($TK.R)" } else { $state.problems++; Write-Host "  $($TK.err)✗$($TK.R) $label $($TK.dim)$detail$($TK.R)" } }
 
@@ -873,7 +873,7 @@ function global:doctor {
 
 function global:update {
     Write-Host "  $($TK.dim)$($TkStr.update_start)$($TK.R)"
-    try { $installer = Invoke-RestMethod 'https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1' -TimeoutSec 20 }
+    try { $installer = Invoke-RestMethod 'https://raw.githubusercontent.com/Ange1oc/termistry/master/install.ps1' -TimeoutSec 20 }
     catch { Write-Host "  $($TK.err)$($TkStr.update_fail -f $_.Exception.Message)$($TK.R)"; return }
     & ([scriptblock]::Create($installer)) -Lang $global:LangName
     Write-Host "  $($TK.ok)$($TkStr.update_done)$($TK.R)"

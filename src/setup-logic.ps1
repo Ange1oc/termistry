@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-  A good-looking, convenient terminal on Windows 11 in one command. Safe to run again.
-  Repository: https://github.com/Ange1oc/terminal-setup
+  Termistry: a good-looking, convenient terminal on Windows 11 in one command. Safe to run again.
+  Repository: https://github.com/Ange1oc/termistry
 
 .EXAMPLE
-  irm https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1 | iex
+  irm https://raw.githubusercontent.com/Ange1oc/termistry/master/install.ps1 | iex
 .EXAMPLE
   .\setup-terminal.ps1 -Lang en -Theme latte -StartingDirectory D:\code -SshTabs prod,staging
 
@@ -39,7 +39,10 @@ $ProgressPreference = 'SilentlyContinue'
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 $SshTabs = @($SshTabs | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-$ConfigDir = Join-Path $HOME '.config\terminal-setup'
+$ConfigDir = Join-Path $HOME '.config\termistry'
+# Settings of an install from before the rename (terminal-setup) move over as they are
+$LegacyDirs = (Join-Path $HOME '.config\terminal-setup'), (Join-Path $HOME '.cache\terminal-setup')
+if ((Test-Path $LegacyDirs[0]) -and -not (Test-Path $ConfigDir)) { Move-Item $LegacyDirs[0] $ConfigDir }
 
 function Test-Command([string]$Name) { [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
 
@@ -58,7 +61,7 @@ if ($Lang -notin 'ru', 'en') {
 
 $L = @{
     ru = @{
-        title = '✦ Настройка терминала'; admin_note = 'запущено от администратора - лучше от обычного пользователя, права попрошу сам, где нужно'
+        title = '✦ Termistry';admin_note = 'запущено от администратора - лучше от обычного пользователя, права попрошу сам, где нужно'
         continue7 = 'продолжаю в PowerShell 7…'; no_winget = 'Нет winget. Установи «Установщик приложений» (App Installer) из Microsoft Store и запусти скрипт снова.'
         no_pwsh = 'PowerShell 7 не установился - поставь вручную: winget install Microsoft.PowerShell'
         present = 'уже есть'; installing = 'устанавливаю…'; installed = 'установлен'; winget_code = 'winget вернул {0}'
@@ -82,7 +85,7 @@ $L = @{
         s_uninstall = 'Удаление'; removed = 'удалён'; uninstall_kept = 'Остались: custom.ps1, bin\, server\custom\, программы, шрифт, настройки Windows Terminal и *.bak'
     }
     en = @{
-        title = '✦ Terminal setup'; admin_note = 'running as administrator - better as a regular user; elevation is requested only where needed'
+        title = '✦ Termistry';admin_note = 'running as administrator - better as a regular user; elevation is requested only where needed'
         continue7 = 'continuing in PowerShell 7…'; no_winget = 'No winget. Install "App Installer" from the Microsoft Store and run the script again.'
         no_pwsh = 'PowerShell 7 did not install - install it manually: winget install Microsoft.PowerShell'
         present = 'already installed'; installing = 'installing…'; installed = 'installed'; winget_code = 'winget returned {0}'
@@ -182,7 +185,8 @@ $ProfileFile = Join-Path $ProfileDir 'Microsoft.PowerShell_profile.ps1'
 if ($Uninstall) {
     Step $L.s_uninstall
     $managed = @($EmbeddedFiles.Keys | Where-Object { $_ -ne 'custom.ps1' } | ForEach-Object { Join-Path $ProfileDir $_ })
-    $managed += (Join-Path $HOME '.config\ohmyposh\soft.omp.json'), (Join-Path $HOME '.config\terminal-setup'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
+    $managed += (Join-Path $HOME '.config\ohmyposh\soft.omp.json'), $ConfigDir, (Join-Path $HOME '.cache\termistry'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
+    $managed += $LegacyDirs
     foreach ($p in $managed) {
         if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) - $($L.removed)" }
     }
@@ -297,7 +301,7 @@ $ThemeTitle = $Themes[$ThemeName].title
 foreach ($rel in $EmbeddedFiles.Keys) {
     if ($rel -ne 'custom.ps1') { Write-ManagedFile (Join-Path $ProfileDir $rel) $EmbeddedFiles[$rel] }
 }
-Remove-Item "$HOME\.cache\terminal-setup\omp-init.txt", "$HOME\.config\ohmyposh\soft.omp.json" -ErrorAction SilentlyContinue
+Remove-Item $LegacyDirs[1], "$HOME\.config\ohmyposh\soft.omp.json" -Recurse -Force -ErrorAction SilentlyContinue
 
 $customFile = Join-Path $ProfileDir 'custom.ps1'
 if (Test-Path $customFile) { Ok "$(Short $customFile) - $($L.custom_yours)" }

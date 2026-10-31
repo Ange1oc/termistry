@@ -1,5 +1,5 @@
 # Core: loaded before the first prompt. Everything the user types lives in toolkit-lazy.ps1,
-# which Complete-TerminalSetup loads once the prompt is on screen.
+# which Complete-Termistry loads once the prompt is on screen.
 function _tkRgb([int]$hex) { $PSStyle.Foreground.FromRgb($hex) }
 function _tkBg([int]$hex) { $PSStyle.Background.FromRgb($hex) }
 
@@ -121,20 +121,20 @@ function abbr {
         return
     }
     if (-not $Name) {
-        Complete-TerminalSetup
+        Complete-Termistry
         Write-TkTitle $TkStr.abbr_title $TkStr.abbr_hint
         foreach ($a in $global:Abbreviations.GetEnumerator()) { Write-TkRow "$($a.Key)␣" $a.Value }
         Write-Host ''
         return
     }
-    if (-not $Expansion) { Complete-TerminalSetup; Write-Host "  $($TK.err)$($TkStr.abbr_usage)$($TK.R)"; return }
+    if (-not $Expansion) { Complete-Termistry; Write-Host "  $($TK.err)$($TkStr.abbr_usage)$($TK.R)"; return }
     $global:Abbreviations[$Name] = $Expansion
     # typed interactively (not sourced from a file): persist to custom.ps1
     if ($MyInvocation.ScriptName -eq '' -and $global:isInteractive) {
         $line = "abbr $Name '$($Expansion.Replace("'", "''"))'"
         if (-not (Test-Path $custom) -or -not (Select-String -Path $custom -SimpleMatch $line -Quiet)) {
             Add-Content $custom "`n$line" -Encoding utf8
-            Complete-TerminalSetup
+            Complete-Termistry
             Write-Host ("  {0}{1}{2}" -f $TK.dim, ($TkStr.abbr_saved -f $line), $TK.R)
         }
     }
@@ -219,7 +219,7 @@ function Invoke-TkScript([string]$Path) {
     if (-not $exe) {
         $ext = [IO.Path]::GetExtension($Path).ToLower()
         $runner = Get-ScriptRunner $ext
-        if (-not $runner) { Complete-TerminalSetup; Write-Host ('  ' + ($TkStr.bin_norunner -f (Split-Path $Path -Leaf), ($global:ScriptRunners[$ext] -join ' / '))); return }
+        if (-not $runner) { Complete-Termistry; Write-Host ('  ' + ($TkStr.bin_norunner -f (Split-Path $Path -Leaf), ($global:ScriptRunners[$ext] -join ' / '))); return }
         $parts = $runner -split ' '
         $exe = $parts[0]; $extra = @($parts | Select-Object -Skip 1) + $Path
     }

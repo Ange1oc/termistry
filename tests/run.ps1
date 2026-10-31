@@ -13,7 +13,7 @@ foreach ($o in $Only) { if ($o -notin 'static', 'profile', 'setup', 'server') { 
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot 'lib.ps1')
 $root = Split-Path $PSScriptRoot
-$work = Join-Path ([IO.Path]::GetTempPath()) "terminal-setup-tests-$PID"
+$work = Join-Path ([IO.Path]::GetTempPath()) "termistry-tests-$PID"
 Remove-Item $work -Recurse -Force -ErrorAction Ignore
 New-Item -ItemType Directory -Force $work | Out-Null
 Write-Host "  $TcDim sandbox: $work$TcR"
@@ -31,7 +31,7 @@ function Invoke-Sandboxed([string]$SandboxHome, [scriptblock]$Block) {
 }
 function New-SandboxHome([string]$SandboxHome) {
     $wt = Join-Path $SandboxHome 'AppData\Local\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState'
-    New-Item -ItemType Directory -Force $wt, (Join-Path $SandboxHome '.config\terminal-setup'), (Join-Path $SandboxHome 'AppData\Roaming') | Out-Null
+    New-Item -ItemType Directory -Force $wt, (Join-Path $SandboxHome '.config\termistry'), (Join-Path $SandboxHome 'AppData\Roaming') | Out-Null
     @'
 {
     "defaultProfile": "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}",
@@ -40,8 +40,8 @@ function New-SandboxHome([string]$SandboxHome) {
     "actions": []
 }
 '@ | Set-Content (Join-Path $wt 'settings.json') -Encoding utf8
-    Set-Content (Join-Path $SandboxHome '.config\terminal-setup\theme') 'mocha'
-    Set-Content (Join-Path $SandboxHome '.config\terminal-setup\lang') 'ru'
+    Set-Content (Join-Path $SandboxHome '.config\termistry\theme') 'mocha'
+    Set-Content (Join-Path $SandboxHome '.config\termistry\lang') 'ru'
 }
 # Child test processes print "##result passed=N failed=M" last; everything else is shown as is
 function Invoke-ChildTests([scriptblock]$Start) {
@@ -199,7 +199,7 @@ if ('setup' -in $Only) {
         AssertMatch $out1 'без ошибок' 'profile check'
         foreach ($f in 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'custom.ps1', 'server\bashrc.local', 'server\inputrc', 'server\install.sh') { Assert (Test-Path (Join-Path $pdir $f)) $f }
         foreach ($d in 'bin', 'server\custom') { Assert (Test-Path (Join-Path $pdir $d) -PathType Container) $d }
-        AssertEq (Get-Content (Join-Path $setupHome '.config\terminal-setup\lang') -First 1) 'ru' 'lang file'
+        AssertEq (Get-Content (Join-Path $setupHome '.config\termistry\lang') -First 1) 'ru' 'lang file'
     }
     Test 'windows terminal: schemes, default profile, font, quake binding' {
         $raw = Get-Content (Join-Path $setupHome 'AppData\Local\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json') -Raw
@@ -227,7 +227,7 @@ if ('setup' -in $Only) {
         foreach ($f in 'Microsoft.PowerShell_profile.ps1', 'toolkit.ps1', 'prompt.ps1', 'server\bashrc.local') { Assert (-not (Test-Path (Join-Path $pdir $f))) "$f still there" }
         Assert (Test-Path (Join-Path $pdir 'custom.ps1')) 'custom.ps1 kept'
         Assert (Test-Path (Join-Path $pdir 'bin')) 'bin kept'
-        Assert (-not (Test-Path (Join-Path $setupHome '.config\terminal-setup'))) 'config removed'
+        Assert (-not (Test-Path (Join-Path $setupHome '.config\termistry'))) 'config removed'
     }
 
     # a second machine: english, a theme, ssh tabs, a starting folder, and settings the user already had
@@ -253,8 +253,8 @@ if ('setup' -in $Only) {
     }
     Test 'english run with a theme, ssh tabs and a starting folder' {
         AssertMatch $out5 'Done\.' 'english messages'
-        AssertEq (Get-Content (Join-Path $setupHome2 '.config\terminal-setup\lang') -First 1) 'en' 'lang file'
-        AssertEq (Get-Content (Join-Path $setupHome2 '.config\terminal-setup\theme') -First 1) 'gruvbox' 'theme file'
+        AssertEq (Get-Content (Join-Path $setupHome2 '.config\termistry\lang') -First 1) 'en' 'lang file'
+        AssertEq (Get-Content (Join-Path $setupHome2 '.config\termistry\theme') -First 1) 'gruvbox' 'theme file'
         $s = Get-Content $wt2 -Raw | ConvertFrom-Json
         AssertEq $s.profiles.defaults.colorScheme 'Gruvbox Dark' 'default scheme'
         AssertEq $s.theme 'Gruvbox Dark' 'window theme'
@@ -281,6 +281,25 @@ if ('setup' -in $Only) {
             AssertMatch $out6 '\.gitconfig - unchanged' 'second run leaves git alone'
         }
     } else { Skip 'git delta config' 'git or delta not installed' }
+
+    # an install from before the rename: settings in .config\terminal-setup, custom.ps1 using $TerminalSetup
+    $setupHome3 = Join-Path $work 'setup-home3'; New-SandboxHome $setupHome3
+    $pdir3 = Join-Path $work 'setup-profile3'
+    Move-Item (Join-Path $setupHome3 '.config\termistry') (Join-Path $setupHome3 '.config\terminal-setup')
+    Set-Content (Join-Path $setupHome3 '.config\terminal-setup\lang') 'en'
+    Set-Content (Join-Path $setupHome3 '.config\terminal-setup\theme') 'dracula'
+    New-Item -ItemType Directory -Force (Join-Path $setupHome3 '.cache\terminal-setup'), $pdir3 | Out-Null
+    Set-Content (Join-Path $pdir3 'custom.ps1') '$TerminalSetup.Kube = ''off'''
+    $out7 = Invoke-Sandboxed $setupHome3 { (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $setup -SkipApps -ProfileDir $pdir3 2>&1 | ForEach-Object { "$_" }) -join "`n" }
+    Test 'an install from before the rename moves over' {
+        AssertMatch $out7 'Done\.' 'english without asking'
+        AssertNotMatch $out7 'errors while loading' 'profile check'
+        Assert (-not (Test-Path (Join-Path $setupHome3 '.config\terminal-setup'))) 'old settings folder left'
+        Assert (-not (Test-Path (Join-Path $setupHome3 '.cache\terminal-setup'))) 'old cache left'
+        AssertEq (Get-Content (Join-Path $setupHome3 '.config\termistry\theme') -First 1) 'dracula' 'theme kept'
+        $kube = Invoke-Sandboxed $setupHome3 { & pwsh -NoProfile -Command ". '$pdir3\Microsoft.PowerShell_profile.ps1' *> `$null; . '$pdir3\custom.ps1'; `$Termistry.Kube" }
+        AssertEq "$kube".Trim() 'off' '$TerminalSetup in an old custom.ps1'
+    }
 }
 
 if ('server' -in $Only) {

@@ -22,24 +22,24 @@ $kubeIcon = '󱃾'
 Section 'profile'
 Test 'loads without errors' { AssertEq $loadErrors.Count 0 "errors: $($loadErrors -join ' | ')" }
 Test 'version and switches' {
-    AssertMatch $global:TerminalSetupVersion '^\d+\.\d+\.\d+$' 'version'
-    foreach ($k in 'Abbreviations', 'LayoutFix', 'Predictions', 'GitStatus', 'Kube') { Assert $global:TerminalSetup.ContainsKey($k) "switch $k" }
+    AssertMatch $global:TermistryVersion '^\d+\.\d+\.\d+$' 'version'
+    foreach ($k in 'Abbreviations', 'LayoutFix', 'Predictions', 'GitStatus', 'Kube') { Assert $global:Termistry.ContainsKey($k) "switch $k" }
 }
 Test 'profile folder is the one the files are in' { AssertEq $global:ProfileDir (Join-Path $Work 'profile') 'ProfileDir' }
 Test 'deferred part is loaded, no stub left behind' {
-    Assert $global:TerminalSetupLoaded 'TerminalSetupLoaded'
+    Assert $global:TermistryLoaded 'TermistryLoaded'
     foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'kctx', 'kns', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep') {
         $cmd = Get-Command $n -ErrorAction Ignore
         Assert $cmd "$n missing"
-        AssertNotMatch "$($cmd.ScriptBlock)" 'Complete-TerminalSetup; &' "$n is still a stub"
+        AssertNotMatch "$($cmd.ScriptBlock)" 'Complete-Termistry; &' "$n is still a stub"
     }
 }
 Test 'sourcing the profile again is safe' {
     $before = $Error.Count
     . $PROFILE *> $null
     AssertEq ($Error.Count - $before) 0 'errors on reload'
-    Assert $global:TerminalSetupLoaded 'deferred part after reload'
-    AssertNotMatch "$((Get-Command help).ScriptBlock)" 'Complete-TerminalSetup; &' 'help turned back into a stub'
+    Assert $global:TermistryLoaded 'deferred part after reload'
+    AssertNotMatch "$((Get-Command help).ScriptBlock)" 'Complete-Termistry; &' 'help turned back into a stub'
 }
 Test 'aliases and shortcuts exist' {
     foreach ($n in 'l', 'll', 'lt', '..', '...', '....', 'mkcd', 'which', 'touch', 'lg', 'gst', 'reload') { Assert (Get-Command $n -ErrorAction Ignore) $n }
@@ -162,11 +162,11 @@ Test 'kube: k8s folders only, prod in red everywhere, switch honored' {
     AssertNotMatch (Plain (Get-TsPrompt -Dir $plain -Width 100)) $kubeIcon 'plain folder'
     AssertMatch (Plain (Get-TsPrompt -Dir (Join-Path $Work 'chart') -Width 100)) "$kubeIcon kind-dev/shop" 'chart folder'
     AssertMatch (Plain (Get-TsPrompt -Dir (Join-Path $Work 'k8sroot\src') -Width 100)) "$kubeIcon kind-dev" 'k8s folder at the repo root'
-    $global:TerminalSetup.Kube = 'off'
+    $global:Termistry.Kube = 'off'
     AssertNotMatch (Plain (Get-TsPrompt -Dir (Join-Path $Work 'chart') -Width 100)) $kubeIcon 'Kube = off'
-    $global:TerminalSetup.Kube = 'always'
+    $global:Termistry.Kube = 'always'
     AssertMatch (Plain (Get-TsPrompt -Dir $plain -Width 100)) "$kubeIcon kind-dev" 'Kube = always'
-    $global:TerminalSetup.Kube = 'auto'
+    $global:Termistry.Kube = 'auto'
     $env:KUBECONFIG = Join-Path $Work 'kube-prod'
     $raw = Get-TsPrompt -Dir $plain -Width 100
     AssertMatch (Plain $raw) "$kubeIcon prod-eu" 'prod everywhere'
@@ -363,12 +363,12 @@ if ((Get-Command bat -ErrorAction Ignore) -and (Get-Command eza -ErrorAction Ign
 
 Section 'prompt: more cases'
 Test 'GitStatus switch keeps the branch and drops the counts' {
-    $global:TerminalSetup.GitStatus = $false; $global:TsGit.Pending = ''
+    $global:Termistry.GitStatus = $false; $global:TsGit.Pending = ''
     $p = Plain (Get-TsPrompt -Dir $repo -Width 100)
     AssertMatch $p "$branchIcon main\s" 'branch stays'
     AssertNotMatch $p '\+1' 'no counts'
     AssertEq $global:TsGit.Pending '' 'no refresh requested'
-    $global:TerminalSetup.GitStatus = $true
+    $global:Termistry.GitStatus = $true
 }
 Test 'kube: KUBECONFIG with several files uses the first, ~/.kube/config is the fallback' {
     $env:KUBECONFIG = (Join-Path $Work 'kube-prod') + ';' + (Join-Path $Work 'kube-dev')

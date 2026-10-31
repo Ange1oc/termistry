@@ -130,7 +130,7 @@ function global:Get-TsPrompt {
     if ($root) {
         $branch = Get-TsGitBranch $root
         $gitText = ''
-        if ($global:TerminalSetup.GitStatus) {
+        if ($global:Termistry.GitStatus) {
             $g = $global:TsGit
             # Stale counts stay on screen while OnIdle refreshes them; a redraw happens only if they changed
             if ($g.Root -eq $root) { $gitText = $g.Text }
@@ -148,7 +148,7 @@ function global:Get-TsPrompt {
     if ([IO.File]::Exists("$Dir\Cargo.toml")) { $v = Get-TsToolVersion rust; if ($v) { $left += "  $($c.accent)$([char]0xE7A8) $v$($c.R)" } }
 
     $right = @()
-    $kube = "$($global:TerminalSetup.Kube)"
+    $kube = "$($global:Termistry.Kube)"
     if ($kube -and $kube -ne 'off' -and $kube -ne 'False') {
         $k = Get-TsKubeText
         if ($k -and ($kube -eq 'always' -or $global:TsKube.Prod -or (Test-TsKubeDir $Dir) -or ($root -and $root -ne $Dir -and (Test-TsKubeDir $root)))) {

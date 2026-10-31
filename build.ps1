@@ -49,7 +49,7 @@ foreach ($rel in $files.Keys) {
 }
 $logic = [IO.File]::ReadAllText((Join-Path $root 'src\setup-logic.ps1')) -replace "`r`n", "`n"
 $embedded = $sb.ToString().TrimEnd() -replace "`r`n", "`n"
-$version = [regex]::Match([IO.File]::ReadAllText((Join-Path $root 'src\profile\Microsoft.PowerShell_profile.ps1')), "TerminalSetupVersion = '([^']+)'").Groups[1].Value
+$version = [regex]::Match([IO.File]::ReadAllText((Join-Path $root 'src\profile\Microsoft.PowerShell_profile.ps1')), "TermistryVersion = '([^']+)'").Groups[1].Value
 $result = $logic.Replace('#@@EMBEDDED_FILES@@', $embedded).Replace('__VERSION__', $version)
 
 $out = Join-Path $root 'setup-terminal.ps1'

@@ -83,7 +83,7 @@ $Themes = [ordered]@{
     }
 }
 
-$ThemeFile = Join-Path $HOME '.config\terminal-setup\theme'
+$ThemeFile = Join-Path $HOME '.config\termistry\theme'
 
 function Get-ThemeName {
     $name = if (Test-Path $ThemeFile) { (Get-Content $ThemeFile -First 1).Trim().ToLower() }

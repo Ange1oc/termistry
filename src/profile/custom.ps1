@@ -1,9 +1,9 @@
 # custom.ps1 - yours. setup-terminal.ps1 never overwrites this file. Loaded after toolkit.ps1; check with: reload
 #
-#   $TerminalSetup.Abbreviations = $false     # g␣ → git␣
-#   $TerminalSetup.LayoutFix     = $false     # Russian layout fix on Enter
-#   $TerminalSetup.Predictions   = 20         # history suggestions (0 - PSReadLine default 10)
-#   $TerminalSetup.Kube          = 'always'   # kubernetes context in the prompt: auto (k8s folders and prod only), always, off
+#   $Termistry.Abbreviations = $false     # g␣ → git␣
+#   $Termistry.LayoutFix     = $false     # Russian layout fix on Enter
+#   $Termistry.Predictions   = 20         # history suggestions (0 - PSReadLine default 10)
+#   $Termistry.Kube          = 'always'   # kubernetes context in the prompt: auto (k8s folders and prod only), always, off
 #
 #   abbr gcm 'git commit -m "%"'              # % - cursor position
 #   abbr -Remove d

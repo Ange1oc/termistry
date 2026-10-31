@@ -1,4 +1,4 @@
-$global:LangFile = Join-Path $HOME '.config\terminal-setup\lang'
+$global:LangFile = Join-Path $HOME '.config\termistry\lang'
 
 function global:Get-LangName {
     $name = if (Test-Path $LangFile) { (Get-Content $LangFile -First 1).Trim().ToLower() }
@@ -104,7 +104,7 @@ $global:Strings = @{
                 , ('theme [имя]', '10 тем на лету: catppuccin, black, gruvbox, dracula, nord…', 'theme latte')
                 , ('lang [ru|en]', 'язык терминала и серверов')
                 , ('doctor', 'проверить, что всё на месте и работает')
-                , ('update', 'обновить terminal-setup с GitHub')
+                , ('update', 'обновить Termistry с GitHub')
                 , ('reload', 'перечитать профиль после правок')
                 , ('Update-Completions', 'обновить Tab-дополнения после обновления CLI')
             ) }
@@ -125,13 +125,13 @@ $global:Strings = @{
             vscode = 'настройки VS Code'; gitconfig = 'git: delta и имя'; ssh = 'SSH-хосты (my ssh, jump, srv)'
         }
         config_missing = 'нет'
-        doctor_title = 'Проверка'; doctor_hint = 'terminal-setup {0}'
+        doctor_title = 'Проверка'; doctor_hint = 'Termistry {0}'
         doctor_tools = 'инструменты'; doctor_files = 'файлы профиля'; doctor_font = 'шрифт для всех пользователей'
         doctor_wt = 'Windows Terminal: схемы и PowerShell 7 по умолчанию'; doctor_psfzf = 'модуль PSFzf'
         doctor_predictor = 'подсказки из истории (до 50)'; doctor_custom = 'custom.ps1 без ошибок'
         doctor_startup = 'старт профиля'; doctor_ok = 'всё в порядке'; doctor_fix = 'починить: update'
         doctor_missing = 'нет: {0}'
-        update_start = 'обновляю terminal-setup с GitHub…'; update_done = 'готово - reload или новая вкладка'
+        update_start = 'обновляю Termistry с GitHub…'; update_done = 'готово - reload или новая вкладка'
         update_fail = 'не удалось скачать установщик: {0}'
         no_insert = '^(Ctrl|Alt|Shift|Win|Tab|F\d|↑|→|начни|набрал|вщслук|g␣)'
 
@@ -314,7 +314,7 @@ $global:Strings = @{
                 , ('theme [name]', '10 themes, switched live: catppuccin, black, gruvbox, dracula, nord…', 'theme latte')
                 , ('lang [ru|en]', 'language of the terminal and servers')
                 , ('doctor', 'check that everything is in place and works')
-                , ('update', 'update terminal-setup from GitHub')
+                , ('update', 'update Termistry from GitHub')
                 , ('reload', 're-read the profile after edits')
                 , ('Update-Completions', 'refresh Tab completions after updating a CLI')
             ) }
@@ -335,13 +335,13 @@ $global:Strings = @{
             vscode = 'VS Code settings'; gitconfig = 'git: delta and identity'; ssh = 'SSH hosts (my ssh, jump, srv)'
         }
         config_missing = 'missing'
-        doctor_title = 'Check-up'; doctor_hint = 'terminal-setup {0}'
+        doctor_title = 'Check-up'; doctor_hint = 'Termistry {0}'
         doctor_tools = 'tools'; doctor_files = 'profile files'; doctor_font = 'font installed for all users'
         doctor_wt = 'Windows Terminal: schemes and PowerShell 7 as default'; doctor_psfzf = 'PSFzf module'
         doctor_predictor = 'history suggestions (up to 50)'; doctor_custom = 'custom.ps1 has no errors'
         doctor_startup = 'profile startup'; doctor_ok = 'all good'; doctor_fix = 'fix: update'
         doctor_missing = 'missing: {0}'
-        update_start = 'updating terminal-setup from GitHub…'; update_done = 'done - reload or open a new tab'
+        update_start = 'updating Termistry from GitHub…'; update_done = 'done - reload or open a new tab'
         update_fail = 'could not download the installer: {0}'
         no_insert = '^(Ctrl|Alt|Shift|Win|Tab|F\d|↑|→|start|type|g␣)'
 

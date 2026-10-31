@@ -1,10 +1,10 @@
 ﻿<#
 .SYNOPSIS
-  A good-looking, convenient terminal on Windows 11 in one command. Safe to run again.
-  Repository: https://github.com/Ange1oc/terminal-setup
+  Termistry: a good-looking, convenient terminal on Windows 11 in one command. Safe to run again.
+  Repository: https://github.com/Ange1oc/termistry
 
 .EXAMPLE
-  irm https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1 | iex
+  irm https://raw.githubusercontent.com/Ange1oc/termistry/master/install.ps1 | iex
 .EXAMPLE
   .\setup-terminal.ps1 -Lang en -Theme latte -StartingDirectory D:\code -SshTabs prod,staging
 
@@ -34,12 +34,15 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$SetupVersion = '2.3.0'
+$SetupVersion = '1.0.0'
 $ProgressPreference = 'SilentlyContinue'
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 $SshTabs = @($SshTabs | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-$ConfigDir = Join-Path $HOME '.config\terminal-setup'
+$ConfigDir = Join-Path $HOME '.config\termistry'
+# Settings of an install from before the rename (terminal-setup) move over as they are
+$LegacyDirs = (Join-Path $HOME '.config\terminal-setup'), (Join-Path $HOME '.cache\terminal-setup')
+if ((Test-Path $LegacyDirs[0]) -and -not (Test-Path $ConfigDir)) { Move-Item $LegacyDirs[0] $ConfigDir }
 
 function Test-Command([string]$Name) { [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
 
@@ -58,7 +61,7 @@ if ($Lang -notin 'ru', 'en') {
 
 $L = @{
     ru = @{
-        title = '✦ Настройка терминала'; admin_note = 'запущено от администратора - лучше от обычного пользователя, права попрошу сам, где нужно'
+        title = '✦ Termistry';admin_note = 'запущено от администратора - лучше от обычного пользователя, права попрошу сам, где нужно'
         continue7 = 'продолжаю в PowerShell 7…'; no_winget = 'Нет winget. Установи «Установщик приложений» (App Installer) из Microsoft Store и запусти скрипт снова.'
         no_pwsh = 'PowerShell 7 не установился - поставь вручную: winget install Microsoft.PowerShell'
         present = 'уже есть'; installing = 'устанавливаю…'; installed = 'установлен'; winget_code = 'winget вернул {0}'
@@ -82,7 +85,7 @@ $L = @{
         s_uninstall = 'Удаление'; removed = 'удалён'; uninstall_kept = 'Остались: custom.ps1, bin\, server\custom\, программы, шрифт, настройки Windows Terminal и *.bak'
     }
     en = @{
-        title = '✦ Terminal setup'; admin_note = 'running as administrator - better as a regular user; elevation is requested only where needed'
+        title = '✦ Termistry';admin_note = 'running as administrator - better as a regular user; elevation is requested only where needed'
         continue7 = 'continuing in PowerShell 7…'; no_winget = 'No winget. Install "App Installer" from the Microsoft Store and run the script again.'
         no_pwsh = 'PowerShell 7 did not install - install it manually: winget install Microsoft.PowerShell'
         present = 'already installed'; installing = 'installing…'; installed = 'installed'; winget_code = 'winget returned {0}'
@@ -180,27 +183,29 @@ $ProfileFile = Join-Path $ProfileDir 'Microsoft.PowerShell_profile.ps1'
 # ── Embedded files (build.ps1 puts them here from src/) ─────────────────────
 $EmbeddedFiles = [ordered]@{}
 $EmbeddedFiles['Microsoft.PowerShell_profile.ps1'] = @'
-$global:TerminalSetupVersion = '2.3.0'
-$global:TerminalSetupLoaded = $false
+$global:TermistryVersion = '1.0.0'
+$global:TermistryLoaded = $false
 $global:TsFiles = 'Microsoft.PowerShell_profile.ps1', 'palette.ps1', 'lang.ps1', 'toolkit.ps1', 'toolkit-lazy.ps1', 'prompt.ps1', 'DeepHistoryPredictor.cs', 'server\bashrc.local', 'server\inputrc', 'server\install.sh'
 $global:ProfileDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $PROFILE }
 $env:XDG_CONFIG_HOME = "$HOME\.config"
 $global:isInteractive = -not [Console]::IsOutputRedirected -and $Host.Name -eq 'ConsoleHost'
-$cacheDir = "$HOME\.cache\terminal-setup"
+$cacheDir = "$HOME\.cache\termistry"
 
-$global:TerminalSetup = @{
+$global:Termistry = @{
     Abbreviations = $true
     LayoutFix     = $true
     Predictions   = 50
     GitStatus     = $true
     Kube          = 'auto'
 }
+# custom.ps1 written before the rename sets $TerminalSetup.*
+$global:TerminalSetup = $global:Termistry
 
 . (Join-Path $ProfileDir 'palette.ps1')
 $global:ThemeName = Get-ThemeName
 $global:Palette = $Themes[$ThemeName]
 $env:TERMINAL_THEME = $ThemeName
-$langFile = Join-Path $HOME '.config\terminal-setup\lang'
+$langFile = Join-Path $HOME '.config\termistry\lang'
 $global:LangName = if ((Test-Path $langFile) -and (Get-Content $langFile -First 1).Trim() -eq 'en') { 'en' } elseif ((Test-Path $langFile) -or (Get-Culture).TwoLetterISOLanguageName -eq 'ru') { 'ru' } else { 'en' }
 
 . (Join-Path $ProfileDir 'toolkit.ps1')
@@ -208,14 +213,14 @@ if (-not $isInteractive) { Set-TerminalPalette }
 
 # The rest (strings, commands, completions, zoxide) loads after the first prompt is drawn.
 # Those files declare everything as global: because they are dot-sourced from inside this function.
-function global:Complete-TerminalSetup {
-    if ($global:TerminalSetupLoaded) { return }
-    $global:TerminalSetupLoaded = $true
+function global:Complete-Termistry {
+    if ($global:TermistryLoaded) { return }
+    $global:TermistryLoaded = $true
     . (Join-Path $global:ProfileDir 'lang.ps1')
     $global:TkStr = $global:Strings[$global:LangName]
     . (Join-Path $global:ProfileDir 'toolkit-lazy.ps1')
     if (Find-TkCommand zoxide) {
-        $zoxideInit = "$HOME\.cache\terminal-setup\zoxide-init.ps1"
+        $zoxideInit = "$HOME\.cache\termistry\zoxide-init.ps1"
         $zoxideExe = (Get-Command zoxide).Source
         if (-not (Test-Path $zoxideInit) -or (Get-Item $zoxideInit).LastWriteTime -lt (Get-Item $zoxideExe).LastWriteTime) {
             New-Item -ItemType Directory -Force (Split-Path $zoxideInit) | Out-Null
@@ -237,7 +242,7 @@ function global:Complete-TerminalSetup {
 }
 # Until then these names forward to the real functions on first use
 foreach ($n in 'help', 'my', 'h', 'jump', 'srv', 'theme', 'lang', 'new', 'nav', 'pv', 'rgi', 'pk', 'gbr', 'o', 'kctx', 'kns', 'doctor', 'update', 'ex', 'bak', 'psg', 'cb', 'ep', 'Invoke-HelpPicker', 'Update-Completions', 'Get-TsPreview') {
-    Set-Item "Function:global:$n" -Value ([scriptblock]::Create("Complete-TerminalSetup; & '$n' @args"))
+    Set-Item "Function:global:$n" -Value ([scriptblock]::Create("Complete-Termistry; & '$n' @args"))
 }
 
 $customFile = Join-Path $ProfileDir 'custom.ps1'
@@ -274,9 +279,9 @@ if ($isInteractive) {
     Set-PSReadLineKeyHandler -Key Ctrl+z          -Function Undo
     Set-PSReadLineKeyHandler -Key Ctrl+y          -Function Redo
     Set-PSReadLineKeyHandler -Key Shift+Enter     -Function AddLine
-    Set-PSReadLineKeyHandler -Key F1 -BriefDescription 'CheatSheet' -ScriptBlock { Complete-TerminalSetup; Invoke-HelpPicker }
+    Set-PSReadLineKeyHandler -Key F1 -BriefDescription 'CheatSheet' -ScriptBlock { Complete-Termistry; Invoke-HelpPicker }
 
-    if ($TerminalSetup.Abbreviations) {
+    if ($Termistry.Abbreviations) {
         Set-PSReadLineKeyHandler -Key Spacebar -BriefDescription 'ExpandAbbreviation' -ScriptBlock {
             $line = $null; $cursor = $null
             [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
@@ -292,7 +297,7 @@ if ($isInteractive) {
     # History predictor plugin: PSReadLine caps built-in history suggestions at 10, plugins get 50.
     # The DLL is cached by source hash because a loaded DLL stays locked by open sessions.
     $predictorSrc = Join-Path $ProfileDir 'DeepHistoryPredictor.cs'
-    if ($TerminalSetup.Predictions -gt 0 -and (Test-Path $predictorSrc)) {
+    if ($Termistry.Predictions -gt 0 -and (Test-Path $predictorSrc)) {
         try {
             if (-not ('DeepHistoryPredictor' -as [type])) {
                 $predictorHash = (Get-FileHash $predictorSrc -Algorithm SHA256).Hash.Substring(0, 12)
@@ -306,7 +311,7 @@ if ($isInteractive) {
             $predictorKind = [System.Management.Automation.Subsystem.SubsystemKind]::CommandPredictor
             if (-not ((Get-PSSubsystem -Kind CommandPredictor).Implementations | Where-Object Id -eq ([DeepHistoryPredictor]::PredictorId))) {
                 [System.Management.Automation.Subsystem.SubsystemManager]::RegisterSubsystem(
-                    $predictorKind, [DeepHistoryPredictor]::new((Get-PSReadLineOption).HistorySavePath, [Math]::Min(50, $TerminalSetup.Predictions)))
+                    $predictorKind, [DeepHistoryPredictor]::new((Get-PSReadLineOption).HistorySavePath, [Math]::Min(50, $Termistry.Predictions)))
             }
             Set-PSReadLineOption -PredictionSource Plugin
         } catch {
@@ -322,14 +327,14 @@ if ($isInteractive) { Set-PSReadLineOption -ContinuationPrompt '❯❯ ' -ExtraP
 
 # Enter: layout fix + abbreviation, then run
 if ($isInteractive) {
-    Set-PSReadLineKeyHandler -Key Enter -BriefDescription 'TerminalSetupEnter' -ScriptBlock {
+    Set-PSReadLineKeyHandler -Key Enter -BriefDescription 'TermistryEnter' -ScriptBlock {
         $line = $null; $cursor = $null
         [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
-        if ($TerminalSetup.LayoutFix -and $line) {
+        if ($Termistry.LayoutFix -and $line) {
             $fixed = Repair-CommandLayout $line
             if ($fixed) { [Microsoft.PowerShell.PSConsoleReadLine]::Replace(0, $line.Length, $fixed); $line = $fixed; $cursor = $fixed.Length }
         }
-        if ($TerminalSetup.Abbreviations) {
+        if ($Termistry.Abbreviations) {
             $exp = Expand-Abbreviation $line $cursor
             if ($exp) { [Microsoft.PowerShell.PSConsoleReadLine]::Replace($exp.Start, $exp.Length, $exp.Text) }
         }
@@ -350,7 +355,7 @@ if ($isInteractive -and (Find-TkCommand fzf)) {
     # PSFzf auto-loads on first use; importing it eagerly costs ~0.3 s at startup
     Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock { Invoke-FzfPsReadlineHandlerHistory }
     Set-PSReadLineKeyHandler -Key Ctrl+t -ScriptBlock { Invoke-FzfPsReadlineHandlerProvider }
-    Set-PSReadLineKeyHandler -Key Alt+c -BriefDescription 'FolderNavigator' -ScriptBlock { Complete-TerminalSetup; nav; [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt() }
+    Set-PSReadLineKeyHandler -Key Alt+c -BriefDescription 'FolderNavigator' -ScriptBlock { Complete-Termistry; nav; [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt() }
 }
 
 $env:BAT_THEME = 'ansi'
@@ -371,9 +376,9 @@ function gst { git status -sb @args }
 function reload { . $PROFILE }
 
 if ($isInteractive) {
-    $null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -MaxTriggerCount 1 -SupportEvent -Action { Complete-TerminalSetup }
+    $null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -MaxTriggerCount 1 -SupportEvent -Action { Complete-Termistry }
 } else {
-    Complete-TerminalSetup
+    Complete-Termistry
 }
 '@
 $EmbeddedFiles['palette.ps1'] = @'
@@ -462,7 +467,7 @@ $Themes = [ordered]@{
     }
 }
 
-$ThemeFile = Join-Path $HOME '.config\terminal-setup\theme'
+$ThemeFile = Join-Path $HOME '.config\termistry\theme'
 
 function Get-ThemeName {
     $name = if (Test-Path $ThemeFile) { (Get-Content $ThemeFile -First 1).Trim().ToLower() }
@@ -495,7 +500,7 @@ function Get-TerminalTheme([string]$Name) {
 }
 '@
 $EmbeddedFiles['lang.ps1'] = @'
-$global:LangFile = Join-Path $HOME '.config\terminal-setup\lang'
+$global:LangFile = Join-Path $HOME '.config\termistry\lang'
 
 function global:Get-LangName {
     $name = if (Test-Path $LangFile) { (Get-Content $LangFile -First 1).Trim().ToLower() }
@@ -601,7 +606,7 @@ $global:Strings = @{
                 , ('theme [имя]', '10 тем на лету: catppuccin, black, gruvbox, dracula, nord…', 'theme latte')
                 , ('lang [ru|en]', 'язык терминала и серверов')
                 , ('doctor', 'проверить, что всё на месте и работает')
-                , ('update', 'обновить terminal-setup с GitHub')
+                , ('update', 'обновить Termistry с GitHub')
                 , ('reload', 'перечитать профиль после правок')
                 , ('Update-Completions', 'обновить Tab-дополнения после обновления CLI')
             ) }
@@ -622,13 +627,13 @@ $global:Strings = @{
             vscode = 'настройки VS Code'; gitconfig = 'git: delta и имя'; ssh = 'SSH-хосты (my ssh, jump, srv)'
         }
         config_missing = 'нет'
-        doctor_title = 'Проверка'; doctor_hint = 'terminal-setup {0}'
+        doctor_title = 'Проверка'; doctor_hint = 'Termistry {0}'
         doctor_tools = 'инструменты'; doctor_files = 'файлы профиля'; doctor_font = 'шрифт для всех пользователей'
         doctor_wt = 'Windows Terminal: схемы и PowerShell 7 по умолчанию'; doctor_psfzf = 'модуль PSFzf'
         doctor_predictor = 'подсказки из истории (до 50)'; doctor_custom = 'custom.ps1 без ошибок'
         doctor_startup = 'старт профиля'; doctor_ok = 'всё в порядке'; doctor_fix = 'починить: update'
         doctor_missing = 'нет: {0}'
-        update_start = 'обновляю terminal-setup с GitHub…'; update_done = 'готово - reload или новая вкладка'
+        update_start = 'обновляю Termistry с GitHub…'; update_done = 'готово - reload или новая вкладка'
         update_fail = 'не удалось скачать установщик: {0}'
         no_insert = '^(Ctrl|Alt|Shift|Win|Tab|F\d|↑|→|начни|набрал|вщслук|g␣)'
 
@@ -811,7 +816,7 @@ $global:Strings = @{
                 , ('theme [name]', '10 themes, switched live: catppuccin, black, gruvbox, dracula, nord…', 'theme latte')
                 , ('lang [ru|en]', 'language of the terminal and servers')
                 , ('doctor', 'check that everything is in place and works')
-                , ('update', 'update terminal-setup from GitHub')
+                , ('update', 'update Termistry from GitHub')
                 , ('reload', 're-read the profile after edits')
                 , ('Update-Completions', 'refresh Tab completions after updating a CLI')
             ) }
@@ -832,13 +837,13 @@ $global:Strings = @{
             vscode = 'VS Code settings'; gitconfig = 'git: delta and identity'; ssh = 'SSH hosts (my ssh, jump, srv)'
         }
         config_missing = 'missing'
-        doctor_title = 'Check-up'; doctor_hint = 'terminal-setup {0}'
+        doctor_title = 'Check-up'; doctor_hint = 'Termistry {0}'
         doctor_tools = 'tools'; doctor_files = 'profile files'; doctor_font = 'font installed for all users'
         doctor_wt = 'Windows Terminal: schemes and PowerShell 7 as default'; doctor_psfzf = 'PSFzf module'
         doctor_predictor = 'history suggestions (up to 50)'; doctor_custom = 'custom.ps1 has no errors'
         doctor_startup = 'profile startup'; doctor_ok = 'all good'; doctor_fix = 'fix: update'
         doctor_missing = 'missing: {0}'
-        update_start = 'updating terminal-setup from GitHub…'; update_done = 'done - reload or open a new tab'
+        update_start = 'updating Termistry from GitHub…'; update_done = 'done - reload or open a new tab'
         update_fail = 'could not download the installer: {0}'
         no_insert = '^(Ctrl|Alt|Shift|Win|Tab|F\d|↑|→|start|type|g␣)'
 
@@ -927,7 +932,7 @@ $global:Strings = @{
 '@
 $EmbeddedFiles['toolkit.ps1'] = @'
 # Core: loaded before the first prompt. Everything the user types lives in toolkit-lazy.ps1,
-# which Complete-TerminalSetup loads once the prompt is on screen.
+# which Complete-Termistry loads once the prompt is on screen.
 function _tkRgb([int]$hex) { $PSStyle.Foreground.FromRgb($hex) }
 function _tkBg([int]$hex) { $PSStyle.Background.FromRgb($hex) }
 
@@ -1049,20 +1054,20 @@ function abbr {
         return
     }
     if (-not $Name) {
-        Complete-TerminalSetup
+        Complete-Termistry
         Write-TkTitle $TkStr.abbr_title $TkStr.abbr_hint
         foreach ($a in $global:Abbreviations.GetEnumerator()) { Write-TkRow "$($a.Key)␣" $a.Value }
         Write-Host ''
         return
     }
-    if (-not $Expansion) { Complete-TerminalSetup; Write-Host "  $($TK.err)$($TkStr.abbr_usage)$($TK.R)"; return }
+    if (-not $Expansion) { Complete-Termistry; Write-Host "  $($TK.err)$($TkStr.abbr_usage)$($TK.R)"; return }
     $global:Abbreviations[$Name] = $Expansion
     # typed interactively (not sourced from a file): persist to custom.ps1
     if ($MyInvocation.ScriptName -eq '' -and $global:isInteractive) {
         $line = "abbr $Name '$($Expansion.Replace("'", "''"))'"
         if (-not (Test-Path $custom) -or -not (Select-String -Path $custom -SimpleMatch $line -Quiet)) {
             Add-Content $custom "`n$line" -Encoding utf8
-            Complete-TerminalSetup
+            Complete-Termistry
             Write-Host ("  {0}{1}{2}" -f $TK.dim, ($TkStr.abbr_saved -f $line), $TK.R)
         }
     }
@@ -1147,7 +1152,7 @@ function Invoke-TkScript([string]$Path) {
     if (-not $exe) {
         $ext = [IO.Path]::GetExtension($Path).ToLower()
         $runner = Get-ScriptRunner $ext
-        if (-not $runner) { Complete-TerminalSetup; Write-Host ('  ' + ($TkStr.bin_norunner -f (Split-Path $Path -Leaf), ($global:ScriptRunners[$ext] -join ' / '))); return }
+        if (-not $runner) { Complete-Termistry; Write-Host ('  ' + ($TkStr.bin_norunner -f (Split-Path $Path -Leaf), ($global:ScriptRunners[$ext] -join ' / '))); return }
         $parts = $runner -split ' '
         $exe = $parts[0]; $extra = @($parts | Select-Object -Skip 1) + $Path
     }
@@ -1171,7 +1176,7 @@ function Invoke-TkScript([string]$Path) {
 }
 '@
 $EmbeddedFiles['toolkit-lazy.ps1'] = @'
-# Loaded by Complete-TerminalSetup right after the first prompt (PowerShell.OnIdle), so startup stays fast.
+# Loaded by Complete-Termistry right after the first prompt (PowerShell.OnIdle), so startup stays fast.
 
 function global:Format-TkSize([double]$Bytes) {
     foreach ($u in $TkStr.units) { if ($Bytes -lt 1024) { return ('{0:N1} {1}' -f $Bytes, $u) -replace '[.,]0 ', ' ' }; $Bytes /= 1024 }
@@ -1803,7 +1808,7 @@ function global:Invoke-FzfCommand([string]$Command, [string[]]$Arguments) {
 
 # Preview script for fzf: folders through eza, files through bat. cmd runs it with UTF-8 so Cyrillic paths work.
 function global:Get-TsPreview {
-    $p = "$HOME\.cache\terminal-setup\preview.cmd"
+    $p = "$HOME\.cache\termistry\preview.cmd"
     if (-not (Test-Path $p)) {
         New-Item -ItemType Directory -Force (Split-Path $p) | Out-Null
         $lines = '@echo off', 'chcp 65001 >nul', 'if exist "%~1\" (', '  eza --icons=always --color=always --group-directories-first -1 "%~1"', ') else (', '  bat --color=always --style=numbers,header-filename --line-range :300 "%~1"', ')'
@@ -1978,7 +1983,7 @@ function global:Get-ConfigLocations {
         custom      = Join-Path $global:ProfileDir 'custom.ps1'
         bin         = Join-Path $global:ProfileDir 'bin'
         srvcustom   = Join-Path $global:ProfileDir 'server\custom'
-        settings    = Join-Path $HOME '.config\terminal-setup'
+        settings    = Join-Path $HOME '.config\termistry'
         completions = Join-Path $HOME '.cache\pwsh-completions'
         predictor   = Join-Path $HOME '.cache\pwsh-predictor'
         wt          = $(if ($wt) { $wt } else { Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json' })
@@ -2003,7 +2008,7 @@ function global:Show-MyConfig {
 }
 
 function global:doctor {
-    Write-TkTitle $TkStr.doctor_title ($TkStr.doctor_hint -f $global:TerminalSetupVersion)
+    Write-TkTitle $TkStr.doctor_title ($TkStr.doctor_hint -f $global:TermistryVersion)
     $state = @{ problems = 0 }
     $check = { param($ok, $label, $detail) if ($ok) { Write-Host "  $($TK.ok)✓$($TK.R) $label $($TK.dim)$detail$($TK.R)" } else { $state.problems++; Write-Host "  $($TK.err)✗$($TK.R) $label $($TK.dim)$detail$($TK.R)" } }
 
@@ -2046,7 +2051,7 @@ function global:doctor {
 
 function global:update {
     Write-Host "  $($TK.dim)$($TkStr.update_start)$($TK.R)"
-    try { $installer = Invoke-RestMethod 'https://raw.githubusercontent.com/Ange1oc/terminal-setup/main/install.ps1' -TimeoutSec 20 }
+    try { $installer = Invoke-RestMethod 'https://raw.githubusercontent.com/Ange1oc/termistry/master/install.ps1' -TimeoutSec 20 }
     catch { Write-Host "  $($TK.err)$($TkStr.update_fail -f $_.Exception.Message)$($TK.R)"; return }
     & ([scriptblock]::Create($installer)) -Lang $global:LangName
     Write-Host "  $($TK.ok)$($TkStr.update_done)$($TK.R)"
@@ -2212,7 +2217,7 @@ function global:Get-TsPrompt {
     if ($root) {
         $branch = Get-TsGitBranch $root
         $gitText = ''
-        if ($global:TerminalSetup.GitStatus) {
+        if ($global:Termistry.GitStatus) {
             $g = $global:TsGit
             # Stale counts stay on screen while OnIdle refreshes them; a redraw happens only if they changed
             if ($g.Root -eq $root) { $gitText = $g.Text }
@@ -2230,7 +2235,7 @@ function global:Get-TsPrompt {
     if ([IO.File]::Exists("$Dir\Cargo.toml")) { $v = Get-TsToolVersion rust; if ($v) { $left += "  $($c.accent)$([char]0xE7A8) $v$($c.R)" } }
 
     $right = @()
-    $kube = "$($global:TerminalSetup.Kube)"
+    $kube = "$($global:Termistry.Kube)"
     if ($kube -and $kube -ne 'off' -and $kube -ne 'False') {
         $k = Get-TsKubeText
         if ($k -and ($kube -eq 'always' -or $global:TsKube.Prod -or (Test-TsKubeDir $Dir) -or ($root -and $root -ne $Dir -and (Test-TsKubeDir $root)))) {
@@ -2399,7 +2404,7 @@ public sealed class DeepHistoryPredictor : ICommandPredictor
 }
 '@
 $EmbeddedFiles['server\bashrc.local'] = @'
-# ~/.bashrc.local - installed by `srv install <host>` from terminal-setup. Nothing runs in the background.
+# ~/.bashrc.local - installed by `srv install <host>` from Termistry. Nothing runs in the background.
 # version: 2.1.0
 # Per-server settings: ~/.config/bashrc-local.conf (PROMPT_ENV=prod, LANG_UI=en)
 # Your own: ~/.bashrc.d/*.sh and ~/bin/* (a "# help: ..." line shows up in help)
@@ -3037,10 +3042,10 @@ echo "${dim}$(m projects): ${projects:-$(m none)} · $(m relogin)${r}"
 $EmbeddedFiles['custom.ps1'] = @'
 # custom.ps1 - yours. setup-terminal.ps1 never overwrites this file. Loaded after toolkit.ps1; check with: reload
 #
-#   $TerminalSetup.Abbreviations = $false     # g␣ → git␣
-#   $TerminalSetup.LayoutFix     = $false     # Russian layout fix on Enter
-#   $TerminalSetup.Predictions   = 20         # history suggestions (0 - PSReadLine default 10)
-#   $TerminalSetup.Kube          = 'always'   # kubernetes context in the prompt: auto (k8s folders and prod only), always, off
+#   $Termistry.Abbreviations = $false     # g␣ → git␣
+#   $Termistry.LayoutFix     = $false     # Russian layout fix on Enter
+#   $Termistry.Predictions   = 20         # history suggestions (0 - PSReadLine default 10)
+#   $Termistry.Kube          = 'always'   # kubernetes context in the prompt: auto (k8s folders and prod only), always, off
 #
 #   abbr gcm 'git commit -m "%"'              # % - cursor position
 #   abbr -Remove d
@@ -3054,7 +3059,8 @@ $EmbeddedFiles['custom.ps1'] = @'
 if ($Uninstall) {
     Step $L.s_uninstall
     $managed = @($EmbeddedFiles.Keys | Where-Object { $_ -ne 'custom.ps1' } | ForEach-Object { Join-Path $ProfileDir $_ })
-    $managed += (Join-Path $HOME '.config\ohmyposh\soft.omp.json'), (Join-Path $HOME '.config\terminal-setup'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
+    $managed += (Join-Path $HOME '.config\ohmyposh\soft.omp.json'), $ConfigDir, (Join-Path $HOME '.cache\termistry'), (Join-Path $HOME '.cache\pwsh-completions'), (Join-Path $HOME '.cache\pwsh-predictor')
+    $managed += $LegacyDirs
     foreach ($p in $managed) {
         if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "$(Short $p) - $($L.removed)" }
     }
@@ -3169,7 +3175,7 @@ $ThemeTitle = $Themes[$ThemeName].title
 foreach ($rel in $EmbeddedFiles.Keys) {
     if ($rel -ne 'custom.ps1') { Write-ManagedFile (Join-Path $ProfileDir $rel) $EmbeddedFiles[$rel] }
 }
-Remove-Item "$HOME\.cache\terminal-setup\omp-init.txt", "$HOME\.config\ohmyposh\soft.omp.json" -ErrorAction SilentlyContinue
+Remove-Item $LegacyDirs[1], "$HOME\.config\ohmyposh\soft.omp.json" -Recurse -Force -ErrorAction SilentlyContinue
 
 $customFile = Join-Path $ProfileDir 'custom.ps1'
 if (Test-Path $customFile) { Ok "$(Short $customFile) - $($L.custom_yours)" }
