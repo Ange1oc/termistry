@@ -113,7 +113,8 @@ Scene 'hero' `$hero
 Scene 'help' (Capture { Show-TkHelp (@(`$TkStr.sections | Where-Object { `$_.Key -in 'input', 'git', 'ssh', 'mine' }) + @(Get-TkUserSection)) })
 
 `$sys = Capture { my sys }
-`$cut = `$sys.IndexOf(`$TkStr.sys_containers); if (`$cut -gt 0) { `$sys = `$sys.Substring(0, `$sys.LastIndexOf("``n", `$cut)).TrimEnd() }
+# the process list and containers are this machine's own business, the screenshot stops at the disks
+`$cut = `$sys.IndexOf(`$TkStr.sys_bymem); if (`$cut -gt 0) { `$sys = `$sys.Substring(0, `$sys.LastIndexOf("``n", `$cut)).TrimEnd() }
 Scene 'my-sys' ((Prompt-Line '$demo') + (Typed 'my sys') + "``n" + (Demo `$sys))
 
 Scene 'my-cmds' ((Prompt-Line '$demo') + (Typed 'my cmds') + "``n" + (Capture { my cmds }).Replace('$work\home\profile', '~\Documents\PowerShell'))
